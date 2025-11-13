@@ -189,13 +189,14 @@ fn emit_linker_flags(target: &str) {
     }
 
     if is_windows {
-        vcpkg::find_package("libpng").expect("Failed to find libpng");
-        vcpkg::find_package("zlib").expect("Failed to find zlib");
-        vcpkg::find_package("libiconv").expect("Failed to find libiconv");
-        vcpkg::find_package("freetype").expect("Failed to find freetype");
-        vcpkg::find_package("tiff").expect("Failed to find tiff");
-        vcpkg::find_package("openjpeg").expect("Failed to find openjpeg");
-        vcpkg::find_package("libjpeg-turbo").expect("Failed to find libjpeg-turbo");
+        if let Ok(root) = env::var("VCPKG_ROOT") {
+            let triplet = env::var("VCPKG_DEFAULT_TRIPLET").unwrap_or("x64-windows".to_string());
+            let lib_path = PathBuf::from(root)
+                .join("installed")
+                .join(triplet)
+                .join("lib");
+            println!("cargo:rustc-link-search=native={}", lib_path.display());
+        }
     } else {
         emit_system_library_hints(target);
     }
