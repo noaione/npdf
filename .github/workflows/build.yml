@@ -18,7 +18,19 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os:
+          # Linux (x64)
+          - [ubuntu-24.04, x86_64-unknown-linux-gnu]
+          # # Linux (ARM64)
+          # - [ubuntu-24.04-arm, aarch64-unknown-linux-gnu]
+          # # macOS Apple Intel (Sonoma)
+          # - [macos-15-intel, x86_64-apple-darwin]
+          # macOS Apple Silicon (Tahoe)
+          - [macos-26, aarch64-apple-darwin]
+          # Windows Server 2025 (x64)
+          - [windows-2025, x86_64-pc-windows-msvc]
+          # # Windows 11 ARM (ARM64)
+          # - [windows-11-arm, aarch64-pc-windows-msvc]
 
     env:
       CARGO_TERM_COLOR: always
@@ -39,7 +51,7 @@ jobs:
           boost_version: "1.89.0"
 
       - name: Install system dependencies (Linux)
-        if: matrix.os == 'ubuntu-latest'
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -55,7 +67,7 @@ jobs:
             libopenjp2-7-dev
 
       - name: Install system dependencies (macOS)
-        if: matrix.os == 'macos-latest'
+        if: runner.os == 'macOS'
         run: |
           brew update
           brew install \
@@ -71,7 +83,7 @@ jobs:
             boost
 
       - name: Install system dependencies (Windows)
-        if: matrix.os == 'windows-latest'
+        if: runner.os == 'Windows'
         shell: pwsh
         run: |
           choco install ninja cmake git pkgconfiglite -y --no-progress
@@ -90,7 +102,34 @@ jobs:
           Add-Content $env:GITHUB_PATH "$root\\bin"
 
       - name: Build
-        run: cargo build --workspace --all-targets
+        run: cargo build --profile release --workspace --all-targets
         env:
           BOOST_ROOT: ${{ steps.install-boost.outputs.boost_root }}
           Boost_DIR: ${{ steps.install-boost.outputs.boost_root }}
+
+      - name: Compress artifacts (Linux/macOS)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          pushd target/release
+          chmod +x npdf
+          tar -czvf npdf-${{ matrix.os[1] }}.tar.gz npdf
+          mv npdf-${{ matrix.os[1] }}.tar.gz ../..
+          popd
+
+      - name: Compress artifacts (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          pushd target/release
+          Compress-Archive -Path npdf.exe -DestinationPath npdf-${{ matrix.os[1] }}.zip
+          mv npdf-${{ matrix.os[1] }}.zip ../..
+          popd
+        shell: powershell
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: npdf-${{ matrix.os[1] }}
+          path: |
+            npdf-${{ matrix.os[1] }}.zip
+            npdf-${{ matrix.os[1] }}.tar.gz
