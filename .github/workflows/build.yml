@@ -82,24 +82,42 @@ jobs:
             openjpeg \
             boost
 
+      # - name: Install system dependencies (Windows)
+      #   if: runner.os == 'Windows'
+      #   shell: pwsh
+      #   run: |
+      #     choco install ninja cmake git pkgconfiglite -y --no-progress
+      #     if (-not (Test-Path "$env:USERPROFILE\\vcpkg")) {
+      #       git clone https://github.com/microsoft/vcpkg "$env:USERPROFILE\\vcpkg"
+      #     }
+      #     & "$env:USERPROFILE\\vcpkg\\bootstrap-vcpkg.bat"
+      #     & "$env:USERPROFILE\vcpkg\vcpkg.exe" install freetype libiconv libpng tiff openjpeg libjpeg-turbo --clean-after-build
+      #     $root = Resolve-Path "$env:USERPROFILE\\vcpkg\\installed\\x64-windows"
+      #     Add-Content $env:GITHUB_ENV "FREETYPE_DIR=$root"
+      #     Add-Content $env:GITHUB_ENV "PNG_DIR=$root"
+      #     Add-Content $env:GITHUB_ENV "TIFF_DIR=$root"
+      #     Add-Content $env:GITHUB_ENV "OPENJPEG_DIR=$root"
+      #     Add-Content $env:GITHUB_ENV "JPEG_DIR=$root"
+      #     Add-Content $env:GITHUB_ENV "CMAKE_PREFIX_PATH=$root"
+      #     Add-Content $env:GITHUB_PATH "$root\\bin"
+
       - name: Install system dependencies (Windows)
         if: runner.os == 'Windows'
-        shell: pwsh
         run: |
-          choco install ninja cmake git pkgconfiglite -y --no-progress
-          if (-not (Test-Path "$env:USERPROFILE\\vcpkg")) {
-            git clone https://github.com/microsoft/vcpkg "$env:USERPROFILE\\vcpkg"
-          }
-          & "$env:USERPROFILE\\vcpkg\\bootstrap-vcpkg.bat"
-          & "$env:USERPROFILE\vcpkg\vcpkg.exe" install freetype libiconv libpng tiff openjpeg libjpeg-turbo --clean-after-build
-          $root = Resolve-Path "$env:USERPROFILE\\vcpkg\\installed\\x64-windows"
-          Add-Content $env:GITHUB_ENV "FREETYPE_DIR=$root"
-          Add-Content $env:GITHUB_ENV "PNG_DIR=$root"
-          Add-Content $env:GITHUB_ENV "TIFF_DIR=$root"
-          Add-Content $env:GITHUB_ENV "OPENJPEG_DIR=$root"
-          Add-Content $env:GITHUB_ENV "JPEG_DIR=$root"
-          Add-Content $env:GITHUB_ENV "CMAKE_PREFIX_PATH=$root"
-          Add-Content $env:GITHUB_PATH "$root\\bin"
+          cd C:\vcpkg
+          .\bootstrap-vcpkg.bat
+
+          C:\vcpkg\vcpkg.exe install libpng:x64-windows zlib:x64-windows libiconv:x64-windows freetype:x64-windows tiff:x64-windows openjpeg:x64-windows libjpeg-turbo:x64-windows
+          echo "VCPKG_ROOT=C:\vcpkg" >> $env:GITHUB_ENV
+          echo "VCPKG_DEFAULT_TRIPLET=x64-windows" >> $env:GITHUB_ENV
+          echo "VCPKG_FEATURE_FLAGS=manifests" >> $env:GITHUB_ENV
+
+      - name: Cache vcpkg dependencies
+        uses: actions/cache@v4
+        if: runner.os == 'Windows'
+        with:
+          path: C:\vcpkg\installed
+          key: vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
 
       - name: Build
         run: cargo build --profile release --workspace --all-targets
