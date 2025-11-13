@@ -83,13 +83,27 @@ fn configure_and_build_poppler(poppler_src: &Path, target: &str) -> PathBuf {
         .define("BUILD_MANUAL_TESTS", "OFF")
         .define("RUN_GPERF_IF_PRESENT", "OFF");
 
+    if let Ok(ci_build) = std::env::var("CI_RUNNER") {
+        println!("Running on CI: {ci_build}");
+        cfg.define("CMAKE_VERBOSE_MAKEFILE", "ON");
+    }
+
     if target.contains("windows") {
         cfg.define("FONT_CONFIGURATION", "win32");
 
-        // if let Some(prefix) = env::var_os("TIFF_DIR").or_else(|| env::var_os("FREETYPE_DIR")) {
-        //     let prefix_value = PathBuf::from(prefix).into_os_string();
-        //     cfg.define("CMAKE_PREFIX_PATH", prefix_value);
-        // }
+        // 🟢 Enable vcpkg toolchain if available
+        if let Ok(vcpkg_root) = std::env::var("VCPKG_ROOT") {
+            let toolchain = Path::new(&vcpkg_root).join("scripts/buildsystems/vcpkg.cmake");
+            if toolchain.exists() {
+                println!("Using vcpkg toolchain: {}", toolchain.display());
+                cfg.define("CMAKE_TOOLCHAIN_FILE", toolchain);
+            }
+        }
+
+        // You can also specify triplet if needed:
+        if let Ok(triplet) = std::env::var("VCPKG_DEFAULT_TRIPLET") {
+            cfg.define("VCPKG_TARGET_TRIPLET", triplet);
+        }
     } else {
         cfg.define("FONT_CONFIGURATION", "fontconfig");
     }

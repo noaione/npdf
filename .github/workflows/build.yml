@@ -122,10 +122,11 @@ jobs:
           echo "VCPKG_FEATURE_FLAGS=manifests" >> $env:GITHUB_ENV
 
       - name: Build
-        run: cargo build --profile release --workspace --all-targets
+        run: cargo build --profile release --workspace --all-targets --verbose
         env:
           BOOST_ROOT: ${{ steps.install-boost.outputs.boost_root }}
           Boost_DIR: ${{ steps.install-boost.outputs.boost_root }}
+          CI_RUNNER: "github"
 
       - name: Compress artifacts (Linux/macOS)
         if: runner.os != 'Windows'
