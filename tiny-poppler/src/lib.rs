@@ -7,16 +7,13 @@
 mod ffi;
 
 pub use ffi::{ColorMode, ImageColorSpace, ImageInfo};
+use png::{BitDepth, ColorType, Compression, Encoder};
 
 use std::fs::{self, File};
 use std::io::{self, BufWriter, Write};
 use std::path::Path;
 
 use thiserror::Error;
-use zune_core::bit_depth::BitDepth;
-use zune_core::colorspace::ColorSpace;
-use zune_core::options::EncoderOptions;
-use zune_png::PngEncoder;
 
 /// Configuration for a render operation.
 #[derive(Debug, Clone)]
@@ -49,6 +46,8 @@ pub enum RenderError {
     UnsupportedLayout,
     #[error("unsupported color mode {0:?}")]
     UnsupportedColorMode(ColorMode),
+    #[error("invalid u32 size: {0}")]
+    InvalidU32Size(usize),
 }
 
 /// Handle to an open PDF backed by Poppler's Splash renderer.
@@ -181,18 +180,18 @@ fn image_to_png(image: &ffi::Image) -> Result<Vec<u8>, RenderError> {
     match image.color_mode {
         ColorMode::Mono8 => {
             let pixels = collect_rows(image, row_bytes)?;
-            encode_png(&pixels, width, height, ColorSpace::Luma, BitDepth::Eight)
+            encode_png(&pixels, width, height, ColorType::Grayscale, BitDepth::Eight)
         }
         ColorMode::Rgb8 => {
             let pixels = collect_rows(image, row_bytes)?;
-            encode_png(&pixels, width, height, ColorSpace::RGB, BitDepth::Eight)
+            encode_png(&pixels, width, height, ColorType::Rgb, BitDepth::Eight)
         }
         ColorMode::Bgr8 => {
             let mut pixels = collect_rows(image, row_bytes)?;
             for chunk in pixels.chunks_exact_mut(3) {
                 chunk.swap(0, 2);
             }
-            encode_png(&pixels, width, height, ColorSpace::RGB, BitDepth::Eight)
+            encode_png(&pixels, width, height, ColorType::Rgb, BitDepth::Eight)
         }
         ColorMode::Xbgr8 => {
             let raw = collect_rows(image, row_bytes)?;
@@ -203,7 +202,7 @@ fn image_to_png(image: &ffi::Image) -> Result<Vec<u8>, RenderError> {
                 rgba.push(chunk[1]);
                 rgba.push(255);
             }
-            encode_png(&rgba, width, height, ColorSpace::RGBA, BitDepth::Eight)
+            encode_png(&rgba, width, height, ColorType::Rgba, BitDepth::Eight)
         }
         ColorMode::Mono1 | ColorMode::Cmyk8 | ColorMode::DeviceN8 => {
             Err(RenderError::UnsupportedColorMode(image.color_mode))
@@ -230,14 +229,21 @@ fn encode_png(
     pixels: &[u8],
     width: usize,
     height: usize,
-    colorspace: ColorSpace,
+    colorspace: ColorType,
     depth: BitDepth,
 ) -> Result<Vec<u8>, RenderError> {
-    let options = EncoderOptions::new(width, height, colorspace, depth);
-    let mut encoder = PngEncoder::new(pixels, options);
+    let width_u32: u32 = width.try_into().map_err(|_| RenderError::InvalidU32Size(width))?;
+    let height_u32: u32 = height.try_into().map_err(|_| RenderError::InvalidU32Size(width))?;
+
     let mut buffer = Vec::new();
-    encoder
-        .encode(&mut buffer)
-        .map_err(|err| RenderError::Png(format!("{err:?}")))?;
+    {
+        let mut encoder = Encoder::new(&mut buffer, width_u32, height_u32);
+        encoder.set_compression(Compression::Balanced);
+        encoder.set_color(colorspace);
+        encoder.set_depth(depth);
+        let mut writer = encoder.write_header().unwrap();
+        writer.write_image_data(pixels).unwrap();
+    }
+
     Ok(buffer)
 }
