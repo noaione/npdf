@@ -35,6 +35,14 @@ typedef enum splash_image_colorspace {
     SPLASH_IMAGE_COLORSPACE_OTHER = 10,
 } splash_image_colorspace_t;
 
+typedef enum splash_image_type {
+    SPLASH_IMAGE_TYPE_UNKNOWN = 0,
+    SPLASH_IMAGE_TYPE_IMAGE = 1,
+    SPLASH_IMAGE_TYPE_STENCIL = 2,
+    SPLASH_IMAGE_TYPE_MASK = 3,
+    SPLASH_IMAGE_TYPE_SOFT_MASK = 4,
+} splash_image_type_t;
+
 typedef enum splash_crop_mode {
     SPLASH_CROP_MODE_MEDIA_BOX = 0,
     SPLASH_CROP_MODE_CROP_BOX = 1,
@@ -62,6 +70,7 @@ typedef struct splash_image_info {
     int32_t xref_object;
     int32_t xref_generation;
     uint32_t page_number;
+    splash_image_type_t image_type;
     splash_image_colorspace_t colorspace;
 } splash_image_info_t;
 

@@ -52,6 +52,16 @@ pub enum PdfCropMode {
 }
 
 #[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImageType {
+    Unknown = 0,
+    Image = 1,
+    Stencil = 2,
+    Mask = 3,
+    SoftMask = 4,
+}
+
+#[repr(C)]
 struct SplashImage {
     data: *mut u8,
     len: usize,
@@ -73,6 +83,7 @@ struct SplashImageInfo {
     xref_object: i32,
     xref_generation: i32,
     page_number: u32,
+    image_type: ImageType,
     colorspace: ImageColorSpace,
 }
 
@@ -284,6 +295,7 @@ pub struct ImageInfo {
     pub components: u32,
     pub bits_per_component: u32,
     pub colorspace: ImageColorSpace,
+    pub image_type: ImageType,
     pub page: u32,
     pub xref: Option<(i32, i32)>,
 }
@@ -301,6 +313,7 @@ impl From<SplashImageInfo> for ImageInfo {
             components: value.components,
             bits_per_component: value.bits_per_component,
             colorspace: value.colorspace,
+            image_type: value.image_type,
             page: value.page_number,
             xref,
         }

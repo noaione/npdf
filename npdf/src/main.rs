@@ -2,7 +2,9 @@ use clap::{Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 use std::{collections::HashMap, fs};
 
-use tiny_poppler::{ColorMode, Document, ImageColorSpace, ImageInfo, PdfCropMode, RenderOptions};
+use tiny_poppler::{
+    ColorMode, Document, ImageColorSpace, ImageInfo, ImageType, PdfCropMode, RenderOptions,
+};
 
 fn main() {
     let cli = Cli::parse();
@@ -103,8 +105,9 @@ fn handle_list(args: ListArgs) -> Result<(), String> {
             Some((obj, generation)) => format!("{} {} R", obj, generation),
             None => "inline".into(),
         };
+        let image_type = describe_image_type(info.image_type);
         println!(
-            "{position:>4}: page {page:>4}, {width}x{height}px, {components} comps, {bits} bpc, colorspace {colorspace}, xref {xref}",
+            "{position:>4}: page {page:>4}, {image_type}, {width}x{height}px, {components} comps, {bits} bpc, colorspace {colorspace}, xref {xref}",
             page = info.page,
             width = info.width,
             height = info.height,
@@ -210,6 +213,16 @@ fn describe_colorspace(space: ImageColorSpace) -> &'static str {
         ImageColorSpace::Separation => "Separation",
         ImageColorSpace::DeviceN => "DeviceN",
         ImageColorSpace::Other => "Other",
+    }
+}
+
+fn describe_image_type(kind: ImageType) -> &'static str {
+    match kind {
+        ImageType::Unknown => "unknown",
+        ImageType::Stencil => "stencil",
+        ImageType::SoftMask => "smask",
+        ImageType::Mask => "mask",
+        ImageType::Image => "image",
     }
 }
 

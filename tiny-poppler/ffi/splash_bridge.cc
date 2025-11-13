@@ -197,6 +197,7 @@ struct CollectedImage {
     int32_t xref_object = -1;
     int32_t xref_generation = 0;
     uint32_t page_number = 0;
+    splash_image_type_t image_type = SPLASH_IMAGE_TYPE_UNKNOWN;
     splash_image_colorspace_t colorspace = SPLASH_IMAGE_COLORSPACE_UNKNOWN;
 };
 
@@ -221,7 +222,7 @@ public:
         (void)maskColors;
         (void)inlineImg;
         (void)interpolate;
-        add_image(width, height, color_map, ref);
+        add_image(width, height, color_map, ref, SPLASH_IMAGE_TYPE_IMAGE);
     }
 
     void drawImageMask(GfxState *state, Object *ref, Stream *str, int width, int height, bool invert, bool interpolate, bool inlineImg) override
@@ -255,7 +256,8 @@ public:
         (void)maskInvert;
         (void)maskInterpolate;
         (void)interpolate;
-        add_image(width, height, color_map, ref);
+        add_image(width, height, color_map, ref, SPLASH_IMAGE_TYPE_IMAGE);
+        add_image(maskWidth, maskHeight, nullptr, ref, SPLASH_IMAGE_TYPE_MASK);
     }
 
     void drawSoftMaskedImage(GfxState *state,
@@ -279,11 +281,18 @@ public:
         (void)maskColorMap;
         (void)maskInterpolate;
         (void)interpolate;
-        add_image(width, height, color_map, ref);
+        add_image(width, height, color_map, ref, SPLASH_IMAGE_TYPE_IMAGE);
+        add_image(maskWidth, maskHeight, maskColorMap, ref, SPLASH_IMAGE_TYPE_SOFT_MASK);
     }
 
 private:
-    void add_image(int width, int height, GfxImageColorMap *color_map, Object *ref)
+    void add_image(
+        int width,
+        int height,
+        GfxImageColorMap *color_map,
+        Object *ref,
+        splash_image_type_t image_type
+    )
     {
         if (!images_) {
             return;
@@ -297,6 +306,7 @@ private:
         if (height > 0) {
             info.height = static_cast<uint32_t>(height);
         }
+        info.image_type = image_type;
 
         if (color_map) {
             info.components = static_cast<uint32_t>(color_map->getNumPixelComps());
@@ -325,6 +335,7 @@ private:
 
         CollectedImage info;
         info.page_number = current_page_;
+        info.image_type = SPLASH_IMAGE_TYPE_STENCIL;
         if (width > 0) {
             info.width = static_cast<uint32_t>(width);
         }
@@ -631,6 +642,7 @@ int splash_renderer_collect_images(splash_renderer_t *renderer,
         buffer[i].bits_per_component = collected[i].bits_per_component;
         buffer[i].xref_object = collected[i].xref_object;
         buffer[i].xref_generation = collected[i].xref_generation;
+        buffer[i].image_type = collected[i].image_type;
         buffer[i].colorspace = collected[i].colorspace;
         buffer[i].page_number = collected[i].page_number;
     }
