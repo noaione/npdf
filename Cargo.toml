@@ -13,3 +13,11 @@ license = "GPL-3.0-or-later"
 repository = "https://github.com/noaione/npdf"
 homepage = "https://github.com/noaione/npdf"
 rust-version = "1.88.0"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+
+[profile.dev]
+debug = "full"
