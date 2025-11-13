@@ -128,7 +128,10 @@ fn compile_bridge(manifest_dir: &Path, poppler_src: &Path, dst: &Path) {
         .include(poppler_src.join("goo"))
         .include(poppler_src.join("splash"))
         .include(poppler_src.join("fofi"))
+        .define("WIN32_LEAN_AND_MEAN", None)
+        .define("NOMINMAX", None)
         .flag_if_supported("-std=c++20")
+        .flag_if_supported("/std:c++20")
         .flag_if_supported("-Wno-unused-parameter")
         .flag_if_supported("-Wno-unused-variable");
 
