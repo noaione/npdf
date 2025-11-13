@@ -1,0 +1,16 @@
+[package]
+name = "npdf"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+keywords = ["cli", "pdf", "poppler", "export"]
+description = "A simple PDF-to-PNG exporter tool built with on-top of Poppler."
+readme = "./README.md"
+
+[dependencies]
+tiny-poppler = { path = "../tiny-poppler" }
+clap = { version = "4.5.4", features = ["derive"] }

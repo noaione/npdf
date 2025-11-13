@@ -1,0 +1,531 @@
+#include "splash_bridge.h"
+
+#include <cmath>
+#include <cstdlib>
+#include <cstring>
+#include <memory>
+#include <new>
+#include <optional>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "ErrorCodes.h"
+#include "GfxState.h"
+#include "OutputDev.h"
+#include "Stream.h"
+#include "GlobalParams.h"
+#include "PDFDoc.h"
+#include "SplashOutputDev.h"
+#include "goo/GooString.h"
+#include "splash/SplashBitmap.h"
+#include "splash/SplashTypes.h"
+
+struct splash_renderer {
+    std::unique_ptr<PDFDoc> doc;
+};
+
+namespace {
+constexpr int kBitmapRowPad = 0;
+constexpr bool kReverseVideo = false;
+constexpr bool kTopDownBitmap = true;
+
+std::optional<SplashColorMode> to_splash_color_mode(splash_color_mode_t mode)
+{
+    switch (mode) {
+    case SPLASH_COLOR_MODE_MONO1:
+        return splashModeMono1;
+    case SPLASH_COLOR_MODE_MONO8:
+        return splashModeMono8;
+    case SPLASH_COLOR_MODE_RGB8:
+        return splashModeRGB8;
+    case SPLASH_COLOR_MODE_BGR8:
+        return splashModeBGR8;
+    case SPLASH_COLOR_MODE_XBGR8:
+        return splashModeXBGR8;
+    case SPLASH_COLOR_MODE_CMYK8:
+        return splashModeCMYK8;
+    case SPLASH_COLOR_MODE_DEVICEN8:
+        return splashModeDeviceN8;
+    default:
+        return std::nullopt;
+    }
+}
+
+void ensure_global_params()
+{
+    if (!globalParams) {
+        globalParams = std::make_unique<GlobalParams>();
+        globalParams->setErrQuiet(true);
+    }
+}
+
+void set_error(char **error_out, const std::string &message)
+{
+    if (!error_out) {
+        return;
+    }
+    *error_out = nullptr;
+    const size_t len = message.size();
+    char *buffer = static_cast<char *>(std::malloc(len + 1));
+    if (!buffer) {
+        return;
+    }
+    std::memcpy(buffer, message.c_str(), len);
+    buffer[len] = '\0';
+    *error_out = buffer;
+}
+
+std::string error_code_to_string(int error_code)
+{
+    switch (error_code) {
+    case errNone:
+        return "ok";
+    case errOpenFile:
+        return "failed to open PDF";
+    case errBadCatalog:
+        return "invalid PDF catalog";
+    case errDamaged:
+        return "PDF is damaged and could not be repaired";
+    case errEncrypted:
+        return "PDF is encrypted and no password was provided";
+    case errHighlightFile:
+        return "invalid highlight file";
+    case errBadPrinter:
+        return "invalid printer configuration";
+    case errPrinting:
+        return "error while printing";
+    case errPermission:
+        return "operation not permitted by PDF";
+    case errBadPageNum:
+        return "invalid page number";
+    case errFileIO:
+        return "file I/O failure";
+    case errFileChangedSinceOpen:
+        return "PDF changed since open";
+    default:
+        return "unknown poppler error";
+    }
+}
+
+splash_image_colorspace_t to_image_colorspace(const GfxColorSpace *color_space)
+{
+    if (!color_space) {
+        return SPLASH_IMAGE_COLORSPACE_UNKNOWN;
+    }
+
+    switch (color_space->getMode()) {
+    case GfxColorSpaceMode::csDeviceGray:
+    case GfxColorSpaceMode::csCalGray:
+        return SPLASH_IMAGE_COLORSPACE_DEVICE_GRAY;
+    case GfxColorSpaceMode::csDeviceRGB:
+    case GfxColorSpaceMode::csCalRGB:
+        return SPLASH_IMAGE_COLORSPACE_DEVICE_RGB;
+    case GfxColorSpaceMode::csDeviceCMYK:
+        return SPLASH_IMAGE_COLORSPACE_DEVICE_CMYK;
+    case GfxColorSpaceMode::csLab:
+        return SPLASH_IMAGE_COLORSPACE_LAB;
+    case GfxColorSpaceMode::csICCBased:
+        return SPLASH_IMAGE_COLORSPACE_ICC;
+    case GfxColorSpaceMode::csIndexed:
+        return SPLASH_IMAGE_COLORSPACE_INDEXED;
+    case GfxColorSpaceMode::csPattern:
+        return SPLASH_IMAGE_COLORSPACE_PATTERN;
+    case GfxColorSpaceMode::csSeparation:
+        return SPLASH_IMAGE_COLORSPACE_SEPARATION;
+    case GfxColorSpaceMode::csDeviceN:
+        return SPLASH_IMAGE_COLORSPACE_DEVICEN;
+    default:
+        return SPLASH_IMAGE_COLORSPACE_OTHER;
+    }
+}
+
+bool copy_bitmap_to_image(SplashBitmap *bitmap, SplashColorMode mode, splash_image_t *out_image, char **error_out)
+{
+    if (!bitmap || !out_image) {
+        set_error(error_out, "internal splash renderer error");
+        return false;
+    }
+
+    const int width = bitmap->getWidth();
+    const int height = bitmap->getHeight();
+    const int row_size = bitmap->getRowSize();
+
+    if (width <= 0 || height <= 0 || row_size <= 0) {
+        set_error(error_out, "received empty bitmap from renderer");
+        return false;
+    }
+
+    const size_t stride = static_cast<size_t>(row_size);
+    const size_t total_size = stride * static_cast<size_t>(height);
+
+    auto *buffer = static_cast<uint8_t *>(std::malloc(total_size));
+    if (!buffer) {
+        set_error(error_out, "unable to allocate buffer for rendered page");
+        return false;
+    }
+
+    std::memcpy(buffer, bitmap->getDataPtr(), total_size);
+
+    const SplashColorMode bitmap_mode = bitmap->getMode();
+    if (bitmap_mode != mode) {
+        std::free(buffer);
+        set_error(error_out, "renderer returned bitmap with unexpected color mode");
+        return false;
+    }
+    const int components = splashColorModeNComps[static_cast<int>(bitmap_mode)];
+    const uint32_t bits_per_component = bitmap_mode == splashModeMono1 ? 1u : 8u;
+
+    out_image->data = buffer;
+    out_image->len = total_size;
+    out_image->width = static_cast<uint32_t>(width);
+    out_image->height = static_cast<uint32_t>(height);
+    out_image->stride = static_cast<uint32_t>(stride);
+    out_image->components = static_cast<uint32_t>(components);
+    out_image->color_mode = static_cast<splash_color_mode_t>(bitmap_mode);
+    out_image->bits_per_component = bits_per_component;
+
+    return true;
+}
+
+struct CollectedImage {
+    uint32_t width = 0;
+    uint32_t height = 0;
+    uint32_t components = 0;
+    uint32_t bits_per_component = 0;
+    int32_t xref_object = -1;
+    int32_t xref_generation = 0;
+    splash_image_colorspace_t colorspace = SPLASH_IMAGE_COLORSPACE_UNKNOWN;
+};
+
+class ImageCollector final : public OutputDev
+{
+public:
+    explicit ImageCollector(std::vector<CollectedImage> *images)
+        : images_(images)
+    {
+    }
+
+    bool upsideDown() override { return false; }
+    bool useDrawChar() override { return false; }
+    bool interpretType3Chars() override { return false; }
+
+    void drawImage(GfxState *state, Object *ref, Stream *str, int width, int height, GfxImageColorMap *color_map, bool interpolate, const int *maskColors, bool inlineImg) override
+    {
+        (void)state;
+        (void)str;
+        (void)maskColors;
+        (void)inlineImg;
+        (void)interpolate;
+        add_image(width, height, color_map, ref);
+    }
+
+    void drawImageMask(GfxState *state, Object *ref, Stream *str, int width, int height, bool invert, bool interpolate, bool inlineImg) override
+    {
+        (void)state;
+        (void)str;
+        (void)invert;
+        (void)interpolate;
+        (void)inlineImg;
+        add_mask(width, height, ref);
+    }
+
+    void drawMaskedImage(GfxState *state,
+                         Object *ref,
+                         Stream *str,
+                         int width,
+                         int height,
+                         GfxImageColorMap *color_map,
+                         bool interpolate,
+                         Stream *maskStr,
+                         int maskWidth,
+                         int maskHeight,
+                         bool maskInvert,
+                         bool maskInterpolate) override
+    {
+        (void)state;
+        (void)str;
+        (void)maskStr;
+        (void)maskWidth;
+        (void)maskHeight;
+        (void)maskInvert;
+        (void)maskInterpolate;
+        (void)interpolate;
+        add_image(width, height, color_map, ref);
+    }
+
+    void drawSoftMaskedImage(GfxState *state,
+                             Object *ref,
+                             Stream *str,
+                             int width,
+                             int height,
+                             GfxImageColorMap *color_map,
+                             bool interpolate,
+                             Stream *maskStr,
+                             int maskWidth,
+                             int maskHeight,
+                             GfxImageColorMap *maskColorMap,
+                             bool maskInterpolate) override
+    {
+        (void)state;
+        (void)str;
+        (void)maskStr;
+        (void)maskWidth;
+        (void)maskHeight;
+        (void)maskColorMap;
+        (void)maskInterpolate;
+        (void)interpolate;
+        add_image(width, height, color_map, ref);
+    }
+
+private:
+    void add_image(int width, int height, GfxImageColorMap *color_map, Object *ref)
+    {
+        if (!images_) {
+            return;
+        }
+
+        CollectedImage info;
+        if (width > 0) {
+            info.width = static_cast<uint32_t>(width);
+        }
+        if (height > 0) {
+            info.height = static_cast<uint32_t>(height);
+        }
+
+        if (color_map) {
+            info.components = static_cast<uint32_t>(color_map->getNumPixelComps());
+            info.bits_per_component = static_cast<uint32_t>(color_map->getBits());
+            info.colorspace = to_image_colorspace(color_map->getColorSpace());
+        } else {
+            info.components = 1;
+            info.bits_per_component = 1;
+            info.colorspace = SPLASH_IMAGE_COLORSPACE_DEVICE_GRAY;
+        }
+
+        if (ref && ref->isRef()) {
+            const auto reference = ref->getRef();
+            info.xref_object = static_cast<int32_t>(reference.num);
+            info.xref_generation = static_cast<int32_t>(reference.gen);
+        }
+
+        images_->push_back(info);
+    }
+
+    void add_mask(int width, int height, Object *ref)
+    {
+        if (!images_) {
+            return;
+        }
+
+        CollectedImage info;
+        if (width > 0) {
+            info.width = static_cast<uint32_t>(width);
+        }
+        if (height > 0) {
+            info.height = static_cast<uint32_t>(height);
+        }
+        info.components = 1;
+        info.bits_per_component = 1;
+        info.colorspace = SPLASH_IMAGE_COLORSPACE_DEVICE_GRAY;
+        if (ref && ref->isRef()) {
+            const auto reference = ref->getRef();
+            info.xref_object = static_cast<int32_t>(reference.num);
+            info.xref_generation = static_cast<int32_t>(reference.gen);
+        }
+        images_->push_back(info);
+    }
+
+    std::vector<CollectedImage> *images_ = nullptr;
+};
+
+} // namespace
+
+int splash_renderer_create(const char *path, splash_renderer_t **out_renderer, char **error_out)
+{
+    if (!path || !out_renderer) {
+        set_error(error_out, "invalid renderer arguments");
+        return errInternal;
+    }
+
+    ensure_global_params();
+
+    auto goo_path = std::make_unique<GooString>(path);
+    std::unique_ptr<PDFDoc> doc = std::make_unique<PDFDoc>(std::move(goo_path));
+
+    if (!doc->isOk()) {
+        const int error_code = doc->getErrorCode();
+        set_error(error_out, error_code_to_string(error_code));
+        return error_code == 0 ? errInternal : error_code;
+    }
+
+    auto renderer = std::make_unique<splash_renderer>();
+    renderer->doc = std::move(doc);
+
+    *out_renderer = renderer.release();
+    return errNone;
+}
+
+void splash_renderer_destroy(splash_renderer_t *renderer)
+{
+    if (!renderer) {
+        return;
+    }
+    delete renderer;
+}
+
+int splash_renderer_page_count(splash_renderer_t *renderer, uint32_t *out_count, char **error_out)
+{
+    if (!renderer || !out_count) {
+        set_error(error_out, "invalid renderer arguments");
+        return errInternal;
+    }
+
+    const int count = renderer->doc->getNumPages();
+    if (count < 0) {
+        set_error(error_out, "failed to query page count");
+        return errInternal;
+    }
+
+    *out_count = static_cast<uint32_t>(count);
+    return errNone;
+}
+
+int splash_renderer_render_page(splash_renderer_t *renderer,
+                                uint32_t page_index,
+                                double dpi,
+                                splash_color_mode_t color_mode,
+                                splash_image_t *out_image,
+                                char **error_out)
+{
+    if (!renderer || !out_image) {
+        set_error(error_out, "invalid renderer arguments");
+        return errInternal;
+    }
+
+    const int page_number = static_cast<int>(page_index) + 1;
+    const int total_pages = renderer->doc->getNumPages();
+    if (page_number < 1 || page_number > total_pages) {
+        set_error(error_out, "page index out of range");
+        return errBadPageNum;
+    }
+
+    auto maybe_mode = to_splash_color_mode(color_mode);
+    if (!maybe_mode) {
+        set_error(error_out, "unsupported Splash color mode requested");
+        return errInternal;
+    }
+
+    const SplashColorMode requested_mode = *maybe_mode;
+
+    SplashColor paper_color {};
+    paper_color[0] = 255;
+    paper_color[1] = 255;
+    paper_color[2] = 255;
+    paper_color[3] = 255;
+
+    SplashOutputDev output_dev(requested_mode, kBitmapRowPad, kReverseVideo, paper_color, kTopDownBitmap);
+    output_dev.setVectorAntialias(true);
+    output_dev.setFontAntialias(true);
+    output_dev.setEnableFreeType(true);
+    output_dev.setFreeTypeHinting(true, true);
+    output_dev.startDoc(renderer->doc.get());
+
+    const double clamped_dpi = dpi > 0.0 ? dpi : 72.0;
+
+    renderer->doc->displayPage(&output_dev, page_number, clamped_dpi, clamped_dpi, 0, true, true, false);
+
+    std::unique_ptr<SplashBitmap> bitmap(output_dev.takeBitmap());
+    if (!bitmap) {
+        set_error(error_out, "renderer produced no bitmap");
+        return errInternal;
+    }
+
+    if (!copy_bitmap_to_image(bitmap.get(), requested_mode, out_image, error_out)) {
+        return errInternal;
+    }
+
+    return errNone;
+}
+
+int splash_renderer_collect_images(splash_renderer_t *renderer,
+                                   splash_image_info_t **out_images,
+                                   size_t *out_len,
+                                   char **error_out)
+{
+    if (!renderer || !out_images || !out_len) {
+        set_error(error_out, "invalid renderer arguments");
+        return errInternal;
+    }
+
+    *out_images = nullptr;
+    *out_len = 0;
+
+    const int total_pages = renderer->doc->getNumPages();
+    if (total_pages <= 0) {
+        return errNone;
+    }
+
+    std::vector<CollectedImage> collected;
+    collected.reserve(static_cast<size_t>(total_pages));
+
+    ImageCollector collector(&collected);
+
+    for (int page_number = 1; page_number <= total_pages; ++page_number) {
+        renderer->doc->displayPage(&collector, page_number, 72.0, 72.0, 0, true, true, false);
+    }
+
+    if (collected.empty()) {
+        return errNone;
+    }
+
+    splash_image_info_t *buffer = static_cast<splash_image_info_t *>(std::calloc(collected.size(), sizeof(splash_image_info_t)));
+    if (!buffer) {
+        set_error(error_out, "unable to allocate image metadata buffer");
+        return errInternal;
+    }
+
+    for (size_t i = 0; i < collected.size(); ++i) {
+        buffer[i].width = collected[i].width;
+        buffer[i].height = collected[i].height;
+        buffer[i].components = collected[i].components;
+        buffer[i].bits_per_component = collected[i].bits_per_component;
+        buffer[i].xref_object = collected[i].xref_object;
+        buffer[i].xref_generation = collected[i].xref_generation;
+        buffer[i].colorspace = collected[i].colorspace;
+    }
+
+    *out_images = buffer;
+    *out_len = collected.size();
+    return errNone;
+}
+
+void splash_renderer_free_image(splash_image_t *image)
+{
+    if (!image) {
+        return;
+    }
+
+    if (image->data) {
+        std::free(image->data);
+    }
+
+    image->data = nullptr;
+    image->len = 0;
+    image->width = 0;
+    image->height = 0;
+    image->stride = 0;
+    image->components = 0;
+    image->color_mode = SPLASH_COLOR_MODE_RGB8;
+    image->bits_per_component = 0;
+}
+
+void splash_renderer_free_cstr(char *message)
+{
+    std::free(message);
+}
+
+void splash_renderer_free_image_info(splash_image_info_t *images)
+{
+    std::free(images);
+}
