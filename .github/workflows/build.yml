@@ -1,0 +1,88 @@
+name: build
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+env:
+  POPPLER_VERSION: "25.11.0"
+
+jobs:
+  build:
+    name: build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    env:
+      CARGO_TERM_COLOR: always
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Change poppler version
+        run: |
+          pushd third_party/poppler
+          git checkout poppler-${{ env.POPPLER_VERSION }}
+          popd
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system dependencies (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            ninja-build \
+            pkg-config \
+            libfreetype6-dev \
+            libfontconfig1-dev \
+            libjpeg-dev \
+            libpng-dev \
+            libtiff-dev \
+            libopenjp2-7-dev
+
+      - name: Install system dependencies (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          brew update
+          brew install \
+            cmake \
+            ninja \
+            pkg-config \
+            freetype \
+            fontconfig \
+            jpeg-turbo \
+            libpng \
+            libtiff \
+            openjpeg
+
+      - name: Install system dependencies (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          choco install ninja cmake git pkgconfiglite -y --no-progress
+          if (-not (Test-Path "$env:USERPROFILE\\vcpkg")) {
+            git clone https://github.com/microsoft/vcpkg "$env:USERPROFILE\\vcpkg"
+          }
+          & "$env:USERPROFILE\\vcpkg\\bootstrap-vcpkg.bat"
+          & "$env:USERPROFILE\\vcpkg\\vcpkg.exe" install freetype fontconfig libpng libtiff openjpeg libjpeg-turbo --clean-after-build
+          $root = Resolve-Path "$env:USERPROFILE\\vcpkg\\installed\\x64-windows"
+          Add-Content $env:GITHUB_ENV "FREETYPE_DIR=$root"
+          Add-Content $env:GITHUB_ENV "FONTCONFIG_DIR=$root"
+          Add-Content $env:GITHUB_ENV "PNG_DIR=$root"
+          Add-Content $env:GITHUB_ENV "TIFF_DIR=$root"
+          Add-Content $env:GITHUB_ENV "OPENJPEG_DIR=$root"
+          Add-Content $env:GITHUB_ENV "JPEG_DIR=$root"
+          Add-Content $env:GITHUB_PATH "$root\\bin"
+
+      - name: Build
+        run: cargo build --workspace --all-targets
