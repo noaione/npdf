@@ -180,7 +180,13 @@ fn image_to_png(image: &ffi::Image) -> Result<Vec<u8>, RenderError> {
     match image.color_mode {
         ColorMode::Mono8 => {
             let pixels = collect_rows(image, row_bytes)?;
-            encode_png(&pixels, width, height, ColorType::Grayscale, BitDepth::Eight)
+            encode_png(
+                &pixels,
+                width,
+                height,
+                ColorType::Grayscale,
+                BitDepth::Eight,
+            )
         }
         ColorMode::Rgb8 => {
             let pixels = collect_rows(image, row_bytes)?;
@@ -232,8 +238,12 @@ fn encode_png(
     colorspace: ColorType,
     depth: BitDepth,
 ) -> Result<Vec<u8>, RenderError> {
-    let width_u32: u32 = width.try_into().map_err(|_| RenderError::InvalidU32Size(width))?;
-    let height_u32: u32 = height.try_into().map_err(|_| RenderError::InvalidU32Size(width))?;
+    let width_u32: u32 = width
+        .try_into()
+        .map_err(|_| RenderError::InvalidU32Size(width))?;
+    let height_u32: u32 = height
+        .try_into()
+        .map_err(|_| RenderError::InvalidU32Size(width))?;
 
     let mut buffer = Vec::new();
     {

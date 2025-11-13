@@ -20,7 +20,7 @@ fn execute(cli: Cli) -> Result<(), String> {
 }
 
 #[derive(Parser)]
-#[command(name = "npdf", version, about = "PDF helper built on Poppler")] 
+#[command(name = "npdf", version, about = "PDF helper built on Poppler")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,

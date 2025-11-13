@@ -53,8 +53,14 @@ fn configure_and_build_poppler(poppler_src: &Path) -> PathBuf {
 
     // Check build profile
     let build_profile = match std::env::var("PROFILE") {
-        Ok(str) => if str == "release" { "Release" } else { "Debug" },
-        Err(_) => panic!("Unknown build profile")
+        Ok(str) => {
+            if str == "release" {
+                "Release"
+            } else {
+                "Debug"
+            }
+        }
+        Err(_) => panic!("Unknown build profile"),
     };
 
     println!("Building with profile: {build_profile}");
