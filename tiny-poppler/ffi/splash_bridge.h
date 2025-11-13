@@ -52,6 +52,7 @@ typedef struct splash_image_info {
     uint32_t bits_per_component;
     int32_t xref_object;
     int32_t xref_generation;
+    uint32_t page_number;
     splash_image_colorspace_t colorspace;
 } splash_image_info_t;
 
@@ -70,6 +71,8 @@ int splash_renderer_render_page(splash_renderer_t *renderer,
 int splash_renderer_collect_images(splash_renderer_t *renderer,
                                    splash_image_info_t **out_images,
                                    size_t *out_len,
+                                   uint32_t page_start,
+                                   uint32_t page_end,
                                    char **error_out);
 
 void splash_renderer_free_image(splash_image_t *image);

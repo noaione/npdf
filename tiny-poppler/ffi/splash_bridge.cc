@@ -196,6 +196,7 @@ struct CollectedImage {
     uint32_t bits_per_component = 0;
     int32_t xref_object = -1;
     int32_t xref_generation = 0;
+    uint32_t page_number = 0;
     splash_image_colorspace_t colorspace = SPLASH_IMAGE_COLORSPACE_UNKNOWN;
 };
 
@@ -210,6 +211,8 @@ public:
     bool upsideDown() override { return false; }
     bool useDrawChar() override { return false; }
     bool interpretType3Chars() override { return false; }
+
+    void set_current_page(uint32_t page_number) { current_page_ = page_number; }
 
     void drawImage(GfxState *state, Object *ref, Stream *str, int width, int height, GfxImageColorMap *color_map, bool interpolate, const int *maskColors, bool inlineImg) override
     {
@@ -287,6 +290,7 @@ private:
         }
 
         CollectedImage info;
+        info.page_number = current_page_;
         if (width > 0) {
             info.width = static_cast<uint32_t>(width);
         }
@@ -320,6 +324,7 @@ private:
         }
 
         CollectedImage info;
+        info.page_number = current_page_;
         if (width > 0) {
             info.width = static_cast<uint32_t>(width);
         }
@@ -338,6 +343,7 @@ private:
     }
 
     std::vector<CollectedImage> *images_ = nullptr;
+    uint32_t current_page_ = 0;
 };
 
 } // namespace
@@ -452,6 +458,8 @@ int splash_renderer_render_page(splash_renderer_t *renderer,
 int splash_renderer_collect_images(splash_renderer_t *renderer,
                                    splash_image_info_t **out_images,
                                    size_t *out_len,
+                                   uint32_t page_start,
+                                   uint32_t page_end,
                                    char **error_out)
 {
     if (!renderer || !out_images || !out_len) {
@@ -467,13 +475,25 @@ int splash_renderer_collect_images(splash_renderer_t *renderer,
         return errNone;
     }
 
+    uint32_t start_page = page_start > 0 ? page_start : 1;
+    uint32_t end_page = page_end > 0 ? page_end : static_cast<uint32_t>(total_pages);
+    if (start_page < 1 || start_page > static_cast<uint32_t>(total_pages)) {
+        set_error(error_out, "start page out of range");
+        return errBadPageNum;
+    }
+    if (end_page < start_page || end_page > static_cast<uint32_t>(total_pages)) {
+        set_error(error_out, "end page out of range");
+        return errBadPageNum;
+    }
+
     std::vector<CollectedImage> collected;
     collected.reserve(static_cast<size_t>(total_pages));
 
     ImageCollector collector(&collected);
 
-    for (int page_number = 1; page_number <= total_pages; ++page_number) {
-        renderer->doc->displayPage(&collector, page_number, 72.0, 72.0, 0, true, true, false);
+    for (uint32_t page_number = start_page; page_number <= end_page; ++page_number) {
+        collector.set_current_page(page_number);
+        renderer->doc->displayPage(&collector, static_cast<int>(page_number), 72.0, 72.0, 0, true, true, false);
     }
 
     if (collected.empty()) {
@@ -494,6 +514,7 @@ int splash_renderer_collect_images(splash_renderer_t *renderer,
         buffer[i].xref_object = collected[i].xref_object;
         buffer[i].xref_generation = collected[i].xref_generation;
         buffer[i].colorspace = collected[i].colorspace;
+        buffer[i].page_number = collected[i].page_number;
     }
 
     *out_images = buffer;

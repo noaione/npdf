@@ -61,6 +61,7 @@ struct SplashImageInfo {
     bits_per_component: u32,
     xref_object: i32,
     xref_generation: i32,
+    page_number: u32,
     colorspace: ImageColorSpace,
 }
 
@@ -90,6 +91,8 @@ unsafe extern "C" {
         renderer: *mut SplashRenderer,
         out_images: *mut *mut SplashImageInfo,
         out_len: *mut usize,
+        page_start: c_uint,
+        page_end: c_uint,
         error_out: *mut *mut c_char,
     ) -> i32;
     fn splash_renderer_free_image_info(images: *mut SplashImageInfo);
@@ -154,12 +157,23 @@ impl Renderer {
         Ok(count)
     }
 
-    pub fn collect_images(&mut self) -> Result<Vec<ImageInfo>, String> {
+    pub fn collect_images(&mut self, range: Option<(u32, u32)>) -> Result<Vec<ImageInfo>, String> {
         let mut infos_ptr: *mut SplashImageInfo = ptr::null_mut();
         let mut len: usize = 0;
         let mut error = ptr::null_mut();
+        let (start, end) = range.unwrap_or((0, 0));
+        if start != 0 && end != 0 && end < start {
+            return Err("invalid page range".into());
+        }
         let status = unsafe {
-            splash_renderer_collect_images(self.raw, &mut infos_ptr, &mut len, &mut error)
+            splash_renderer_collect_images(
+                self.raw,
+                &mut infos_ptr,
+                &mut len,
+                start,
+                end,
+                &mut error,
+            )
         };
         if status != 0 {
             return Err(take_error(error));
@@ -257,6 +271,7 @@ pub struct ImageInfo {
     pub components: u32,
     pub bits_per_component: u32,
     pub colorspace: ImageColorSpace,
+    pub page: u32,
     pub xref: Option<(i32, i32)>,
 }
 
@@ -273,6 +288,7 @@ impl From<SplashImageInfo> for ImageInfo {
             components: value.components,
             bits_per_component: value.bits_per_component,
             colorspace: value.colorspace,
+            page: value.page_number,
             xref,
         }
     }

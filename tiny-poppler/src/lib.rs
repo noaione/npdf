@@ -107,7 +107,20 @@ impl Document {
 
     /// Retrieve metadata for all images embedded in the document.
     pub fn images(&mut self) -> Result<Vec<ImageInfo>, RenderError> {
-        self.renderer.collect_images().map_err(RenderError::Poppler)
+        self.renderer
+            .collect_images(None)
+            .map_err(RenderError::Poppler)
+    }
+
+    /// Retrieve metadata for images within the provided 1-based (inclusive) page range.
+    pub fn images_in_range(
+        &mut self,
+        start_page: u32,
+        end_page: u32,
+    ) -> Result<Vec<ImageInfo>, RenderError> {
+        self.renderer
+            .collect_images(Some((start_page, end_page)))
+            .map_err(RenderError::Poppler)
     }
 }
 
@@ -141,6 +154,15 @@ pub fn get_images(document: &mut Document) -> Result<Vec<ImageInfo>, RenderError
     document.images()
 }
 
+/// Convenience helper that returns metadata for images within the given page range.
+pub fn get_images_in_range(
+    document: &mut Document,
+    start_page: u32,
+    end_page: u32,
+) -> Result<Vec<ImageInfo>, RenderError> {
+    document.images_in_range(start_page, end_page)
+}
+
 /// Convenience helper that opens the PDF, collects image metadata, and then drops
 /// the renderer. This is useful for single-shot queries.
 pub fn get_images_single(pdf_path: &Path) -> Result<Vec<ImageInfo>, RenderError> {
@@ -152,22 +174,26 @@ fn image_to_png(image: &ffi::Image) -> Result<Vec<u8>, RenderError> {
     if image.width == 0 || image.height == 0 {
         return Err(RenderError::UnsupportedLayout);
     }
-    if image.bits_per_component != 8 {
-        return Err(RenderError::UnsupportedLayout);
-    }
 
     let width = image.width as usize;
     let height = image.height as usize;
     let components = image.components as usize;
-    if components == 0 {
+    let bits_per_component = image.bits_per_component as usize;
+
+    if components == 0 || bits_per_component == 0 {
+        return Err(RenderError::UnsupportedLayout);
+    }
+    if bits_per_component != 1 && bits_per_component != 8 {
         return Err(RenderError::UnsupportedLayout);
     }
 
-    let row_bytes = width
+    let row_bits = width
         .checked_mul(components)
+        .and_then(|value| value.checked_mul(bits_per_component))
         .ok_or(RenderError::UnsupportedLayout)?;
+    let row_bytes = ((row_bits + 7) / 8).max(1);
     let stride = image.stride as usize;
-    if row_bytes == 0 || stride < row_bytes {
+    if stride < row_bytes {
         return Err(RenderError::UnsupportedLayout);
     }
     let required = stride
@@ -178,6 +204,23 @@ fn image_to_png(image: &ffi::Image) -> Result<Vec<u8>, RenderError> {
     }
 
     match image.color_mode {
+        ColorMode::Mono1 => {
+            if bits_per_component != 1 {
+                return Err(RenderError::UnsupportedLayout);
+            }
+            let pixels = collect_rows(image, row_bytes)?;
+            // Poppler represents mono1 scans with 1 bit per pixel; encode using a
+            // two-entry palette (black, white) to preserve the bit-packed data.
+            const PALETTE: [u8; 6] = [0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF];
+            encode_png(
+                &pixels,
+                width,
+                height,
+                ColorType::Indexed,
+                BitDepth::One,
+                Some(&PALETTE),
+            )
+        }
         ColorMode::Mono8 => {
             let pixels = collect_rows(image, row_bytes)?;
             encode_png(
@@ -186,18 +229,33 @@ fn image_to_png(image: &ffi::Image) -> Result<Vec<u8>, RenderError> {
                 height,
                 ColorType::Grayscale,
                 BitDepth::Eight,
+                None,
             )
         }
         ColorMode::Rgb8 => {
             let pixels = collect_rows(image, row_bytes)?;
-            encode_png(&pixels, width, height, ColorType::Rgb, BitDepth::Eight)
+            encode_png(
+                &pixels,
+                width,
+                height,
+                ColorType::Rgb,
+                BitDepth::Eight,
+                None,
+            )
         }
         ColorMode::Bgr8 => {
             let mut pixels = collect_rows(image, row_bytes)?;
             for chunk in pixels.chunks_exact_mut(3) {
                 chunk.swap(0, 2);
             }
-            encode_png(&pixels, width, height, ColorType::Rgb, BitDepth::Eight)
+            encode_png(
+                &pixels,
+                width,
+                height,
+                ColorType::Rgb,
+                BitDepth::Eight,
+                None,
+            )
         }
         ColorMode::Xbgr8 => {
             let raw = collect_rows(image, row_bytes)?;
@@ -208,9 +266,9 @@ fn image_to_png(image: &ffi::Image) -> Result<Vec<u8>, RenderError> {
                 rgba.push(chunk[1]);
                 rgba.push(255);
             }
-            encode_png(&rgba, width, height, ColorType::Rgba, BitDepth::Eight)
+            encode_png(&rgba, width, height, ColorType::Rgba, BitDepth::Eight, None)
         }
-        ColorMode::Mono1 | ColorMode::Cmyk8 | ColorMode::DeviceN8 => {
+        ColorMode::Cmyk8 | ColorMode::DeviceN8 => {
             Err(RenderError::UnsupportedColorMode(image.color_mode))
         }
     }
@@ -237,13 +295,14 @@ fn encode_png(
     height: usize,
     colorspace: ColorType,
     depth: BitDepth,
+    palette: Option<&[u8]>,
 ) -> Result<Vec<u8>, RenderError> {
     let width_u32: u32 = width
         .try_into()
         .map_err(|_| RenderError::InvalidU32Size(width))?;
     let height_u32: u32 = height
         .try_into()
-        .map_err(|_| RenderError::InvalidU32Size(width))?;
+        .map_err(|_| RenderError::InvalidU32Size(height))?;
 
     let mut buffer = Vec::new();
     {
@@ -251,6 +310,9 @@ fn encode_png(
         encoder.set_compression(Compression::Balanced);
         encoder.set_color(colorspace);
         encoder.set_depth(depth);
+        if let Some(palette_bytes) = palette {
+            encoder.set_palette(palette_bytes.to_vec());
+        }
         let mut writer = encoder.write_header().unwrap();
         writer.write_image_data(pixels).unwrap();
     }
