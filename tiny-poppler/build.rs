@@ -50,8 +50,16 @@ fn main() {
 
 fn configure_and_build_poppler(poppler_src: &Path) -> PathBuf {
     let mut cfg = cmake::Config::new(poppler_src);
-    cfg.profile("Release")
-        .define("CMAKE_POSITION_INDEPENDENT_CODE", "ON")
+
+    // Check build profile
+    let build_profile = match std::env::var("PROFILE") {
+        Ok(str) => if str == "release" { "Release" } else { "Debug" },
+        Err(_) => panic!("Unknown build profile")
+    };
+
+    println!("Building with profile: {build_profile}");
+
+    cfg.define("CMAKE_POSITION_INDEPENDENT_CODE", "ON")
         .define("BUILD_SHARED_LIBS", "OFF")
         .define("ENABLE_UNSTABLE_API_ABI_HEADERS", "ON")
         .define("ENABLE_UTILS", "OFF")
@@ -107,8 +115,8 @@ fn compile_bridge(manifest_dir: &Path, poppler_src: &Path, dst: &Path) {
 fn emit_system_library_hints() {
     let libraries = [
         ("FREETYPE_DIR", "freetype"),
-    ("FONTCONFIG_DIR", "fontconfig"),
-    ("JPEG_DIR", "jpeg-turbo"),
+        ("FONTCONFIG_DIR", "fontconfig"),
+        ("JPEG_DIR", "jpeg-turbo"),
         ("PNG_DIR", "libpng"),
         ("TIFF_DIR", "libtiff"),
         ("OPENJPEG_DIR", "openjpeg"),

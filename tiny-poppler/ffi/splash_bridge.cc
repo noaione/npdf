@@ -26,9 +26,10 @@ struct splash_renderer {
 };
 
 namespace {
-constexpr int kBitmapRowPad = 0;
+constexpr int kBitmapRowPad = 4;
 constexpr bool kReverseVideo = false;
 constexpr bool kTopDownBitmap = true;
+constexpr SplashThinLineMode kThinLineMode = splashThinLineDefault;
 
 std::optional<SplashColorMode> to_splash_color_mode(splash_color_mode_t mode)
 {
@@ -424,7 +425,7 @@ int splash_renderer_render_page(splash_renderer_t *renderer,
     paper_color[2] = 255;
     paper_color[3] = 255;
 
-    SplashOutputDev output_dev(requested_mode, kBitmapRowPad, kReverseVideo, paper_color, kTopDownBitmap);
+    SplashOutputDev output_dev(requested_mode, kBitmapRowPad, kReverseVideo, paper_color, kTopDownBitmap, kThinLineMode);
     output_dev.setVectorAntialias(true);
     output_dev.setFontAntialias(true);
     output_dev.setEnableFreeType(true);

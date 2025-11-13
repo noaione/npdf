@@ -208,18 +208,24 @@ impl Renderer {
             unsafe { splash_renderer_free_image(&mut image) };
             return Err("renderer returned empty bitmap".into());
         }
+        let width = image.width;
+        let height = image.height;
+        let stride = image.stride;
+        let components = image.components;
+        let color_mode = image.color_mode;
+        let bits_per_component = image.bits_per_component;
         let pixels = unsafe { slice::from_raw_parts(image.data, image.len) };
         let mut data = Vec::with_capacity(image.len);
         data.extend_from_slice(pixels);
         unsafe { splash_renderer_free_image(&mut image) };
         Ok(Image {
             data,
-            width: image.width,
-            height: image.height,
-            stride: image.stride,
-            components: image.components,
-            color_mode: image.color_mode,
-            bits_per_component: image.bits_per_component,
+            width,
+            height,
+            stride,
+            components,
+            color_mode,
+            bits_per_component,
         })
     }
 }
@@ -233,7 +239,7 @@ impl Drop for Renderer {
 }
 
 /// Raw bitmap returned by Splash.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Image {
     pub data: Vec<u8>,
     pub width: u32,
