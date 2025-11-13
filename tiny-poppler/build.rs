@@ -59,7 +59,8 @@ fn configure_and_build_poppler(poppler_src: &Path) -> PathBuf {
 
     println!("Building with profile: {build_profile}");
 
-    cfg.define("CMAKE_POSITION_INDEPENDENT_CODE", "ON")
+    cfg.profile(build_profile)
+        .define("CMAKE_POSITION_INDEPENDENT_CODE", "ON")
         .define("BUILD_SHARED_LIBS", "OFF")
         .define("ENABLE_UNSTABLE_API_ABI_HEADERS", "ON")
         .define("ENABLE_UTILS", "OFF")
