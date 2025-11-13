@@ -101,6 +101,13 @@ jobs:
       #     Add-Content $env:GITHUB_ENV "CMAKE_PREFIX_PATH=$root"
       #     Add-Content $env:GITHUB_PATH "$root\\bin"
 
+      - name: Cache vcpkg dependencies
+        uses: actions/cache@v4
+        if: runner.os == 'Windows'
+        with:
+          path: C:\vcpkg\installed
+          key: vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
+
       - name: Install system dependencies (Windows)
         if: runner.os == 'Windows'
         run: |
@@ -113,13 +120,6 @@ jobs:
           echo "VCPKG_ROOT=C:\vcpkg" >> $env:GITHUB_ENV
           echo "VCPKG_DEFAULT_TRIPLET=x64-windows" >> $env:GITHUB_ENV
           echo "VCPKG_FEATURE_FLAGS=manifests" >> $env:GITHUB_ENV
-
-      - name: Cache vcpkg dependencies
-        uses: actions/cache@v4
-        if: runner.os == 'Windows'
-        with:
-          path: C:\vcpkg\installed
-          key: vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
 
       - name: Build
         run: cargo build --profile release --workspace --all-targets
