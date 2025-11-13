@@ -29,12 +29,6 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Change poppler version
-        run: |
-          pushd third_party/poppler
-          git checkout poppler-${{ env.POPPLER_VERSION }}
-          popd
-
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
