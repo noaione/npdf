@@ -188,7 +188,17 @@ fn emit_linker_flags(target: &str) {
         println!("cargo:rustc-link-lib=stdc++");
     }
 
-    emit_system_library_hints(target);
+    if is_windows {
+        vcpkg::find_package("libpng").expect("Failed to find libpng");
+        vcpkg::find_package("zlib").expect("Failed to find zlib");
+        vcpkg::find_package("libiconv").expect("Failed to find libiconv");
+        vcpkg::find_package("freetype").expect("Failed to find freetype");
+        vcpkg::find_package("tiff").expect("Failed to find tiff");
+        vcpkg::find_package("openjpeg").expect("Failed to find openjpeg");
+        vcpkg::find_package("libjpeg-turbo").expect("Failed to find libjpeg-turbo");
+    } else {
+        emit_system_library_hints(target);
+    }
 }
 
 fn emit_homebrew_search_hint(formula: &str) {
