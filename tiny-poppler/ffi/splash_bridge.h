@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <math.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -34,6 +35,14 @@ typedef enum splash_image_colorspace {
     SPLASH_IMAGE_COLORSPACE_OTHER = 10,
 } splash_image_colorspace_t;
 
+typedef enum splash_crop_mode {
+    SPLASH_CROP_MODE_MEDIA_BOX = 0,
+    SPLASH_CROP_MODE_CROP_BOX = 1,
+    SPLASH_CROP_MODE_BLEED_BOX = 2,
+    SPLASH_CROP_MODE_TRIM_BOX = 3,
+    SPLASH_CROP_MODE_ART_BOX = 4,
+} splash_crop_mode_t;
+
 typedef struct splash_image {
     uint8_t *data;
     size_t len;
@@ -56,6 +65,35 @@ typedef struct splash_image_info {
     splash_image_colorspace_t colorspace;
 } splash_image_info_t;
 
+typedef struct splash_crop_area {
+    int left;
+    int top;
+    int width;
+    int height;
+
+    splash_crop_area() {
+        left = top = width = height = 0;
+    }
+
+    void scale(double dpi)
+    {
+        double x = left * dpi / 72.0;
+        double y = top * dpi / 72.0;
+        double w = width * dpi / 72.0;
+        double h = height * dpi / 72.0;
+
+        left = (int)ceil(x);
+        top = (int)ceil(y);
+        width = (int)ceil(w);
+        height = (int)ceil(h);
+    }
+
+    bool is_valid() const
+    {
+        return width > 0 && height > 0;
+    }
+} splash_crop_area_t;
+
 int splash_renderer_create(const char *path, splash_renderer_t **out_renderer, char **error_out);
 void splash_renderer_destroy(splash_renderer_t *renderer);
 
@@ -65,6 +103,7 @@ int splash_renderer_render_page(splash_renderer_t *renderer,
                                 uint32_t page_index,
                                 double dpi,
                                 splash_color_mode_t color_mode,
+                                splash_crop_mode_t crop_mode,
                                 splash_image_t *out_image,
                                 char **error_out);
 

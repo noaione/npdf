@@ -1,8 +1,8 @@
 use clap::{Parser, Subcommand, ValueEnum};
-use std::fs;
 use std::path::PathBuf;
+use std::{collections::HashMap, fs};
 
-use tiny_poppler::{ColorMode, Document, ImageColorSpace, RenderOptions};
+use tiny_poppler::{ColorMode, Document, ImageColorSpace, ImageInfo, PdfCropMode, RenderOptions};
 
 fn main() {
     let cli = Cli::parse();
@@ -49,6 +49,8 @@ struct ExportArgs {
     /// Colorspace to request from Poppler. Auto keeps the library default.
     #[arg(long, value_enum, default_value_t = ColorChoice::Auto)]
     color: ColorChoice,
+    #[arg(long, value_enum, default_value_t = CropChoice::CropBox)]
+    crop: CropChoice,
     /// DPI used when rendering the page raster.
     #[arg(long, default_value_t = 150.0)]
     dpi: f64,
@@ -60,7 +62,7 @@ struct ExportArgs {
     last: Option<u32>,
 }
 
-#[derive(Clone, Debug, ValueEnum)]
+#[derive(Clone, Copy, Debug, PartialEq, ValueEnum)]
 enum ColorChoice {
     Auto,
     Mono1,
@@ -70,6 +72,15 @@ enum ColorChoice {
     Xbgr8,
     Cmyk8,
     Devicen8,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, ValueEnum)]
+enum CropChoice {
+    CropBox,
+    MediaBox,
+    ArtBox,
+    BleedBox,
+    TrimBox,
 }
 
 fn handle_list(args: ListArgs) -> Result<(), String> {
@@ -93,7 +104,8 @@ fn handle_list(args: ListArgs) -> Result<(), String> {
             None => "inline".into(),
         };
         println!(
-            "{position:>4}: {width}x{height}px, {components} comps, {bits} bpc, colorspace {colorspace}, xref {xref}",
+            "{position:>4}: page {page:>4}, {width}x{height}px, {components} comps, {bits} bpc, colorspace {colorspace}, xref {xref}",
+            page = info.page,
             width = info.width,
             height = info.height,
             components = info.components,
@@ -116,10 +128,15 @@ fn handle_export(args: ExportArgs) -> Result<(), String> {
         dpi,
         first,
         last,
+        crop,
     } = args;
 
+    println!("Loading PDF: {:#?}", &pdf);
     let mut document = Document::open(&pdf).map_err(|err| err.to_string())?;
     let page_count = document.page_count().map_err(|err| err.to_string())?;
+
+    println!("Preloading images count...");
+    let images_metadata = document.images().map_err(|err| err.to_string())?;
 
     let first_page = first.unwrap_or(1);
     if first_page == 0 || first_page > page_count {
@@ -140,11 +157,25 @@ fn handle_export(args: ExportArgs) -> Result<(), String> {
 
     let mut options = RenderOptions::default();
     options.dpi = dpi;
+    options.crop_mode = crop.to_crop_mode();
     if let Some(mode) = color.to_color_mode() {
         options.color_mode = mode;
     }
 
+    let mut images_mappings: HashMap<u32, Vec<ImageInfo>> = HashMap::new();
+    for item in images_metadata {
+        images_mappings.entry(item.page).or_default().push(item);
+    }
+
+    println!("Starting export...");
     for page in first_page..=last_page {
+        if color == ColorChoice::Auto {
+            let image_map = images_mappings.get(&page);
+            options.color_mode = match image_map {
+                Some(img_map) => determine_page_colorspace(img_map),
+                None => ColorMode::Mono8,
+            };
+        };
         let file_name = format!("page-{page:04}.png");
         let output_path = output.join(file_name);
         document
@@ -154,6 +185,16 @@ fn handle_export(args: ExportArgs) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+fn determine_page_colorspace(images: &[ImageInfo]) -> ColorMode {
+    // TODO!
+    ColorMode::Rgb8
+    // let has_color = images
+    //     .iter()
+    //     .find(|image| {
+    //         if
+    //     })
 }
 
 fn describe_colorspace(space: ImageColorSpace) -> &'static str {
@@ -183,6 +224,18 @@ impl ColorChoice {
             ColorChoice::Xbgr8 => Some(ColorMode::Xbgr8),
             ColorChoice::Cmyk8 => Some(ColorMode::Cmyk8),
             ColorChoice::Devicen8 => Some(ColorMode::DeviceN8),
+        }
+    }
+}
+
+impl CropChoice {
+    fn to_crop_mode(self) -> PdfCropMode {
+        match self {
+            CropChoice::CropBox => PdfCropMode::CropBox,
+            CropChoice::MediaBox => PdfCropMode::MediaBox,
+            CropChoice::BleedBox => PdfCropMode::BleedBox,
+            CropChoice::TrimBox => PdfCropMode::TrimBox,
+            CropChoice::ArtBox => PdfCropMode::ArtBox,
         }
     }
 }

@@ -6,7 +6,7 @@
 
 mod ffi;
 
-pub use ffi::{ColorMode, ImageColorSpace, ImageInfo};
+pub use ffi::{ColorMode, ImageColorSpace, ImageInfo, PdfCropMode};
 use png::{BitDepth, ColorType, Compression, Encoder};
 
 use std::fs::{self, File};
@@ -20,6 +20,7 @@ use thiserror::Error;
 pub struct RenderOptions {
     pub dpi: f64,
     pub color_mode: ColorMode,
+    pub crop_mode: PdfCropMode,
 }
 
 impl Default for RenderOptions {
@@ -27,6 +28,7 @@ impl Default for RenderOptions {
         Self {
             dpi: 150.0,
             color_mode: ColorMode::Rgb8,
+            crop_mode: PdfCropMode::CropBox,
         }
     }
 }
@@ -76,7 +78,12 @@ impl Document {
         options: &RenderOptions,
     ) -> Result<ffi::Image, RenderError> {
         self.renderer
-            .render_page(page_index, options.dpi, options.color_mode)
+            .render_page(
+                page_index,
+                options.dpi,
+                options.color_mode,
+                options.crop_mode,
+            )
             .map_err(RenderError::Poppler)
     }
 
