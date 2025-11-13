@@ -1,0 +1,35 @@
+{
+    "files.associations": {
+        "*.vpy": "python",
+        "*.pseudo": "pseudocode",
+        "*.opf": "xml",
+        "*.css": "postcss",
+        "*.hds": "python",
+        "*.webmanifest": "jsonc",
+        "*.jsx": "javascriptreact",
+        "*.md": "mdc",
+        "array": "cpp",
+        "istream": "cpp",
+        "locale": "cpp",
+        "variant": "cpp",
+        "complex": "cpp",
+        "memory": "cpp",
+        "future": "cpp",
+        "ios": "cpp",
+        "__config": "cpp",
+        "__node_handle": "cpp",
+        "optional": "cpp",
+        "version": "cpp",
+        "new": "cpp",
+        "print": "cpp",
+        "vector": "cpp",
+        "cmath": "cpp",
+        "__split_buffer": "cpp",
+        "string": "cpp",
+        "unordered_map": "cpp",
+        "unordered_set": "cpp"
+    },
+    "[rust]": {
+        "editor.formatOnSave": true
+    }
+}
