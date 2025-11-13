@@ -91,10 +91,9 @@ jobs:
             git clone https://github.com/microsoft/vcpkg "$env:USERPROFILE\\vcpkg"
           }
           & "$env:USERPROFILE\\vcpkg\\bootstrap-vcpkg.bat"
-          & "$env:USERPROFILE\\vcpkg\\vcpkg.exe" install freetype fontconfig libpng tiff openjpeg libjpeg-turbo --clean-after-build
+          & "$env:USERPROFILE\vcpkg\vcpkg.exe" install freetype libpng tiff openjpeg libjpeg-turbo --clean-after-build
           $root = Resolve-Path "$env:USERPROFILE\\vcpkg\\installed\\x64-windows"
           Add-Content $env:GITHUB_ENV "FREETYPE_DIR=$root"
-          Add-Content $env:GITHUB_ENV "FONTCONFIG_DIR=$root"
           Add-Content $env:GITHUB_ENV "PNG_DIR=$root"
           Add-Content $env:GITHUB_ENV "TIFF_DIR=$root"
           Add-Content $env:GITHUB_ENV "OPENJPEG_DIR=$root"

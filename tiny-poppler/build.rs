@@ -6,6 +6,8 @@ fn main() {
     println!("cargo:rerun-if-changed=ffi/splash_bridge.cc");
     println!("cargo:rerun-if-changed=ffi/splash_bridge.h");
 
+    let target = env::var("TARGET").expect("TARGET not set");
+
     let manifest_dir =
         PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set"));
     let workspace_root = manifest_dir
@@ -24,7 +26,7 @@ fn main() {
         poppler_src.join("CMakeLists.txt").display()
     );
 
-    let dst = configure_and_build_poppler(&poppler_src);
+    let dst = configure_and_build_poppler(&poppler_src, &target);
 
     compile_bridge(&manifest_dir, &poppler_src, &dst);
 
@@ -33,22 +35,10 @@ fn main() {
     println!("cargo:rustc-link-lib=static=poppler");
     // println!("cargo:rustc-link-lib=static=poppler-splash");
 
-    // Poppler requires these system libraries even in a minimal build.
-    println!("cargo:rustc-link-lib=freetype");
-    println!("cargo:rustc-link-lib=fontconfig");
-    println!("cargo:rustc-link-lib=jpeg");
-    println!("cargo:rustc-link-lib=openjp2");
-    println!("cargo:rustc-link-lib=png");
-    println!("cargo:rustc-link-lib=tiff");
-    println!("cargo:rustc-link-lib=iconv");
-    println!("cargo:rustc-link-lib=z");
-    emit_system_library_hints();
-
-    // macOS uses libc++ for the standard library implementation.
-    println!("cargo:rustc-link-lib=c++");
+    emit_linker_flags(&target);
 }
 
-fn configure_and_build_poppler(poppler_src: &Path) -> PathBuf {
+fn configure_and_build_poppler(poppler_src: &Path, target: &str) -> PathBuf {
     let mut cfg = cmake::Config::new(poppler_src);
 
     // Check build profile
@@ -86,13 +76,18 @@ fn configure_and_build_poppler(poppler_src: &Path) -> PathBuf {
         .define("ENABLE_LIBOPENJPEG", "openjpeg2")
         .define("ENABLE_DCTDECODER", "libjpeg")
         .define("ENABLE_ZLIB_UNCOMPRESS", "OFF")
-        .define("FONT_CONFIGURATION", "fontconfig")
         .define("BUILD_GTK_TESTS", "OFF")
         .define("BUILD_QT5_TESTS", "OFF")
         .define("BUILD_QT6_TESTS", "OFF")
         .define("BUILD_CPP_TESTS", "OFF")
         .define("BUILD_MANUAL_TESTS", "OFF")
         .define("RUN_GPERF_IF_PRESENT", "OFF");
+
+    if target.contains("windows") {
+        cfg.define("FONT_CONFIGURATION", "win32");
+    } else {
+        cfg.define("FONT_CONFIGURATION", "fontconfig");
+    }
 
     cfg.build()
 }
@@ -119,15 +114,18 @@ fn compile_bridge(manifest_dir: &Path, poppler_src: &Path, dst: &Path) {
     build.compile("tiny_poppler_splash_bridge");
 }
 
-fn emit_system_library_hints() {
-    let libraries = [
+fn emit_system_library_hints(target: &str) {
+    let mut libraries = vec![
         ("FREETYPE_DIR", "freetype"),
-        ("FONTCONFIG_DIR", "fontconfig"),
         ("JPEG_DIR", "jpeg-turbo"),
         ("PNG_DIR", "libpng"),
         ("TIFF_DIR", "libtiff"),
         ("OPENJPEG_DIR", "openjpeg"),
     ];
+
+    if !target.contains("windows") {
+        libraries.push(("FONTCONFIG_DIR", "fontconfig"));
+    }
 
     for (env_var, formula) in libraries {
         if let Some(dir) = env::var_os(env_var).map(PathBuf::from) {
@@ -140,6 +138,33 @@ fn emit_system_library_hints() {
 
         emit_homebrew_search_hint(formula);
     }
+}
+
+fn emit_linker_flags(target: &str) {
+    let is_windows = target.contains("windows");
+    let is_apple = target.contains("apple");
+
+    println!("cargo:rustc-link-lib=freetype");
+    println!("cargo:rustc-link-lib=jpeg");
+    println!("cargo:rustc-link-lib=openjp2");
+    println!("cargo:rustc-link-lib=png");
+    println!("cargo:rustc-link-lib=tiff");
+    println!("cargo:rustc-link-lib=z");
+
+    if !is_windows {
+        println!("cargo:rustc-link-lib=fontconfig");
+    }
+
+    if is_apple {
+        println!("cargo:rustc-link-lib=iconv");
+        println!("cargo:rustc-link-lib=c++");
+    } else if is_windows {
+        // MSVC links the C++ runtime automatically; no additional flags required.
+    } else {
+        println!("cargo:rustc-link-lib=stdc++");
+    }
+
+    emit_system_library_hints(target);
 }
 
 fn emit_homebrew_search_hint(formula: &str) {
