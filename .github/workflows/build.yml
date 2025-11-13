@@ -93,3 +93,4 @@ jobs:
         run: cargo build --workspace --all-targets
         env:
           BOOST_ROOT: ${{ steps.install-boost.outputs.boost_root }}
+          Boost_DIR: ${{ steps.install-boost.outputs.boost_root }}
