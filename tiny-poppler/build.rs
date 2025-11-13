@@ -85,6 +85,11 @@ fn configure_and_build_poppler(poppler_src: &Path, target: &str) -> PathBuf {
 
     if target.contains("windows") {
         cfg.define("FONT_CONFIGURATION", "win32");
+
+        if let Some(prefix) = env::var_os("TIFF_DIR").or_else(|| env::var_os("FREETYPE_DIR")) {
+            let prefix_value = PathBuf::from(prefix).into_os_string();
+            cfg.define("CMAKE_PREFIX_PATH", prefix_value);
+        }
     } else {
         cfg.define("FONT_CONFIGURATION", "fontconfig");
     }
