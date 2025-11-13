@@ -104,6 +104,8 @@ fn configure_and_build_poppler(poppler_src: &Path, target: &str) -> PathBuf {
         if let Ok(triplet) = std::env::var("VCPKG_DEFAULT_TRIPLET") {
             cfg.define("VCPKG_TARGET_TRIPLET", triplet);
         }
+
+        cfg.cxxflag("-DWIN32_LEAN_AND_MEAN").cxxflag("-DNOMINMAX");
     } else {
         cfg.define("FONT_CONFIGURATION", "fontconfig");
     }
