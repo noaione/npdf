@@ -121,6 +121,11 @@ jobs:
           echo "VCPKG_DEFAULT_TRIPLET=x64-windows" >> $env:GITHUB_ENV
           echo "VCPKG_FEATURE_FLAGS=manifests" >> $env:GITHUB_ENV
 
+          # Copy libpng as png.lib to work around naming issue
+          Copy-Item -Path C:\vcpkg\installed\x64-windows\lib\libpng.lib -Destination C:\vcpkg\installed\x64-windows\lib\png.lib
+          # Also copy the debug library just in case
+          Copy-Item -Path C:\vcpkg\installed\x64-windows\debug\lib\libpngd.lib -Destination C:\vcpkg\installed\x64-windows\debug\lib\pngd.lib
+
       - name: Build
         run: cargo build --profile release --workspace --all-targets --verbose
         env:
