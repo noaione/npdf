@@ -81,27 +81,7 @@ jobs:
             libpng \
             libtiff \
             openjpeg \
-            boost \
             lcms2
-
-      # - name: Install system dependencies (Windows)
-      #   if: runner.os == 'Windows'
-      #   shell: pwsh
-      #   run: |
-      #     choco install ninja cmake git pkgconfiglite -y --no-progress
-      #     if (-not (Test-Path "$env:USERPROFILE\\vcpkg")) {
-      #       git clone https://github.com/microsoft/vcpkg "$env:USERPROFILE\\vcpkg"
-      #     }
-      #     & "$env:USERPROFILE\\vcpkg\\bootstrap-vcpkg.bat"
-      #     & "$env:USERPROFILE\vcpkg\vcpkg.exe" install freetype libiconv libpng tiff openjpeg libjpeg-turbo --clean-after-build
-      #     $root = Resolve-Path "$env:USERPROFILE\\vcpkg\\installed\\x64-windows"
-      #     Add-Content $env:GITHUB_ENV "FREETYPE_DIR=$root"
-      #     Add-Content $env:GITHUB_ENV "PNG_DIR=$root"
-      #     Add-Content $env:GITHUB_ENV "TIFF_DIR=$root"
-      #     Add-Content $env:GITHUB_ENV "OPENJPEG_DIR=$root"
-      #     Add-Content $env:GITHUB_ENV "JPEG_DIR=$root"
-      #     Add-Content $env:GITHUB_ENV "CMAKE_PREFIX_PATH=$root"
-      #     Add-Content $env:GITHUB_PATH "$root\\bin"
 
       - name: Cache vcpkg dependencies
         uses: actions/cache@v4
