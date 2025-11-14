@@ -47,9 +47,9 @@ pub enum PdfCropMode {
     MediaBox = 0,
     #[default]
     CropBox = 1,
-    BleedBox = 2,
-    TrimBox = 3,
-    ArtBox = 4,
+    // BleedBox = 2,
+    // TrimBox = 3,
+    // ArtBox = 4,
 }
 
 #[repr(C)]

@@ -454,93 +454,93 @@ int splash_renderer_page_count(splash_renderer_t *renderer, uint32_t *out_count,
     return errNone;
 }
 
-splash_crop_area_t from_rectangle(const PDFRectangle *box)
-{
-    splash_crop_area_t area;
+// splash_crop_area_t from_rectangle(const PDFRectangle *box)
+// {
+//     splash_crop_area_t area;
 
-    if (!box->isValid()) {
-        return area;
-    }
+//     if (!box->isValid()) {
+//         return area;
+//     }
 
-    if (box->x2 < box->x1 || box->y2 < box->y1) {
-        // invalid box, return empty area
-        return area;
-    }
+//     if (box->x2 < box->x1 || box->y2 < box->y1) {
+//         // invalid box, return empty area
+//         return area;
+//     }
 
-    area.left = (int)ceil(box->x1);
-    area.top = (int)ceil(box->y1);
+//     area.left = (int)ceil(box->x1);
+//     area.top = (int)ceil(box->y1);
 
-    double width = box->x2 - box->x1;
-    double height = box->y2 - box->y1;
+//     double width = box->x2 - box->x1;
+//     double height = box->y2 - box->y1;
 
-    area.width = (int)ceil(width);
-    area.height = (int)ceil(height);
-    return area;
-}
+//     area.width = (int)ceil(width);
+//     area.height = (int)ceil(height);
+//     return area;
+// }
 
-splash_crop_area_t from_rectangle_with_ref(const PDFRectangle *box, const PDFRectangle *ref_box)
-{
-    splash_crop_area_t area;
+// splash_crop_area_t from_rectangle_with_ref(const PDFRectangle *box, const PDFRectangle *ref_box)
+// {
+//     splash_crop_area_t area;
 
-    if (!box->isValid() || !ref_box->isValid()) {
-        return area;
-    }
+//     if (!box->isValid() || !ref_box->isValid()) {
+//         return area;
+//     }
 
-    if (box->x2 < box->x1 || box->y2 < box->y1) {
-        // invalid box, return empty area
-        return area;
-    }
+//     if (box->x2 < box->x1 || box->y2 < box->y1) {
+//         // invalid box, return empty area
+//         return area;
+//     }
 
-    if (ref_box->x2 < ref_box->x1 || ref_box->y2 < ref_box->y1) {
-        // invalid box, return empty area
-        return area;
-    }
+//     if (ref_box->x2 < ref_box->x1 || ref_box->y2 < ref_box->y1) {
+//         // invalid box, return empty area
+//         return area;
+//     }
 
-    double dx = fmax(ref_box->x1, box->x1 - ref_box->x1);
-    double dy = fmax(box->y2, ref_box->y2 - box->y2);
+//     double dx = fmax(ref_box->x1, box->x1 - ref_box->x1);
+//     double dy = fmax(box->y2, ref_box->y2 - box->y2);
 
-    area.left = (int)ceil(dx);
-    area.top = (int)ceil(dy);
+//     area.left = (int)ceil(dx);
+//     area.top = (int)ceil(dy);
 
-    double width = box->x2 - box->x1;
-    double height = box->y2 - box->y1;
+//     double width = box->x2 - box->x1;
+//     double height = box->y2 - box->y1;
 
-    area.width = (int)ceil(width);
-    area.height = (int)ceil(height);
-    return area;
-}
+//     area.width = (int)ceil(width);
+//     area.height = (int)ceil(height);
+//     return area;
+// }
 
-splash_crop_area_t calculate_crop_area(Page *page, splash_crop_mode_t crop)
-{
-    splash_crop_area_t area;
+// splash_crop_area_t calculate_crop_area(Page *page, splash_crop_mode_t crop)
+// {
+//     splash_crop_area_t area;
 
-    const PDFRectangle *box;
-    const PDFRectangle *ref_box;
-    switch (crop) {
-    case SPLASH_CROP_MODE_MEDIA_BOX:
-        box = page->getMediaBox();
-        return from_rectangle(box);
-    case SPLASH_CROP_MODE_CROP_BOX:
-        box = page->getCropBox();
-        return from_rectangle(box);
-    case SPLASH_CROP_MODE_BLEED_BOX:
-        box = page->getBleedBox();
-        ref_box = page->getCropBox();
-        return from_rectangle_with_ref(box, ref_box);
-    case SPLASH_CROP_MODE_TRIM_BOX:
-        box = page->getTrimBox();
-        ref_box = page->getCropBox();
-        return from_rectangle_with_ref(box, ref_box);
-    case SPLASH_CROP_MODE_ART_BOX:
-        box = page->getArtBox();
-        ref_box = page->getCropBox();
-        return from_rectangle_with_ref(box, ref_box);
-    default:
-        // for our exporting purposes, cropbox works better
-        box = page->getCropBox();
-        return from_rectangle(box);
-    }
-}
+//     const PDFRectangle *box;
+//     const PDFRectangle *ref_box;
+//     switch (crop) {
+//     case SPLASH_CROP_MODE_MEDIA_BOX:
+//         box = page->getMediaBox();
+//         return from_rectangle(box);
+//     case SPLASH_CROP_MODE_CROP_BOX:
+//         box = page->getCropBox();
+//         return from_rectangle(box);
+//     case SPLASH_CROP_MODE_BLEED_BOX:
+//         box = page->getBleedBox();
+//         ref_box = page->getCropBox();
+//         return from_rectangle_with_ref(box, ref_box);
+//     case SPLASH_CROP_MODE_TRIM_BOX:
+//         box = page->getTrimBox();
+//         ref_box = page->getCropBox();
+//         return from_rectangle_with_ref(box, ref_box);
+//     case SPLASH_CROP_MODE_ART_BOX:
+//         box = page->getArtBox();
+//         ref_box = page->getCropBox();
+//         return from_rectangle_with_ref(box, ref_box);
+//     default:
+//         // for our exporting purposes, cropbox works better
+//         box = page->getCropBox();
+//         return from_rectangle(box);
+//     }
+// }
 
 int splash_renderer_render_page(splash_renderer_t *renderer,
                                 uint32_t page_index,
@@ -569,17 +569,17 @@ int splash_renderer_render_page(splash_renderer_t *renderer,
     }
 
     Page *page = renderer->doc->getPage(page_number); // Preload page to set up crop boxes, etc.
-    splash_crop_area_t crop_area = calculate_crop_area(page, crop_mode);
-    // check if bad area
-    if (!crop_area.is_valid()) {
-        set_error(error_out, "bad cropping area");
-        return errInternal;
-    }
+    // splash_crop_area_t crop_area = calculate_crop_area(page, crop_mode);
+    // // check if bad area
+    // if (!crop_area.is_valid()) {
+    //     set_error(error_out, "bad cropping area");
+    //     return errInternal;
+    // }
 
     const double clamped_dpi = dpi > 0.0 ? dpi : 72.0;
     bool use_media_box = crop_mode == SPLASH_CROP_MODE_MEDIA_BOX;
 
-    crop_area.scale(clamped_dpi);
+    // crop_area.scale(clamped_dpi);
 
     const SplashColorMode requested_mode = *maybe_mode;
 
@@ -598,23 +598,32 @@ int splash_renderer_render_page(splash_renderer_t *renderer,
 
     // renderer->doc->getP
     // renderer->doc->displayPage(&output_dev, page_number, clamped_dpi, clamped_dpi, 0, true, true, false);
-    page->displaySlice(
+    page->display(
         &output_dev,
         clamped_dpi,
         clamped_dpi,
         0,
         use_media_box,
         false,
-        crop_area.left,
-        crop_area.top,
-        crop_area.width,
-        crop_area.height,
-        false,
-        nullptr,
-        nullptr,
-        nullptr,
-        nullptr
+        false
     );
+    // page->displaySlice(
+    //     &output_dev,
+    //     clamped_dpi,
+    //     clamped_dpi,
+    //     0,
+    //     use_media_box,
+    //     false,
+    //     crop_area.left,
+    //     crop_area.top,
+    //     crop_area.width,
+    //     crop_area.height,
+    //     false,
+    //     nullptr,
+    //     nullptr,
+    //     nullptr,
+    //     nullptr
+    // );
 
     std::unique_ptr<SplashBitmap> bitmap(output_dev.takeBitmap());
     if (!bitmap) {

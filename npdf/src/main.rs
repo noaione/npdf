@@ -82,9 +82,9 @@ enum ColorChoice {
 enum CropChoice {
     CropBox,
     MediaBox,
-    ArtBox,
-    BleedBox,
-    TrimBox,
+    // ArtBox,
+    // BleedBox,
+    // TrimBox,
 }
 
 fn handle_list(args: ListArgs) -> Result<(), String> {
@@ -211,6 +211,13 @@ fn determine_page_colorspace(images: &[ImageInfo]) -> ColorMode {
     }
 }
 
+fn determine_export_dpi(images: &[ImageInfo], target_dpi: f64) -> f64 {
+    // // Placeholder for potential future logic to adjust DPI based on image characteristics.
+    target_dpi
+
+    // This is how we do it
+}
+
 fn image_has_color(image: &ImageInfo) -> bool {
     if !matches!(image.image_type, ImageType::Image | ImageType::Stencil) {
         return false;
@@ -244,12 +251,12 @@ fn describe_colorspace(space: &PdfImageColorSpace) -> String {
         PdfImageColorSpace::DeviceRGB => "DeviceRGB".to_string(),
         PdfImageColorSpace::DeviceCMYK => "DeviceCMYK".to_string(),
         PdfImageColorSpace::Lab { white, black, a, b } => {
-            let white_box = format!("White,{:.4},{:.4},{:.4}", white.x, white.y, white.z);
-            let black_box = format!("Black,{:.4},{:.4},{:.4}", black.x, black.y, black.z);
-            let a_range = format!("A,{:.4}-{:.4}", a.min, a.max);
-            let b_range = format!("B,{:.4}-{:.4}", b.min, b.max);
+            let white_box = format!("White: {:.4},{:.4},{:.4}", white.x, white.y, white.z);
+            let black_box = format!("Black: {:.4},{:.4},{:.4}", black.x, black.y, black.z);
+            let a_range = format!("A: {:.4} - {:.4}", a.min, a.max);
+            let b_range = format!("B: {:.4} - {:.4}", b.min, b.max);
 
-            format!("Lab[{white_box}|{black_box}|{a_range}|{b_range}]")
+            format!("Lab[{white_box} | {black_box} | {a_range} | {b_range}]")
         }
         PdfImageColorSpace::ICC { alternate } => {
             format!("ICC({})", describe_colorspace(alternate))
@@ -306,9 +313,9 @@ impl CropChoice {
         match self {
             CropChoice::CropBox => PdfCropMode::CropBox,
             CropChoice::MediaBox => PdfCropMode::MediaBox,
-            CropChoice::BleedBox => PdfCropMode::BleedBox,
-            CropChoice::TrimBox => PdfCropMode::TrimBox,
-            CropChoice::ArtBox => PdfCropMode::ArtBox,
+            // CropChoice::BleedBox => PdfCropMode::BleedBox,
+            // CropChoice::TrimBox => PdfCropMode::TrimBox,
+            // CropChoice::ArtBox => PdfCropMode::ArtBox,
         }
     }
 }

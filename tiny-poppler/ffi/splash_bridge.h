@@ -46,9 +46,9 @@ typedef enum splash_image_type {
 typedef enum splash_crop_mode {
     SPLASH_CROP_MODE_MEDIA_BOX = 0,
     SPLASH_CROP_MODE_CROP_BOX = 1,
-    SPLASH_CROP_MODE_BLEED_BOX = 2,
-    SPLASH_CROP_MODE_TRIM_BOX = 3,
-    SPLASH_CROP_MODE_ART_BOX = 4,
+    // SPLASH_CROP_MODE_BLEED_BOX = 2,
+    // SPLASH_CROP_MODE_TRIM_BOX = 3,
+    // SPLASH_CROP_MODE_ART_BOX = 4,
 } splash_crop_mode_t;
 
 typedef struct splash_image {
