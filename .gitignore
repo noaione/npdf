@@ -3,5 +3,6 @@
 .idea
 
 *.png
+*.jpg
 *.pdf
 !tiny-poppler/tests/*.pdf

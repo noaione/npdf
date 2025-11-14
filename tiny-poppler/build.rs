@@ -168,18 +168,13 @@ fn emit_linker_flags(target: &str) {
     let is_windows = target.contains("windows");
     let is_apple = target.contains("apple");
 
-    println!("cargo:rustc-link-lib=freetype");
-    println!("cargo:rustc-link-lib=jpeg");
-    println!("cargo:rustc-link-lib=openjp2");
-    if is_windows {
-        println!("cargo:rustc-link-lib=libpng");
-    } else {
-        println!("cargo:rustc-link-lib=png");
-    }
-    println!("cargo:rustc-link-lib=tiff");
-    println!("cargo:rustc-link-lib=z");
-
     if !is_windows {
+        println!("cargo:rustc-link-lib=freetype");
+        println!("cargo:rustc-link-lib=jpeg");
+        println!("cargo:rustc-link-lib=openjp2");
+        println!("cargo:rustc-link-lib=png");
+        println!("cargo:rustc-link-lib=tiff");
+        println!("cargo:rustc-link-lib=z");
         println!("cargo:rustc-link-lib=fontconfig");
     }
 
@@ -193,6 +188,14 @@ fn emit_linker_flags(target: &str) {
     }
 
     if is_windows {
+        vcpkg::find_package("libpng").expect("Failed to find libpng via vcpkg");
+        vcpkg::find_package("zlib").expect("Failed to find zlib via vcpkg");
+        vcpkg::find_package("libiconv").expect("Failed to find libiconv via vcpkg");
+        vcpkg::find_package("freetype").expect("Failed to find freetype via vcpkg");
+        vcpkg::find_package("tiff").expect("Failed to find tiff via vcpkg");
+        vcpkg::find_package("openjpeg").expect("Failed to find openjpeg via vcpkg");
+        vcpkg::find_package("libjpeg-turbo").expect("Failed to find libjpeg-turbo via vcpkg");
+
         if let Ok(root) = env::var("VCPKG_ROOT") {
             let triplet = env::var("VCPKG_DEFAULT_TRIPLET").unwrap_or("x64-windows".to_string());
             let lib_path = PathBuf::from(root)
