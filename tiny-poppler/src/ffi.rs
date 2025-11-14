@@ -91,6 +91,14 @@ struct SplashImageInfo {
     color_space_handle: *const c_void,
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+struct SplashPageInfo {
+    page_number: u32,
+    image_count: u32,
+    object_count: u64,
+}
+
 /// Colorspace related
 #[repr(C)]
 struct ColorspaceIndexedInfo {
@@ -157,11 +165,14 @@ unsafe extern "C" {
         renderer: *mut SplashRenderer,
         out_images: *mut *mut SplashImageInfo,
         out_len: *mut usize,
+        out_pages: *mut *mut SplashPageInfo,
+        out_page_len: *mut usize,
         page_start: c_uint,
         page_end: c_uint,
         error_out: *mut *mut c_char,
     ) -> i32;
     fn splash_renderer_free_image_info(images: *mut SplashImageInfo);
+    fn splash_renderer_free_page_info(pages: *mut SplashPageInfo);
 
     /// Colorspace related
     fn gfxcs_get_color_mode(ptr: *const c_void) -> ImageColorSpace;
@@ -234,9 +245,11 @@ impl Renderer {
         Ok(count)
     }
 
-    pub fn collect_images(&mut self, range: Option<(u32, u32)>) -> Result<Vec<ImageInfo>, String> {
+    pub fn collect_images(&mut self, range: Option<(u32, u32)>) -> Result<ImageCollection, String> {
         let mut infos_ptr: *mut SplashImageInfo = ptr::null_mut();
-        let mut len: usize = 0;
+        let mut pages_ptr: *mut SplashPageInfo = ptr::null_mut();
+        let mut image_len: usize = 0;
+        let mut page_len: usize = 0;
         let mut error = ptr::null_mut();
         let (start, end) = range.unwrap_or((0, 0));
         if start != 0 && end != 0 && end < start {
@@ -246,28 +259,45 @@ impl Renderer {
             splash_renderer_collect_images(
                 self.raw,
                 &mut infos_ptr,
-                &mut len,
+                &mut image_len,
+                &mut pages_ptr,
+                &mut page_len,
                 start,
                 end,
                 &mut error,
             )
         };
         if status != 0 {
-            return Err(take_error(error));
-        }
-        if infos_ptr.is_null() || len == 0 {
             if !infos_ptr.is_null() {
                 unsafe { splash_renderer_free_image_info(infos_ptr) };
             }
-            return Ok(Vec::new());
+            if !pages_ptr.is_null() {
+                unsafe { splash_renderer_free_page_info(pages_ptr) };
+            }
+            return Err(take_error(error));
         }
-        let slice = unsafe { slice::from_raw_parts(infos_ptr, len) };
-        let mut images = Vec::with_capacity(slice.len());
-        for info in slice {
-            images.push(ImageInfo::from(*info));
+
+        let images = if !infos_ptr.is_null() && image_len > 0 {
+            let slice = unsafe { slice::from_raw_parts(infos_ptr, image_len) };
+            slice.iter().map(|info| ImageInfo::from(*info)).collect()
+        } else {
+            Vec::new()
+        };
+        if !infos_ptr.is_null() {
+            unsafe { splash_renderer_free_image_info(infos_ptr) };
         }
-        unsafe { splash_renderer_free_image_info(infos_ptr) };
-        Ok(images)
+
+        let pages = if !pages_ptr.is_null() && page_len > 0 {
+            let slice = unsafe { slice::from_raw_parts(pages_ptr, page_len) };
+            slice.iter().map(|info| PageInfo::from(*info)).collect()
+        } else {
+            Vec::new()
+        };
+        if !pages_ptr.is_null() {
+            unsafe { splash_renderer_free_page_info(pages_ptr) };
+        }
+
+        Ok(ImageCollection { images, pages })
     }
 
     pub fn render_page(
@@ -340,6 +370,19 @@ pub struct Image {
     pub components: u32,
     pub color_mode: ColorMode,
     pub bits_per_component: u32,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct PageInfo {
+    pub page: u32,
+    pub image_count: u32,
+    pub object_count: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct ImageCollection {
+    pub images: Vec<ImageInfo>,
+    pub pages: Vec<PageInfo>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -417,6 +460,16 @@ impl From<SplashImageInfo> for ImageInfo {
             page: value.page_number,
             dpi: (value.dpi_x, value.dpi_y),
             xref,
+        }
+    }
+}
+
+impl From<SplashPageInfo> for PageInfo {
+    fn from(value: SplashPageInfo) -> Self {
+        Self {
+            page: value.page_number,
+            image_count: value.image_count,
+            object_count: value.object_count,
         }
     }
 }

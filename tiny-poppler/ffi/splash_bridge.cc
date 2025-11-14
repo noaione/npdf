@@ -204,6 +204,12 @@ struct CollectedImage {
     const void *color_space_handle = nullptr;
 };
 
+struct CollectedPage {
+    uint32_t page_number = 0;
+    uint32_t image_count = 0;
+    uint64_t object_count = 0;
+};
+
 const void *copy_color_space(const GfxColorSpace *space)
 {
     if (!space) {
@@ -307,50 +313,58 @@ public:
         add_image(maskWidth, maskHeight, maskColorMap, ref, state, SPLASH_IMAGE_TYPE_SOFT_MASK);
     }
 
-    void drawString(GfxState *state, const GooString *s)
+    void drawString(GfxState *state, const GooString *s) override
     {
         (void)state;
         (void)s;
         total_objects_++;
     }
 
-    void drawForm(Ref id)
+    void drawForm(Ref id) override
     {
         (void)id;
         total_objects_++;
     }
 
-    void stroke(GfxState *state)
+    void stroke(GfxState *state) override
     {
         (void)state;
         total_objects_++;
     }
 
-    void fill(GfxState *state)
+    void fill(GfxState *state) override
     {
         (void)state;
         total_objects_++;
     }
 
-    void eoFill(GfxState *state)
+    void eoFill(GfxState *state) override
     {
         (void)state;
         total_objects_++;
     }
 
-    void clip(GfxState *state)
+    void clip(GfxState *state) override
     {
         (void)state;
-        total_objects_++;
+
+        // Check clip
+        bool is_clip_empty = state->isPath();
+        if (!is_clip_empty) {
+            total_objects_++;
+        }
     }
 
-    void eoClip(GfxState *state)
+    void eoClip(GfxState *state) override
     {
         (void)state;
-        total_objects_++;
+        bool is_clip_empty = state->isPath();
+        if (!is_clip_empty) {
+            total_objects_++;
+        }
     }
 
-    void psXObject(Stream *psStream, Stream *level1Stream)
+    void psXObject(Stream *psStream, Stream *level1Stream) override
     {
         (void)psStream;
         (void)level1Stream;
@@ -710,18 +724,22 @@ int splash_renderer_render_page(splash_renderer_t *renderer,
 
 int splash_renderer_collect_images(splash_renderer_t *renderer,
                                    splash_image_info_t **out_images,
-                                   size_t *out_len,
+                                   size_t *out_image_len,
+                                   splash_page_info_t **out_pages,
+                                   size_t *out_page_len,
                                    uint32_t page_start,
                                    uint32_t page_end,
                                    char **error_out)
 {
-    if (!renderer || !out_images || !out_len) {
+    if (!renderer || !out_images || !out_image_len || !out_pages || !out_page_len) {
         set_error(error_out, "invalid renderer arguments");
         return errInternal;
     }
 
     *out_images = nullptr;
-    *out_len = 0;
+    *out_image_len = 0;
+    *out_pages = nullptr;
+    *out_page_len = 0;
 
     const int total_pages = renderer->doc->getNumPages();
     if (total_pages <= 0) {
@@ -742,58 +760,100 @@ int splash_renderer_collect_images(splash_renderer_t *renderer,
     std::vector<CollectedImage> collected;
     collected.reserve(static_cast<size_t>(total_pages));
 
-    ImageCollector collector(&collected);
+    const uint32_t page_span = end_page - start_page + 1;
+    std::vector<CollectedPage> page_summaries;
+    page_summaries.reserve(static_cast<size_t>(page_span));
 
-    // allocate for object counter for each page
-    std::vector<uint64_t> object_counters;
-    object_counters.reserve(static_cast<size_t>(total_pages));
+    ImageCollector collector(&collected);
 
     for (uint32_t page_number = start_page; page_number <= end_page; ++page_number) {
         collector.reset_for_page(page_number);
+        const size_t before = collected.size();
         renderer->doc->displayPage(&collector, static_cast<int>(page_number), 72.0, 72.0, 0, true, true, false);
-        object_counters.push_back(collector.get_total_objects());
+        const size_t after = collected.size();
+
+        CollectedPage summary;
+        summary.page_number = page_number;
+        summary.image_count = static_cast<uint32_t>(after - before);
+        summary.object_count = collector.get_total_objects();
+        page_summaries.push_back(summary);
     }
 
-    if (collected.empty()) {
-        return errNone;
+    splash_image_info_t *image_buffer = nullptr;
+    if (!collected.empty()) {
+        const size_t allocation_count = collected.size();
+        const size_t header_size = sizeof(size_t);
+        const size_t payload_size = allocation_count * sizeof(splash_image_info_t);
+        void *raw = std::malloc(header_size + payload_size);
+        if (!raw) {
+            set_error(error_out, "unable to allocate image metadata buffer");
+            return errInternal;
+        }
+
+        auto *header = static_cast<size_t *>(raw);
+        *header = allocation_count;
+
+        image_buffer = reinterpret_cast<splash_image_info_t *>(header + 1);
+        if (!image_buffer) {
+            std::free(raw);
+            set_error(error_out, "unable to allocate image metadata buffer");
+            return errInternal;
+        }
+
+        for (size_t i = 0; i < collected.size(); ++i) {
+            image_buffer[i].width = collected[i].width;
+            image_buffer[i].height = collected[i].height;
+            image_buffer[i].dpi_x = collected[i].dpi_x;
+            image_buffer[i].dpi_y = collected[i].dpi_y;
+            image_buffer[i].components = collected[i].components;
+            image_buffer[i].bits_per_component = collected[i].bits_per_component;
+            image_buffer[i].xref_object = collected[i].xref_object;
+            image_buffer[i].xref_generation = collected[i].xref_generation;
+            image_buffer[i].image_type = collected[i].image_type;
+            image_buffer[i].colorspace = collected[i].colorspace;
+            image_buffer[i].color_space_handle = collected[i].color_space_handle;
+            image_buffer[i].page_number = collected[i].page_number;
+        }
     }
 
-    const size_t allocation_count = collected.size();
-    const size_t header_size = sizeof(size_t);
-    const size_t payload_size = allocation_count * sizeof(splash_image_info_t);
-    void *raw = std::malloc(header_size + payload_size);
-    if (!raw) {
-        set_error(error_out, "unable to allocate image metadata buffer");
-        return errInternal;
+    splash_page_info_t *page_buffer = nullptr;
+    if (!page_summaries.empty()) {
+        const size_t allocation_count = page_summaries.size();
+        const size_t header_size = sizeof(size_t);
+        const size_t payload_size = allocation_count * sizeof(splash_page_info_t);
+        void *raw = std::malloc(header_size + payload_size);
+        if (!raw) {
+            if (image_buffer) {
+                splash_renderer_free_image_info(image_buffer);
+            }
+            set_error(error_out, "unable to allocate page metadata buffer");
+            return errInternal;
+        }
+
+        auto *header = static_cast<size_t *>(raw);
+        *header = allocation_count;
+
+        page_buffer = reinterpret_cast<splash_page_info_t *>(header + 1);
+        if (!page_buffer) {
+            std::free(raw);
+            if (image_buffer) {
+                splash_renderer_free_image_info(image_buffer);
+            }
+            set_error(error_out, "unable to allocate page metadata buffer");
+            return errInternal;
+        }
+
+        for (size_t i = 0; i < page_summaries.size(); ++i) {
+            page_buffer[i].page_number = page_summaries[i].page_number;
+            page_buffer[i].image_count = page_summaries[i].image_count;
+            page_buffer[i].object_count = page_summaries[i].object_count;
+        }
     }
 
-    auto *header = static_cast<size_t *>(raw);
-    *header = allocation_count;
-
-    splash_image_info_t *buffer = reinterpret_cast<splash_image_info_t *>(header + 1);
-    if (!buffer) {
-        std::free(raw);
-        set_error(error_out, "unable to allocate image metadata buffer");
-        return errInternal;
-    }
-
-    for (size_t i = 0; i < collected.size(); ++i) {
-        buffer[i].width = collected[i].width;
-        buffer[i].height = collected[i].height;
-        buffer[i].dpi_x = collected[i].dpi_x;
-        buffer[i].dpi_y = collected[i].dpi_y;
-        buffer[i].components = collected[i].components;
-        buffer[i].bits_per_component = collected[i].bits_per_component;
-        buffer[i].xref_object = collected[i].xref_object;
-        buffer[i].xref_generation = collected[i].xref_generation;
-        buffer[i].image_type = collected[i].image_type;
-        buffer[i].colorspace = collected[i].colorspace;
-        buffer[i].color_space_handle = collected[i].color_space_handle;
-        buffer[i].page_number = collected[i].page_number;
-    }
-
-    *out_images = buffer;
-    *out_len = collected.size();
+    *out_images = image_buffer;
+    *out_image_len = collected.size();
+    *out_pages = page_buffer;
+    *out_page_len = page_summaries.size();
     return errNone;
 }
 
@@ -839,6 +899,16 @@ void splash_renderer_free_image_info(splash_image_info_t *images)
         }
     }
 
+    std::free(header);
+}
+
+void splash_renderer_free_page_info(splash_page_info_t *pages)
+{
+    if (!pages) {
+        return;
+    }
+
+    auto *header = reinterpret_cast<size_t *>(pages) - 1;
     std::free(header);
 }
 

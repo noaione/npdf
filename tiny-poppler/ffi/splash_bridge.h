@@ -80,6 +80,12 @@ typedef struct splash_image_info {
     const void *color_space_handle;
 } splash_image_info_t;
 
+typedef struct splash_page_info {
+    uint32_t page_number;
+    uint32_t image_count;
+    uint64_t object_count;
+} splash_page_info_t;
+
 typedef struct splash_crop_area {
     int left;
     int top;
@@ -124,7 +130,9 @@ int splash_renderer_render_page(splash_renderer_t *renderer,
 
 int splash_renderer_collect_images(splash_renderer_t *renderer,
                                    splash_image_info_t **out_images,
-                                   size_t *out_len,
+                                   size_t *out_image_len,
+                                   splash_page_info_t **out_pages,
+                                   size_t *out_page_len,
                                    uint32_t page_start,
                                    uint32_t page_end,
                                    char **error_out);
@@ -132,6 +140,7 @@ int splash_renderer_collect_images(splash_renderer_t *renderer,
 void splash_renderer_free_image(splash_image_t *image);
 void splash_renderer_free_cstr(char *message);
 void splash_renderer_free_image_info(splash_image_info_t *images);
+void splash_renderer_free_page_info(splash_page_info_t *pages);
 
 //! Colorspace related functions
 splash_image_colorspace_t gfxcs_get_color_mode(const void *cs_ptr);

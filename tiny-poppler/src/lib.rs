@@ -6,7 +6,7 @@
 
 mod ffi;
 
-pub use ffi::{ColorMode, ImageInfo, ImageType, PdfCropMode, PdfImageColorSpace};
+pub use ffi::{ColorMode, ImageInfo, ImageType, PageInfo, PdfCropMode, PdfImageColorSpace};
 use jpeg_encoder::{ColorType as JpegColorType, Encoder as JpegEncoder};
 use png::{BitDepth, ColorType, Compression, Encoder};
 
@@ -63,6 +63,22 @@ pub struct EncodedImage {
 impl EncodedImage {
     pub fn extension(&self) -> &'static str {
         self.format.extension()
+    }
+}
+
+/// Combined image + page metadata snapshot returned from Poppler.
+#[derive(Debug, Clone)]
+pub struct ImageMetadata {
+    pub images: Vec<ImageInfo>,
+    pub pages: Vec<PageInfo>,
+}
+
+impl From<ffi::ImageCollection> for ImageMetadata {
+    fn from(value: ffi::ImageCollection) -> Self {
+        Self {
+            images: value.images,
+            pages: value.pages,
+        }
     }
 }
 
@@ -174,9 +190,7 @@ impl Document {
 
     /// Retrieve metadata for all images embedded in the document.
     pub fn images(&mut self) -> Result<Vec<ImageInfo>, RenderError> {
-        self.renderer
-            .collect_images(None)
-            .map_err(RenderError::Poppler)
+        self.image_metadata().map(|meta| meta.images)
     }
 
     /// Retrieve metadata for images within the provided 1-based (inclusive) page range.
@@ -185,8 +199,36 @@ impl Document {
         start_page: u32,
         end_page: u32,
     ) -> Result<Vec<ImageInfo>, RenderError> {
+        self.image_metadata_in_range(start_page, end_page)
+            .map(|meta| meta.images)
+    }
+
+    /// Retrieve image + page metadata for the entire document.
+    pub fn image_metadata(&mut self) -> Result<ImageMetadata, RenderError> {
+        self.collect_image_metadata(None)
+    }
+
+    /// Retrieve image + page metadata for the provided range.
+    pub fn image_metadata_in_range(
+        &mut self,
+        start_page: u32,
+        end_page: u32,
+    ) -> Result<ImageMetadata, RenderError> {
+        self.collect_image_metadata(Some((start_page, end_page)))
+    }
+
+    /// Retrieve per-page object counters for the entire document.
+    pub fn page_info(&mut self) -> Result<Vec<PageInfo>, RenderError> {
+        self.image_metadata().map(|meta| meta.pages)
+    }
+
+    fn collect_image_metadata(
+        &mut self,
+        range: Option<(u32, u32)>,
+    ) -> Result<ImageMetadata, RenderError> {
         self.renderer
-            .collect_images(Some((start_page, end_page)))
+            .collect_images(range)
+            .map(ImageMetadata::from)
             .map_err(RenderError::Poppler)
     }
 }
@@ -198,6 +240,7 @@ pub struct DocumentFactory {
     path: Arc<PathBuf>,
     page_count: u32,
     images: Option<Arc<[ImageInfo]>>,
+    pages: Option<Arc<[PageInfo]>>,
 }
 
 impl DocumentFactory {
@@ -206,16 +249,20 @@ impl DocumentFactory {
     pub fn prepare(pdf_path: &Path, cache_images: bool) -> Result<Self, RenderError> {
         let mut document = Document::open(pdf_path)?;
         let page_count = document.page_count()?;
-        let images = if cache_images {
-            let infos = document.images()?;
-            Some(Arc::from(infos.into_boxed_slice()))
+        let (images, pages) = if cache_images {
+            let metadata = document.image_metadata()?;
+            (
+                Some(Arc::from(metadata.images.into_boxed_slice())),
+                Some(Arc::from(metadata.pages.into_boxed_slice())),
+            )
         } else {
-            None
+            (None, None)
         };
         Ok(Self {
             path: Arc::new(pdf_path.to_path_buf()),
             page_count,
             images,
+            pages,
         })
     }
 
@@ -242,6 +289,11 @@ impl DocumentFactory {
     /// Cached image metadata, if it was requested when preparing the factory.
     pub fn images(&self) -> Option<&[ImageInfo]> {
         self.images.as_deref()
+    }
+
+    /// Cached page metadata, if it was requested when preparing the factory.
+    pub fn pages(&self) -> Option<&[PageInfo]> {
+        self.pages.as_deref()
     }
 
     /// Absolute path to the PDF file backing this factory.
