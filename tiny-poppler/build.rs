@@ -171,7 +171,11 @@ fn emit_linker_flags(target: &str) {
     println!("cargo:rustc-link-lib=freetype");
     println!("cargo:rustc-link-lib=jpeg");
     println!("cargo:rustc-link-lib=openjp2");
-    println!("cargo:rustc-link-lib=libpng");
+    if is_windows {
+        println!("cargo:rustc-link-lib=libpng");
+    } else {
+        println!("cargo:rustc-link-lib=png");
+    }
     println!("cargo:rustc-link-lib=tiff");
     println!("cargo:rustc-link-lib=z");
 
