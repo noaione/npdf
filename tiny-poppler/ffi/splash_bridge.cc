@@ -226,7 +226,12 @@ public:
     bool useDrawChar() override { return false; }
     bool interpretType3Chars() override { return false; }
 
-    void set_current_page(uint32_t page_number) { current_page_ = page_number; }
+    void reset_for_page(uint32_t page_number) {
+        current_page_ = page_number;
+        total_objects_ = 0; // reset object count for new page
+    }
+
+    uint64_t get_total_objects() const { return total_objects_; }
 
     void drawImage(GfxState *state, Object *ref, Stream *str, int width, int height, GfxImageColorMap *color_map, bool interpolate, const int *maskColors, bool inlineImg) override
     {
@@ -235,6 +240,7 @@ public:
         (void)maskColors;
         (void)inlineImg;
         (void)interpolate;
+        total_objects_++;
         add_image(width, height, color_map, ref, state, SPLASH_IMAGE_TYPE_IMAGE);
     }
 
@@ -245,6 +251,7 @@ public:
         (void)invert;
         (void)interpolate;
         (void)inlineImg;
+        total_objects_++;
         add_mask(width, height, ref, state);
     }
 
@@ -269,6 +276,7 @@ public:
         (void)maskInvert;
         (void)maskInterpolate;
         (void)interpolate;
+        total_objects_++;
         add_image(width, height, color_map, ref, state, SPLASH_IMAGE_TYPE_IMAGE);
         add_image(maskWidth, maskHeight, nullptr, ref, state, SPLASH_IMAGE_TYPE_MASK);
     }
@@ -294,8 +302,59 @@ public:
         (void)maskColorMap;
         (void)maskInterpolate;
         (void)interpolate;
+        total_objects_++;
         add_image(width, height, color_map, ref, state, SPLASH_IMAGE_TYPE_IMAGE);
         add_image(maskWidth, maskHeight, maskColorMap, ref, state, SPLASH_IMAGE_TYPE_SOFT_MASK);
+    }
+
+    void drawString(GfxState *state, const GooString *s)
+    {
+        (void)state;
+        (void)s;
+        total_objects_++;
+    }
+
+    void drawForm(Ref id)
+    {
+        (void)id;
+        total_objects_++;
+    }
+
+    void stroke(GfxState *state)
+    {
+        (void)state;
+        total_objects_++;
+    }
+
+    void fill(GfxState *state)
+    {
+        (void)state;
+        total_objects_++;
+    }
+
+    void eoFill(GfxState *state)
+    {
+        (void)state;
+        total_objects_++;
+    }
+
+    void clip(GfxState *state)
+    {
+        (void)state;
+        total_objects_++;
+    }
+
+    void eoClip(GfxState *state)
+    {
+        (void)state;
+        total_objects_++;
+    }
+
+    void psXObject(Stream *psStream, Stream *level1Stream)
+    {
+        (void)psStream;
+        (void)level1Stream;
+        total_objects_++;
     }
 
 private:
@@ -400,6 +459,7 @@ private:
 
     std::vector<CollectedImage> *images_ = nullptr;
     uint32_t current_page_ = 0;
+    uint64_t total_objects_ = 0;
 };
 
 } // namespace
@@ -684,9 +744,14 @@ int splash_renderer_collect_images(splash_renderer_t *renderer,
 
     ImageCollector collector(&collected);
 
+    // allocate for object counter for each page
+    std::vector<uint64_t> object_counters;
+    object_counters.reserve(static_cast<size_t>(total_pages));
+
     for (uint32_t page_number = start_page; page_number <= end_page; ++page_number) {
-        collector.set_current_page(page_number);
+        collector.reset_for_page(page_number);
         renderer->doc->displayPage(&collector, static_cast<int>(page_number), 72.0, 72.0, 0, true, true, false);
+        object_counters.push_back(collector.get_total_objects());
     }
 
     if (collected.empty()) {
