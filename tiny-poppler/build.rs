@@ -67,7 +67,7 @@ fn configure_and_build_poppler(poppler_src: &Path, target: &str) -> PathBuf {
         .define("ENABLE_QT6", "OFF")
         .define("ENABLE_LIBCURL", "OFF")
         .define("ENABLE_LIBTIFF", "ON")
-        .define("ENABLE_LCMS", "OFF")
+        .define("ENABLE_LCMS", "ON")
         .define("ENABLE_NSS3", "OFF")
         .define("ENABLE_GPGME", "OFF")
         .define("ENABLE_PGP_SIGNATURES", "OFF")
@@ -145,6 +145,7 @@ fn emit_system_library_hints(target: &str) {
         ("PNG_DIR", "libpng"),
         ("TIFF_DIR", "libtiff"),
         ("OPENJPEG_DIR", "openjpeg"),
+        ("LCMS2_DIR", "lcms2"),
     ];
 
     if !target.contains("windows") {
@@ -174,12 +175,14 @@ fn emit_linker_flags(target: &str) {
     println!("cargo:rustc-link-lib=tiff");
 
     if is_windows {
-        println!("cargo:rustc-link-lib=raw=libpng16");
+        println!("cargo:rustc-link-lib=libpng16");
         println!("cargo:rustc-link-lib=zlib");
+        println!("cargo:rustc-link-lib=lcms");
     } else {
         println!("cargo:rustc-link-lib=png");
         println!("cargo:rustc-link-lib=z");
         println!("cargo:rustc-link-lib=fontconfig");
+        println!("cargo:rustc-link-lib=lcms2");
     }
 
     if is_apple {

@@ -64,7 +64,8 @@ jobs:
             libjpeg-dev \
             libpng-dev \
             libtiff-dev \
-            libopenjp2-7-dev
+            libopenjp2-7-dev \
+            liblcms2-dev
 
       - name: Install system dependencies (macOS)
         if: runner.os == 'macOS'
@@ -80,7 +81,8 @@ jobs:
             libpng \
             libtiff \
             openjpeg \
-            boost
+            boost \
+            lcms2
 
       # - name: Install system dependencies (Windows)
       #   if: runner.os == 'Windows'
@@ -116,7 +118,7 @@ jobs:
           cd C:\vcpkg
           .\bootstrap-vcpkg.bat
 
-          C:\vcpkg\vcpkg.exe install libpng:x64-windows zlib:x64-windows libiconv:x64-windows freetype:x64-windows tiff:x64-windows openjpeg:x64-windows libjpeg-turbo:x64-windows
+          C:\vcpkg\vcpkg.exe install libpng:x64-windows zlib:x64-windows libiconv:x64-windows freetype:x64-windows tiff:x64-windows openjpeg:x64-windows libjpeg-turbo:x64-windows lcms:x64-windows --clean-after-build
           echo "VCPKG_ROOT=C:\vcpkg" >> $env:GITHUB_ENV
           echo "VCPKG_DEFAULT_TRIPLET=x64-windows" >> $env:GITHUB_ENV
           echo "VCPKG_FEATURE_FLAGS=manifests" >> $env:GITHUB_ENV
