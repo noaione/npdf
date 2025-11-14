@@ -135,6 +135,8 @@ jobs:
       - name: Compress artifacts
         run:
           uv run scripts/packer.py
+        env:
+          MATRIX_NAME: ${{ matrix.os[1] }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v5
