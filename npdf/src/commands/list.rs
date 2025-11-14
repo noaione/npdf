@@ -1,6 +1,8 @@
 use clap::Args;
+use color_print::cprintln;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
-use tiny_poppler::{Document, ImageType, PdfImageColorSpace};
+use tiny_poppler::{Document, ImageInfo, ImageType, PdfImageColorSpace};
 
 #[derive(Args)]
 pub struct ListArgs {
@@ -25,24 +27,75 @@ pub fn run(args: ListArgs) -> Result<(), String> {
         return Ok(());
     }
 
-    for (idx, info) in images.iter().enumerate() {
-        let position = idx + 1;
-        let colorspace = describe_colorspace(&info.colorspace);
-        let xref = match info.xref {
-            Some((obj, generation)) => format!("{} {} R", obj, generation),
-            None => "inline".into(),
-        };
-        let image_type = describe_image_type(info.image_type);
-        println!(
-            "{position:>4}: page {page:>4}, {image_type}, {width}x{height}px, {components} comps, {bits} bpc, {colorspace}, xref {xref}, {dpi_x} xdpi, {dpi_y} ydpi",
-            page = info.page,
-            width = info.width,
-            height = info.height,
-            components = info.components,
-            bits = info.bits_per_component,
-            dpi_x = fmt_dpi(info.dpi.0),
-            dpi_y = fmt_dpi(info.dpi.1),
-        );
+    println!("\nImages:\n");
+
+    let mut pages: BTreeMap<u32, Vec<&ImageInfo>> = BTreeMap::new();
+    for info in &images {
+        pages.entry(info.page).or_default().push(info);
+    }
+
+    let header = format!(
+        "  {page:>6} | {idx:>4} | {kind:<8} | {size:<15} | {comp:<11} | {color:<20} | {xref:<12} | {dpi:<17}",
+        page = "Page",
+        idx = "#",
+        kind = "Type",
+        size = "Size (W×H)",
+        comp = "Comp/BPC",
+        color = "Colorspace",
+        xref = "XRef",
+        dpi = "DPI (X × Y)",
+    );
+    println!("{header}");
+    println!("  {}", "-".repeat(header.len().saturating_sub(2)));
+
+    for page in 1..=page_count {
+        if let Some(entries) = pages.get(&page) {
+            for (idx, &info) in entries.iter().enumerate() {
+                let kind = describe_image_type(info.image_type);
+                let size = format!("{}×{}", info.width, info.height);
+                let comp = format!("{}/{}", info.components, info.bits_per_component);
+                let color = describe_colorspace(&info.colorspace);
+                let xref = match info.xref {
+                    Some((obj, generation)) => format!("{} {} R", obj, generation),
+                    None => "inline".into(),
+                };
+                let dpi = format!("{} × {}", fmt_dpi(info.dpi.0), fmt_dpi(info.dpi.1));
+                let page_cell = format!("{:>6}", page);
+
+                if idx == 0 {
+                    cprintln!(
+                        "  <bold><cyan>{page}</cyan></bold> | {idx:>4} | {kind:<8} | {size:<15} | {comp:<11} | {color:<20} | {xref:<12} | {dpi:<17}",
+                        page = page_cell,
+                        idx = idx + 1,
+                        kind = kind,
+                        size = size,
+                        comp = comp,
+                        color = color,
+                        xref = xref,
+                        dpi = dpi,
+                    );
+                } else {
+                    println!(
+                        "  {page:>6} | {idx:>4} | {kind:<8} | {size:<15} | {comp:<11} | {color:<20} | {xref:<12} | {dpi:<17}",
+                        page = page_cell,
+                        idx = idx + 1,
+                        kind = kind,
+                        size = size,
+                        comp = comp,
+                        color = color,
+                        xref = xref,
+                        dpi = dpi,
+                    );
+                }
+            }
+        } else {
+            let page_cell = format!("{:>6}", page);
+            cprintln!(
+                "  <bold><cyan>{page}</cyan></bold> | {note}",
+                page = page_cell,
+                note = "(no embedded images)"
+            );
+        }
     }
 
     Ok(())
@@ -57,10 +110,10 @@ fn describe_colorspace(space: &PdfImageColorSpace) -> String {
         PdfImageColorSpace::Lab { white, black, a, b } => {
             let white_box = format!("White: {:.4},{:.4},{:.4}", white.x, white.y, white.z);
             let black_box = format!("Black: {:.4},{:.4},{:.4}", black.x, black.y, black.z);
-            let a_range = format!("A: {:.4} - {:.4}", a.min, a.max);
-            let b_range = format!("B: {:.4} - {:.4}", b.min, b.max);
+            let a_range = format!("A: {:.4}–{:.4}", a.min, a.max);
+            let b_range = format!("B: {:.4}–{:.4}", b.min, b.max);
 
-            format!("Lab[{white_box} | {black_box} | {a_range} | {b_range}]")
+            format!("Lab[{white_box} / {black_box} / {a_range} / {b_range}]")
         }
         PdfImageColorSpace::ICC { alternate } => {
             format!("ICC({})", describe_colorspace(alternate))
