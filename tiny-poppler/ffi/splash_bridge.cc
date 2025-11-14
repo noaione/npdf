@@ -596,8 +596,6 @@ int splash_renderer_render_page(splash_renderer_t *renderer,
     output_dev.setFreeTypeHinting(true, true);
     output_dev.startDoc(renderer->doc.get());
 
-    // renderer->doc->getP
-    // renderer->doc->displayPage(&output_dev, page_number, clamped_dpi, clamped_dpi, 0, true, true, false);
     page->display(
         &output_dev,
         clamped_dpi,

@@ -69,6 +69,9 @@ struct ExportArgs {
     /// Last page to export (1-based).
     #[arg(long)]
     last: Option<u32>,
+    /// Reverse the page order during export.
+    #[arg(long, default_value_t = false)]
+    reverse: bool,
     #[arg(long, default_value_t = false)]
     describe: bool,
 }
@@ -151,6 +154,7 @@ fn handle_export(args: ExportArgs) -> Result<(), String> {
         crop,
         describe,
         auto_dpi,
+        reverse,
     } = args;
 
     println!("Loading PDF: {:#?}", &pdf);
@@ -190,7 +194,16 @@ fn handle_export(args: ExportArgs) -> Result<(), String> {
     }
 
     println!("Starting export...");
-    for page in first_page..=last_page {
+
+    // Collect pages into a vector, potentially reversed
+    let pages: Vec<u32> = if reverse {
+        (first_page..=last_page).rev().collect()
+    } else {
+        (first_page..=last_page).collect()
+    };
+
+    for (idx, page) in pages.iter().enumerate() {
+        let page = *page;
         if color == ColorChoice::Auto {
             let image_map = images_mappings.get(&page);
             options.color_mode = match image_map {
@@ -205,7 +218,9 @@ fn handle_export(args: ExportArgs) -> Result<(), String> {
                 None => dpi,
             };
         }
-        let file_name = format!("page-{page:04}.png");
+        // Use idx+1 for filename to get incrementing numbers regardless of reverse
+        let file_number = idx + 1;
+        let file_name = format!("page-{file_number:04}.png");
         let output_path = output.join(file_name);
         if describe {
             println!(
