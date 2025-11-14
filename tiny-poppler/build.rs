@@ -188,13 +188,13 @@ fn emit_linker_flags(target: &str) {
     }
 
     if is_windows {
-        vcpkg::find_package("libpng").expect("Failed to find libpng via vcpkg");
-        vcpkg::find_package("zlib").expect("Failed to find zlib via vcpkg");
-        vcpkg::find_package("libiconv").expect("Failed to find libiconv via vcpkg");
-        vcpkg::find_package("freetype").expect("Failed to find freetype via vcpkg");
-        vcpkg::find_package("tiff").expect("Failed to find tiff via vcpkg");
-        vcpkg::find_package("openjpeg").expect("Failed to find openjpeg via vcpkg");
-        vcpkg::find_package("libjpeg-turbo").expect("Failed to find libjpeg-turbo via vcpkg");
+        // vcpkg::find_package("libpng").expect("Failed to find libpng via vcpkg");
+        // vcpkg::find_package("zlib").expect("Failed to find zlib via vcpkg");
+        // vcpkg::find_package("libiconv").expect("Failed to find libiconv via vcpkg");
+        // vcpkg::find_package("freetype").expect("Failed to find freetype via vcpkg");
+        // vcpkg::find_package("tiff").expect("Failed to find tiff via vcpkg");
+        // vcpkg::find_package("openjpeg").expect("Failed to find openjpeg via vcpkg");
+        // vcpkg::find_package("libjpeg-turbo").expect("Failed to find libjpeg-turbo via vcpkg");
 
         if let Ok(root) = env::var("VCPKG_ROOT") {
             let triplet = env::var("VCPKG_DEFAULT_TRIPLET").unwrap_or("x64-windows".to_string());
