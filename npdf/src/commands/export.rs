@@ -1,4 +1,5 @@
 use clap::{Args, ValueEnum};
+use color_print::{cformat, cprintln};
 use crossbeam_channel::unbounded;
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
@@ -105,7 +106,7 @@ pub fn run(args: ExportArgs) -> Result<(), String> {
         threads,
     } = args;
 
-    println!("Loading PDF: {:#?}", &pdf);
+    cprintln!("Loading PDF: <m,s>{:#?}</m,s>", &pdf);
     let factory = DocumentFactory::with_images(&pdf).map_err(|err| err.to_string())?;
     let page_count = factory.page_count();
 
@@ -194,8 +195,8 @@ pub fn run(args: ExportArgs) -> Result<(), String> {
 
     if describe {
         for job in &jobs {
-            println!(
-                "Will export page {} -> {} (colorspace: {:?}, crop: {:?}, dpi: {})",
+            cprintln!(
+                "Will export page <m,s>{}</m,s> -> <m,s>{}</m,s> (colorspace: {:?}, crop: {:?}, dpi: {})",
                 job.page_number,
                 job.output_path.display(),
                 job.options.color_mode,
@@ -256,8 +257,8 @@ fn run_export_jobs(
         None => (cpu_count, "auto".into()),
     };
     let worker_count = desired.max(1).min(jobs.len().max(1));
-    println!(
-        "Spawning {worker_count} worker(s) ({} logical CPUs detected, requested: {requested_label})...",
+    cprintln!(
+        "Spawning <m,s>{worker_count}</m,s> worker(s) (<c,s>{}</c,s> logical CPUs detected, requested: <c,s>{requested_label}</c,s>)...",
         cpu_count,
     );
 
@@ -268,9 +269,12 @@ fn run_export_jobs(
         let rx = receiver.clone();
         let factory = factory.clone();
         handles.push(thread::spawn(move || -> Result<(), String> {
-            let mut document = factory
-                .open()
-                .map_err(|err| format!("worker {} failed to open PDF: {err}", worker_index + 1))?;
+            let mut document = factory.open().map_err(|err| {
+                cformat!(
+                    "worker <c,s>{}</c,s> failed to open PDF: <m,s>{err}</m,s>",
+                    worker_index + 1
+                )
+            })?;
             while let Ok(job) = rx.recv() {
                 if let Err(err) = process_job(&mut document, job) {
                     return Err(err);
@@ -306,8 +310,8 @@ fn process_job(document: &mut Document, job: PagePlan) -> Result<(), String> {
         .map_err(|err| format!("failed to export page {}: {err}", job.page_number))?;
     fs::write(&job.output_path, &encoded.bytes)
         .map_err(|err| format!("failed to write {}: {err}", job.output_path.display()))?;
-    println!(
-        "Exported page {} -> {} ({:?}, {:?}, {} dpi)",
+    cprintln!(
+        "Exported <m,s>page {}</m,s> -> <m,s>{}</m,s> ({:?}, {:?}, {} dpi)",
         job.page_number,
         job.output_path.display(),
         encoded.format,

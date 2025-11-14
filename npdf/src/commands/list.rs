@@ -19,15 +19,15 @@ pub fn run(args: ListArgs) -> Result<(), String> {
     let page_count = document.page_count().map_err(|err| err.to_string())?;
     let images = document.images().map_err(|err| err.to_string())?;
 
-    println!("PDF: {}", args.pdf.display());
-    println!("Pages: {page_count}");
+    cprintln!("<magenta,bold>PDF</>: {}", args.pdf.display());
+    cprintln!("<magenta,bold>Pages</>: {page_count}");
 
     if images.is_empty() {
         println!("No embedded images found.");
         return Ok(());
     }
 
-    println!("\nImages:\n");
+    cprintln!("<magenta,bold>Images</>:\n");
 
     let mut pages: BTreeMap<u32, Vec<&ImageInfo>> = BTreeMap::new();
     for info in &images {
@@ -35,7 +35,7 @@ pub fn run(args: ListArgs) -> Result<(), String> {
     }
 
     let header = format!(
-        "  {page:>6} | {idx:>4} | {kind:<8} | {size:<15} | {comp:<11} | {color:<20} | {xref:<12} | {dpi:<17}",
+        "  {page:>6} ┆ {idx:>4} ┆ {kind:<8} ┆ {size:<15} ┆ {comp:<11} ┆ {color:<20} ┆ {xref:<12} ┆ {dpi:<17}",
         page = "Page",
         idx = "#",
         kind = "Type",
@@ -53,7 +53,7 @@ pub fn run(args: ListArgs) -> Result<(), String> {
             for (idx, &info) in entries.iter().enumerate() {
                 let kind = describe_image_type(info.image_type);
                 let size = format!("{}×{}", info.width, info.height);
-                let comp = format!("{}/{}", info.components, info.bits_per_component);
+                let comp = format!("{}c/{}bpc", info.components, info.bits_per_component);
                 let color = describe_colorspace(&info.colorspace);
                 let xref = match info.xref {
                     Some((obj, generation)) => format!("{} {} R", obj, generation),
@@ -64,7 +64,7 @@ pub fn run(args: ListArgs) -> Result<(), String> {
 
                 if idx == 0 {
                     cprintln!(
-                        "  <bold><cyan>{page}</cyan></bold> | {idx:>4} | {kind:<8} | {size:<15} | {comp:<11} | {color:<20} | {xref:<12} | {dpi:<17}",
+                        "  <bold><cyan>{page}</cyan></bold> ┆ {idx:>4} ┆ {kind:<8} ┆ {size:<15} ┆ {comp:<11} ┆ {color:<20} ┆ {xref:<12} ┆ {dpi:<17}",
                         page = page_cell,
                         idx = idx + 1,
                         kind = kind,
@@ -76,7 +76,7 @@ pub fn run(args: ListArgs) -> Result<(), String> {
                     );
                 } else {
                     println!(
-                        "  {page:>6} | {idx:>4} | {kind:<8} | {size:<15} | {comp:<11} | {color:<20} | {xref:<12} | {dpi:<17}",
+                        "  {page:>6} ┆ {idx:>4} ┆ {kind:<8} ┆ {size:<15} ┆ {comp:<11} ┆ {color:<20} ┆ {xref:<12} ┆ {dpi:<17}",
                         page = page_cell,
                         idx = idx + 1,
                         kind = kind,
@@ -91,12 +91,17 @@ pub fn run(args: ListArgs) -> Result<(), String> {
         } else {
             let page_cell = format!("{:>6}", page);
             cprintln!(
-                "  <bold><cyan>{page}</cyan></bold> | {note}",
+                "  <bold><cyan>{page}</cyan></bold> ┆ <magenta>{note}</magenta>",
                 page = page_cell,
                 note = "(no embedded images)"
             );
         }
     }
+
+    cprintln!("\nTotal embedded images: <bold>{}</bold>", images.len());
+    cprintln!(
+        "<magenta,bold>Hint:</magenta,bold> a <cyan,bold>highlighted</cyan,bold> page number indicates new page."
+    );
 
     Ok(())
 }
