@@ -12,7 +12,8 @@ use png::{BitDepth, ColorType, Compression, Encoder};
 
 use std::fs::{self, File};
 use std::io::{self, BufWriter, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use thiserror::Error;
 
@@ -187,6 +188,65 @@ impl Document {
         self.renderer
             .collect_images(Some((start_page, end_page)))
             .map_err(RenderError::Poppler)
+    }
+}
+
+/// Shared, clonable factory that reopens [`Document`] instances on demand while caching
+/// inexpensive metadata (page count, optional image descriptors) for multi-threaded callers.
+#[derive(Clone)]
+pub struct DocumentFactory {
+    path: Arc<PathBuf>,
+    page_count: u32,
+    images: Option<Arc<[ImageInfo]>>,
+}
+
+impl DocumentFactory {
+    /// Prepare a factory from the provided PDF path, optionally caching image metadata for
+    /// later use (useful for extracting per-page heuristics prior to spawning threads).
+    pub fn prepare(pdf_path: &Path, cache_images: bool) -> Result<Self, RenderError> {
+        let mut document = Document::open(pdf_path)?;
+        let page_count = document.page_count()?;
+        let images = if cache_images {
+            let infos = document.images()?;
+            Some(Arc::from(infos.into_boxed_slice()))
+        } else {
+            None
+        };
+        Ok(Self {
+            path: Arc::new(pdf_path.to_path_buf()),
+            page_count,
+            images,
+        })
+    }
+
+    /// Convenience constructor that preloads image metadata.
+    pub fn with_images(pdf_path: &Path) -> Result<Self, RenderError> {
+        Self::prepare(pdf_path, true)
+    }
+
+    /// Convenience constructor that skips image metadata caching.
+    pub fn from_path(pdf_path: &Path) -> Result<Self, RenderError> {
+        Self::prepare(pdf_path, false)
+    }
+
+    /// Reopen the backing PDF as a fresh [`Document`].
+    pub fn open(&self) -> Result<Document, RenderError> {
+        Document::open(self.pdf_path())
+    }
+
+    /// Cached page count collected during [`DocumentFactory::prepare`].
+    pub fn page_count(&self) -> u32 {
+        self.page_count
+    }
+
+    /// Cached image metadata, if it was requested when preparing the factory.
+    pub fn images(&self) -> Option<&[ImageInfo]> {
+        self.images.as_deref()
+    }
+
+    /// Absolute path to the PDF file backing this factory.
+    pub fn pdf_path(&self) -> &Path {
+        self.path.as_path()
     }
 }
 

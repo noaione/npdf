@@ -12,5 +12,8 @@ description = "A simple PDF-to-PNG exporter tool built with on-top of Poppler."
 readme = "./README.md"
 
 [dependencies]
-tiny-poppler = { path = "../tiny-poppler" }
 clap = { version = "4.5.4", features = ["derive"] }
+crossbeam-channel = "0.5.15"
+num_cpus = "1.17.0"
+
+tiny-poppler = { path = "../tiny-poppler" }

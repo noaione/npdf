@@ -1,9 +1,13 @@
 use clap::{Parser, Subcommand, ValueEnum};
+use crossbeam_channel::unbounded;
+use std::num::NonZeroUsize;
 use std::path::PathBuf;
+use std::thread;
 use std::{collections::HashMap, fs};
 
 use tiny_poppler::{
-    ColorMode, Document, ImageInfo, ImageType, PdfCropMode, PdfImageColorSpace, RenderOptions,
+    ColorMode, Document, DocumentFactory, ImageInfo, ImageType, PdfCropMode, PdfImageColorSpace,
+    RenderOptions,
 };
 
 fn main() {
@@ -81,6 +85,9 @@ struct ExportArgs {
     reverse: bool,
     #[arg(long, default_value_t = false)]
     describe: bool,
+    /// Worker threads to use during export (omit for auto).
+    #[arg(long, value_parser = clap::value_parser!(NonZeroUsize))]
+    threads: Option<NonZeroUsize>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, ValueEnum)]
@@ -164,11 +171,12 @@ fn handle_export(args: ExportArgs) -> Result<(), String> {
         with_cmyk,
         reverse,
         quality,
+        threads,
     } = args;
 
     println!("Loading PDF: {:#?}", &pdf);
-    let mut document = Document::open(&pdf).map_err(|err| err.to_string())?;
-    let page_count = document.page_count().map_err(|err| err.to_string())?;
+    let factory = DocumentFactory::with_images(&pdf).map_err(|err| err.to_string())?;
+    let page_count = factory.page_count();
 
     let first_page = first.unwrap_or(1);
     if first_page == 0 || first_page > page_count {
@@ -188,15 +196,21 @@ fn handle_export(args: ExportArgs) -> Result<(), String> {
     }
 
     println!("Preloading images...");
-    let images_metadata = document.images().map_err(|err| err.to_string())?;
+    let images_metadata = factory
+        .images()
+        .map(|slice| slice.to_vec())
+        .unwrap_or_default();
 
-    let mut options = RenderOptions::default();
-    options.dpi = dpi;
-    options.crop_mode = crop.to_crop_mode();
-    options.jpeg_quality = Some(quality);
-    if let Some(mode) = color.to_color_mode() {
-        options.color_mode = mode;
-    }
+    let base_options = {
+        let mut opts = RenderOptions::default();
+        opts.dpi = dpi;
+        opts.crop_mode = crop.to_crop_mode();
+        opts.jpeg_quality = Some(quality);
+        if let Some(mode) = color.to_color_mode() {
+            opts.color_mode = mode;
+        }
+        opts
+    };
 
     let mut images_mappings: HashMap<u32, Vec<ImageInfo>> = HashMap::new();
     for item in images_metadata {
@@ -211,56 +225,57 @@ fn handle_export(args: ExportArgs) -> Result<(), String> {
 
     println!("Starting export...");
 
-    // Collect pages into a vector, potentially reversed
     let pages: Vec<u32> = if reverse {
         (first_page..=last_page).rev().collect()
     } else {
         (first_page..=last_page).collect()
     };
 
-    for (idx, page) in pages.iter().enumerate() {
-        let page = *page;
-        if color == ColorChoice::Auto {
-            let precalc = precalculated_settings.get(&page);
-            options.color_mode = match precalc {
-                Some(pre) => pre.color,
-                None => ColorMode::Mono8,
-            };
-        };
-        if let Some(_) = auto_dpi {
-            let precalc = precalculated_settings.get(&page);
-            options.dpi = match precalc {
-                Some(pre) => pre.dpi,
-                None => dpi,
-            };
-        }
-        let file_number = idx + 1;
-        let extension = extension_for_mode(options.color_mode);
-        let file_name = format!("page-{file_number:04}.{extension}");
-        let output_path = output.join(file_name);
-        if describe {
+    let jobs: Vec<PagePlan> = pages
+        .into_iter()
+        .enumerate()
+        .map(|(idx, page)| {
+            let mut per_page = base_options.clone();
+            if color == ColorChoice::Auto {
+                per_page.color_mode = precalculated_settings
+                    .get(&page)
+                    .map(|pre| pre.color)
+                    .unwrap_or(ColorMode::Mono8);
+            }
+            if auto_dpi.is_some() {
+                per_page.dpi = precalculated_settings
+                    .get(&page)
+                    .map(|pre| pre.dpi)
+                    .unwrap_or(dpi);
+            }
+            let file_number = idx + 1;
+            let extension = extension_for_mode(per_page.color_mode);
+            let file_name = format!("page-{file_number:04}.{extension}");
+            let output_path = output.join(file_name);
+            PagePlan {
+                page_number: page,
+                zero_index_page: page - 1,
+                output_path,
+                options: per_page,
+            }
+        })
+        .collect();
+
+    if describe {
+        for job in &jobs {
             println!(
-                "Will export page {page} -> {} (colorspace: {:?}, crop: {:?}, dpi: {})",
-                output_path.display(),
-                options.color_mode,
-                options.crop_mode,
-                options.dpi,
-            );
-        } else {
-            let encoded = document
-                .render_page_image_bytes(page - 1, &options)
-                .map_err(|err| format!("failed to export page {page}: {err}"))?;
-            fs::write(&output_path, &encoded.bytes)
-                .map_err(|err| format!("failed to write {}: {err}", output_path.display()))?;
-            println!(
-                "Exported page {page} -> {} ({:?})",
-                output_path.display(),
-                encoded.format,
+                "Will export page {} -> {} (colorspace: {:?}, crop: {:?}, dpi: {})",
+                job.page_number,
+                job.output_path.display(),
+                job.options.color_mode,
+                job.options.crop_mode,
+                job.options.dpi,
             );
         }
+        return Ok(());
     }
 
-    Ok(())
+    run_export_jobs(factory, jobs, threads.map(NonZeroUsize::get))
 }
 
 fn determine_page_colorspace(images: &[ImageInfo], with_cmyk: bool) -> ColorMode {
@@ -492,6 +507,90 @@ fn fmt_dpi(num: f64) -> String {
         }
         formatted_str
     }
+}
+
+#[derive(Clone)]
+struct PagePlan {
+    page_number: u32,
+    zero_index_page: u32,
+    output_path: PathBuf,
+    options: RenderOptions,
+}
+
+fn run_export_jobs(
+    factory: DocumentFactory,
+    jobs: Vec<PagePlan>,
+    threads: Option<usize>,
+) -> Result<(), String> {
+    if jobs.is_empty() {
+        return Ok(());
+    }
+
+    let cpu_count = num_cpus::get().max(1);
+    let (desired, requested_label) = match threads {
+        Some(value) => (value, value.to_string()),
+        None => (cpu_count, "auto".into()),
+    };
+    let worker_count = desired.max(1).min(jobs.len().max(1));
+    println!(
+        "Spawning {worker_count} worker(s) ({} logical CPUs detected, requested: {requested_label})...",
+        cpu_count,
+    );
+
+    let (sender, receiver) = unbounded::<PagePlan>();
+    let mut handles = Vec::with_capacity(worker_count);
+
+    for worker_index in 0..worker_count {
+        let rx = receiver.clone();
+        let factory = factory.clone();
+        handles.push(thread::spawn(move || -> Result<(), String> {
+            let mut document = factory
+                .open()
+                .map_err(|err| format!("worker {} failed to open PDF: {err}", worker_index + 1))?;
+            while let Ok(job) = rx.recv() {
+                if let Err(err) = process_job(&mut document, job) {
+                    return Err(err);
+                }
+            }
+            Ok(())
+        }));
+    }
+
+    drop(receiver);
+
+    for job in jobs {
+        sender
+            .send(job)
+            .map_err(|_| "render queue closed unexpectedly".to_string())?;
+    }
+    drop(sender);
+
+    for handle in handles {
+        match handle.join() {
+            Ok(Ok(())) => {}
+            Ok(Err(err)) => return Err(err),
+            Err(_) => return Err("worker thread panicked".into()),
+        }
+    }
+
+    Ok(())
+}
+
+fn process_job(document: &mut Document, job: PagePlan) -> Result<(), String> {
+    let encoded = document
+        .render_page_image_bytes(job.zero_index_page, &job.options)
+        .map_err(|err| format!("failed to export page {}: {err}", job.page_number))?;
+    fs::write(&job.output_path, &encoded.bytes)
+        .map_err(|err| format!("failed to write {}: {err}", job.output_path.display()))?;
+    println!(
+        "Exported page {} -> {} ({:?}, {:?}, {} dpi)",
+        job.page_number,
+        job.output_path.display(),
+        encoded.format,
+        job.options.color_mode,
+        job.options.dpi,
+    );
+    Ok(())
 }
 
 struct GuessedImage {

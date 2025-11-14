@@ -28,6 +28,8 @@ npdf export <pdf_file> <output_dir>
 
 Export the PDF into `<output_dir>` as PNG images. Use `-h`/`--help` to see options (DPI, color mode, page ranges, etc.).
 
+By default `npdf export` spawns multiple workers (one per logical CPU). Pass `--threads 1` to run single-threaded or `--threads N` to clamp the worker count.
+
 ## license
 
 GPL-3.0-or-later as the poppler/xpdf library is licensed in GPL
