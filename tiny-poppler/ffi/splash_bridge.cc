@@ -582,14 +582,26 @@ int splash_renderer_render_page(splash_renderer_t *renderer,
     // crop_area.scale(clamped_dpi);
 
     const SplashColorMode requested_mode = *maybe_mode;
+    const bool enable_overprint =
+        color_mode == SPLASH_COLOR_MODE_CMYK8 || color_mode == SPLASH_COLOR_MODE_DEVICEN8;
 
-    SplashColor paper_color {};
-    paper_color[0] = 255;
-    paper_color[1] = 255;
-    paper_color[2] = 255;
-    // paper_color[3] = 255;
+    SplashColor paper_color;
+    if (enable_overprint) {
+        splashClearColor(paper_color);
+    } else {
+        paper_color[0] = 255;
+        paper_color[1] = 255;
+        paper_color[2] = 255;
+        // paper_color[3] = 255;
+    }
 
-    SplashOutputDev output_dev(requested_mode, kBitmapRowPad, kReverseVideo, paper_color, kTopDownBitmap, kThinLineMode);
+    SplashOutputDev output_dev(requested_mode,
+                               kBitmapRowPad,
+                               kReverseVideo,
+                               paper_color,
+                               kTopDownBitmap,
+                               kThinLineMode,
+                               enable_overprint);
     output_dev.setVectorAntialias(true);
     output_dev.setFontAntialias(true);
     output_dev.setEnableFreeType(true);

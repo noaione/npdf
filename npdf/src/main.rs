@@ -32,7 +32,7 @@ struct Cli {
 enum Commands {
     /// List images embedded in the PDF.
     List(ListArgs),
-    /// Export pages from the PDF to PNG files.
+    /// Export pages from the PDF to PNG or JPEG files.
     Export(ExportArgs),
 }
 
@@ -63,6 +63,13 @@ struct ExportArgs {
     /// - Vertical: y-dpi (Manga/Comics/etc)
     #[arg(long, value_enum)]
     auto_dpi: Option<AutoDPIDirection>,
+    /// When in Auto color mode, if we encounter RGB colorspace,
+    /// do additional check whether there is CMYK content (or color with CMYK fallback).
+    #[arg(long, default_value_t = false)]
+    with_cmyk: bool,
+    /// JPEG quality (1-100) when exporting to JPEG files.
+    #[arg(long, default_value_t = 96, value_parser = clap::value_parser!(u8).range(1..=100))]
+    quality: u8,
     /// First page to export (1-based).
     #[arg(long)]
     first: Option<u32>,
@@ -154,15 +161,14 @@ fn handle_export(args: ExportArgs) -> Result<(), String> {
         crop,
         describe,
         auto_dpi,
+        with_cmyk,
         reverse,
+        quality,
     } = args;
 
     println!("Loading PDF: {:#?}", &pdf);
     let mut document = Document::open(&pdf).map_err(|err| err.to_string())?;
     let page_count = document.page_count().map_err(|err| err.to_string())?;
-
-    println!("Preloading images count...");
-    let images_metadata = document.images().map_err(|err| err.to_string())?;
 
     let first_page = first.unwrap_or(1);
     if first_page == 0 || first_page > page_count {
@@ -181,9 +187,13 @@ fn handle_export(args: ExportArgs) -> Result<(), String> {
         return Err(format!("failed to create output directory: {err}"));
     }
 
+    println!("Preloading images...");
+    let images_metadata = document.images().map_err(|err| err.to_string())?;
+
     let mut options = RenderOptions::default();
     options.dpi = dpi;
     options.crop_mode = crop.to_crop_mode();
+    options.jpeg_quality = Some(quality);
     if let Some(mode) = color.to_color_mode() {
         options.color_mode = mode;
     }
@@ -191,6 +201,12 @@ fn handle_export(args: ExportArgs) -> Result<(), String> {
     let mut images_mappings: HashMap<u32, Vec<ImageInfo>> = HashMap::new();
     for item in images_metadata {
         images_mappings.entry(item.page).or_default().push(item);
+    }
+    println!("Precalculating export settings...");
+    let mut precalculated_settings: HashMap<u32, GuessedImage> = HashMap::new();
+    for (page, images) in &images_mappings {
+        let guessed = precalculate_auto_export_config(images, with_cmyk, dpi, auto_dpi);
+        precalculated_settings.insert(*page, guessed);
     }
 
     println!("Starting export...");
@@ -205,22 +221,22 @@ fn handle_export(args: ExportArgs) -> Result<(), String> {
     for (idx, page) in pages.iter().enumerate() {
         let page = *page;
         if color == ColorChoice::Auto {
-            let image_map = images_mappings.get(&page);
-            options.color_mode = match image_map {
-                Some(img_map) => determine_page_colorspace(img_map),
+            let precalc = precalculated_settings.get(&page);
+            options.color_mode = match precalc {
+                Some(pre) => pre.color,
                 None => ColorMode::Mono8,
             };
         };
-        if let Some(auto_dpi) = auto_dpi {
-            let image_map = images_mappings.get(&page);
-            options.dpi = match image_map {
-                Some(img_map) => determine_export_dpi(&img_map, dpi, auto_dpi),
+        if let Some(_) = auto_dpi {
+            let precalc = precalculated_settings.get(&page);
+            options.dpi = match precalc {
+                Some(pre) => pre.dpi,
                 None => dpi,
             };
         }
-        // Use idx+1 for filename to get incrementing numbers regardless of reverse
         let file_number = idx + 1;
-        let file_name = format!("page-{file_number:04}.png");
+        let extension = extension_for_mode(options.color_mode);
+        let file_name = format!("page-{file_number:04}.{extension}");
         let output_path = output.join(file_name);
         if describe {
             println!(
@@ -231,20 +247,30 @@ fn handle_export(args: ExportArgs) -> Result<(), String> {
                 options.dpi,
             );
         } else {
-            document
-                .render_page_to_png(page - 1, &output_path, &options)
+            let encoded = document
+                .render_page_image_bytes(page - 1, &options)
                 .map_err(|err| format!("failed to export page {page}: {err}"))?;
-            println!("Exported page {page} -> {}", output_path.display());
+            fs::write(&output_path, &encoded.bytes)
+                .map_err(|err| format!("failed to write {}: {err}", output_path.display()))?;
+            println!(
+                "Exported page {page} -> {} ({:?})",
+                output_path.display(),
+                encoded.format,
+            );
         }
     }
 
     Ok(())
 }
 
-fn determine_page_colorspace(images: &[ImageInfo]) -> ColorMode {
+fn determine_page_colorspace(images: &[ImageInfo], with_cmyk: bool) -> ColorMode {
     // Heuristic: fall back to grayscale unless we see any image that clearly carries color data.
     if images.iter().any(image_has_color) {
-        ColorMode::Rgb8
+        if with_cmyk && images.iter().any(image_has_cmyk) {
+            ColorMode::Cmyk8
+        } else {
+            ColorMode::Rgb8
+        }
     } else {
         ColorMode::Mono8
     }
@@ -306,6 +332,32 @@ fn image_has_color(image: &ImageInfo) -> bool {
         return false;
     }
     colorspace_contains_color(&image.colorspace, image.components)
+}
+
+fn image_has_cmyk(image: &ImageInfo) -> bool {
+    if !matches!(image.image_type, ImageType::Image | ImageType::Stencil) {
+        return false;
+    }
+    colorspace_contains_cmyk(&image.colorspace, image.components)
+}
+
+fn colorspace_contains_cmyk(space: &PdfImageColorSpace, components: u32) -> bool {
+    match space {
+        PdfImageColorSpace::DeviceCMYK => true,
+        PdfImageColorSpace::Unknown => components == 4 || components == 8,
+        PdfImageColorSpace::DeviceRGB
+        | PdfImageColorSpace::DeviceGray
+        | PdfImageColorSpace::Pattern => false,
+        PdfImageColorSpace::Lab { .. } => false,
+        PdfImageColorSpace::ICC { alternate } => colorspace_contains_cmyk(alternate, components),
+        PdfImageColorSpace::Indexed { base, .. } => colorspace_contains_cmyk(base, components),
+        PdfImageColorSpace::Separation { alternate, .. } => {
+            colorspace_contains_cmyk(alternate, components)
+        }
+        PdfImageColorSpace::DeviceN { alternate, .. } => {
+            colorspace_contains_cmyk(alternate, components)
+        }
+    }
 }
 
 fn colorspace_contains_color(space: &PdfImageColorSpace, components: u32) -> bool {
@@ -376,6 +428,13 @@ fn describe_image_type(kind: ImageType) -> &'static str {
     }
 }
 
+fn extension_for_mode(mode: ColorMode) -> &'static str {
+    match mode {
+        ColorMode::Cmyk8 | ColorMode::DeviceN8 => "jpg",
+        _ => "png",
+    }
+}
+
 impl ColorChoice {
     fn to_color_mode(self) -> Option<ColorMode> {
         match self {
@@ -433,4 +492,25 @@ fn fmt_dpi(num: f64) -> String {
         }
         formatted_str
     }
+}
+
+struct GuessedImage {
+    color: ColorMode,
+    dpi: f64,
+}
+
+fn precalculate_auto_export_config(
+    images: &[ImageInfo],
+    with_cmyk: bool,
+    target_dpi: f64,
+    direction: Option<AutoDPIDirection>,
+) -> GuessedImage {
+    let color = determine_page_colorspace(images, with_cmyk);
+    let dpi = if let Some(direction) = direction {
+        determine_export_dpi(images, target_dpi, direction)
+    } else {
+        target_dpi
+    };
+
+    GuessedImage { color, dpi }
 }
