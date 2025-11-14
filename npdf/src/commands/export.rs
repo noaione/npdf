@@ -1,13 +1,14 @@
 use clap::{Args, ValueEnum};
 use color_print::{cformat, cprintln};
 use crossbeam_channel::unbounded;
+use std::collections::BTreeMap;
+use std::fs;
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::thread;
-use std::{collections::HashMap, fs};
 use tiny_poppler::{
-    ColorMode, Document, DocumentFactory, ImageInfo, ImageType, PdfCropMode, PdfImageColorSpace,
-    RenderOptions,
+    ColorMode, Document, DocumentFactory, ImageInfo, ImageType, PageInfo, PdfCropMode,
+    PdfImageColorSpace, RenderOptions,
 };
 
 #[derive(Args)]
@@ -133,6 +134,13 @@ pub fn run(args: ExportArgs) -> Result<(), String> {
         .map(|slice| slice.to_vec())
         .unwrap_or_default();
 
+    let page_stats = if let Some(pages) = factory.pages() {
+        pages.to_vec()
+    } else {
+        let mut document = factory.open().map_err(|err| err.to_string())?;
+        document.page_info().map_err(|err| err.to_string())?
+    };
+
     let base_options = RenderOptions {
         dpi,
         crop_mode: crop.to_crop_mode(),
@@ -140,15 +148,25 @@ pub fn run(args: ExportArgs) -> Result<(), String> {
         jpeg_quality: Some(quality),
     };
 
-    let mut images_mappings: HashMap<u32, Vec<ImageInfo>> = HashMap::new();
+    let mut images_mappings: BTreeMap<u32, Vec<ImageInfo>> = BTreeMap::new();
     for item in images_metadata {
         images_mappings.entry(item.page).or_default().push(item);
     }
+    let page_stats_map: BTreeMap<u32, PageInfo> = page_stats
+        .into_iter()
+        .map(|info| (info.page, info))
+        .collect();
     println!("Precalculating export settings...");
-    let mut precalculated_settings: HashMap<u32, GuessedImage> = HashMap::new();
-    for (page, images) in &images_mappings {
-        let guessed = precalculate_auto_export_config(images, with_cmyk, dpi, auto_dpi);
-        precalculated_settings.insert(*page, guessed);
+    let mut precalculated_settings: BTreeMap<u32, GuessedImage> = BTreeMap::new();
+    for page in 1..=page_count {
+        let images_slice: &[ImageInfo] = match images_mappings.get(&page) {
+            Some(entries) => entries.as_slice(),
+            None => &[],
+        };
+        let page_info = page_stats_map.get(&page).copied();
+        let guessed =
+            precalculate_auto_export_config(images_slice, page_info, with_cmyk, dpi, auto_dpi);
+        precalculated_settings.insert(page, guessed);
     }
 
     println!("Starting export...");
@@ -168,7 +186,7 @@ pub fn run(args: ExportArgs) -> Result<(), String> {
                 per_page.color_mode = precalculated_settings
                     .get(&page)
                     .map(|pre| pre.color)
-                    .unwrap_or(ColorMode::Mono8);
+                    .unwrap_or(ColorMode::Mono1); // For empty pages, use mono 1-bit
             }
             if auto_dpi.is_some() {
                 per_page.dpi = precalculated_settings
@@ -183,6 +201,7 @@ pub fn run(args: ExportArgs) -> Result<(), String> {
             PagePlan {
                 page_number: page,
                 zero_index_page: page - 1,
+                total_pages: page_count,
                 output_path,
                 options: per_page,
             }
@@ -234,6 +253,7 @@ impl CropChoice {
 struct PagePlan {
     page_number: u32,
     zero_index_page: u32,
+    total_pages: u32,
     output_path: PathBuf,
     options: RenderOptions,
 }
@@ -304,9 +324,13 @@ fn process_job(document: &mut Document, job: PagePlan) -> Result<(), String> {
         .map_err(|err| format!("failed to export page {}: {err}", job.page_number))?;
     fs::write(&job.output_path, &encoded.bytes)
         .map_err(|err| format!("failed to write {}: {err}", job.output_path.display()))?;
+
+    // pad page number depending on total pages
+    let total_page = job.total_pages.to_string().len();
+    let pad_page = format!("{:0width$}", job.page_number, width = total_page);
     cprintln!(
-        "Exported <m,s>page {}</m,s> -> <m,s>{}</m,s> ({:?}, {:?}, {} dpi)",
-        job.page_number,
+        "Exported <m,s>p{}</m,s> -> <m,s>{}</m,s> ({:?}, {:?}, {} dpi)",
+        pad_page,
         job.output_path.display(),
         encoded.format,
         job.options.color_mode,
@@ -322,11 +346,12 @@ struct GuessedImage {
 
 fn precalculate_auto_export_config(
     images: &[ImageInfo],
+    page_info: Option<PageInfo>,
     with_cmyk: bool,
     target_dpi: f64,
     direction: Option<AutoDPIDirection>,
 ) -> GuessedImage {
-    let color = determine_page_colorspace(images, with_cmyk);
+    let color = determine_page_colorspace(images, page_info, with_cmyk);
     let dpi = if let Some(direction) = direction {
         determine_export_dpi(images, target_dpi, direction)
     } else {
@@ -336,8 +361,17 @@ fn precalculate_auto_export_config(
     GuessedImage { color, dpi }
 }
 
-fn determine_page_colorspace(images: &[ImageInfo], with_cmyk: bool) -> ColorMode {
-    if images.iter().any(image_has_color) {
+fn determine_page_colorspace(
+    images: &[ImageInfo],
+    page_info: Option<PageInfo>,
+    with_cmyk: bool,
+) -> ColorMode {
+    if images.is_empty() {
+        match page_info {
+            Some(info) if info.object_count > 0 => ColorMode::Mono8,
+            _ => ColorMode::Mono1,
+        }
+    } else if images.iter().any(image_has_color) {
         if with_cmyk && images.iter().any(image_has_cmyk) {
             ColorMode::Cmyk8
         } else {
