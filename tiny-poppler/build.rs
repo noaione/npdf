@@ -168,12 +168,16 @@ fn emit_linker_flags(target: &str) {
     let is_windows = target.contains("windows");
     let is_apple = target.contains("apple");
 
-    if !is_windows {
-        println!("cargo:rustc-link-lib=freetype");
-        println!("cargo:rustc-link-lib=jpeg");
-        println!("cargo:rustc-link-lib=openjp2");
+    println!("cargo:rustc-link-lib=freetype");
+    println!("cargo:rustc-link-lib=jpeg");
+    println!("cargo:rustc-link-lib=openjp2");
+    println!("cargo:rustc-link-lib=tiff");
+
+    if is_windows {
+        println!("cargo:rustc-link-lib=raw=libpng16");
+        println!("cargo:rustc-link-lib=zlib");
+    } else {
         println!("cargo:rustc-link-lib=png");
-        println!("cargo:rustc-link-lib=tiff");
         println!("cargo:rustc-link-lib=z");
         println!("cargo:rustc-link-lib=fontconfig");
     }
