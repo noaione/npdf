@@ -197,6 +197,8 @@ struct CollectedImage {
     int32_t xref_object = -1;
     int32_t xref_generation = 0;
     uint32_t page_number = 0;
+    double_t dpi_x = 0;
+    double_t dpi_y = 0;
     splash_image_type_t image_type = SPLASH_IMAGE_TYPE_UNKNOWN;
     splash_image_colorspace_t colorspace = SPLASH_IMAGE_COLORSPACE_UNKNOWN;
     const void *color_space_handle = nullptr;
@@ -233,7 +235,7 @@ public:
         (void)maskColors;
         (void)inlineImg;
         (void)interpolate;
-        add_image(width, height, color_map, ref, SPLASH_IMAGE_TYPE_IMAGE);
+        add_image(width, height, color_map, ref, state, SPLASH_IMAGE_TYPE_IMAGE);
     }
 
     void drawImageMask(GfxState *state, Object *ref, Stream *str, int width, int height, bool invert, bool interpolate, bool inlineImg) override
@@ -243,7 +245,7 @@ public:
         (void)invert;
         (void)interpolate;
         (void)inlineImg;
-        add_mask(width, height, ref);
+        add_mask(width, height, ref, state);
     }
 
     void drawMaskedImage(GfxState *state,
@@ -267,8 +269,8 @@ public:
         (void)maskInvert;
         (void)maskInterpolate;
         (void)interpolate;
-        add_image(width, height, color_map, ref, SPLASH_IMAGE_TYPE_IMAGE);
-        add_image(maskWidth, maskHeight, nullptr, ref, SPLASH_IMAGE_TYPE_MASK);
+        add_image(width, height, color_map, ref, state, SPLASH_IMAGE_TYPE_IMAGE);
+        add_image(maskWidth, maskHeight, nullptr, ref, state, SPLASH_IMAGE_TYPE_MASK);
     }
 
     void drawSoftMaskedImage(GfxState *state,
@@ -292,8 +294,8 @@ public:
         (void)maskColorMap;
         (void)maskInterpolate;
         (void)interpolate;
-        add_image(width, height, color_map, ref, SPLASH_IMAGE_TYPE_IMAGE);
-        add_image(maskWidth, maskHeight, maskColorMap, ref, SPLASH_IMAGE_TYPE_SOFT_MASK);
+        add_image(width, height, color_map, ref, state, SPLASH_IMAGE_TYPE_IMAGE);
+        add_image(maskWidth, maskHeight, maskColorMap, ref, state, SPLASH_IMAGE_TYPE_SOFT_MASK);
     }
 
 private:
@@ -302,6 +304,7 @@ private:
         int height,
         GfxImageColorMap *color_map,
         Object *ref,
+        GfxState *state,
         splash_image_type_t image_type
     )
     {
@@ -338,10 +341,16 @@ private:
             info.xref_generation = static_cast<int32_t>(reference.gen);
         }
 
+        if (state) {
+            std::pair<double, double> dpi = calculate_image_dpi(state->getCTM(), width, height);
+            info.dpi_x = static_cast<double_t>(dpi.first);
+            info.dpi_y = static_cast<double_t>(dpi.second);
+        }
+
         images_->push_back(info);
     }
 
-    void add_mask(int width, int height, Object *ref)
+    void add_mask(int width, int height, Object *ref, GfxState *state)
     {
         if (!images_) {
             return;
@@ -365,7 +374,28 @@ private:
             info.xref_object = static_cast<int32_t>(reference.num);
             info.xref_generation = static_cast<int32_t>(reference.gen);
         }
+        if (state) {
+            std::pair<double, double> dpi = calculate_image_dpi(state->getCTM(), width, height);
+            info.dpi_x = static_cast<double_t>(dpi.first);
+            info.dpi_y = static_cast<double_t>(dpi.second);
+        }
         images_->push_back(info);
+    }
+
+    std::pair<double, double> calculate_image_dpi(const double *ctm, int width, int height)
+    {
+        if (!ctm) {
+            return {0.0, 0.0};
+        }
+
+        // Calculate the scaling factors from the CTM
+        double width2 = sqrt(ctm[0] * ctm[0] + ctm[1] * ctm[1]);
+        double height2 = sqrt(ctm[2] * ctm[2] + ctm[3] * ctm[3]);
+        
+        double xppi = fabs(width * 72.0 / width2);
+        double yppi = fabs(height * 72.0 / height2);
+
+        return {xppi, yppi};
     }
 
     std::vector<CollectedImage> *images_ = nullptr;
@@ -666,6 +696,8 @@ int splash_renderer_collect_images(splash_renderer_t *renderer,
     for (size_t i = 0; i < collected.size(); ++i) {
         buffer[i].width = collected[i].width;
         buffer[i].height = collected[i].height;
+        buffer[i].dpi_x = collected[i].dpi_x;
+        buffer[i].dpi_y = collected[i].dpi_y;
         buffer[i].components = collected[i].components;
         buffer[i].bits_per_component = collected[i].bits_per_component;
         buffer[i].xref_object = collected[i].xref_object;

@@ -70,6 +70,8 @@ typedef struct splash_image_info {
     int32_t xref_object;
     int32_t xref_generation;
     uint32_t page_number;
+    double_t dpi_x;
+    double_t dpi_y;
     splash_image_type_t image_type;
     splash_image_colorspace_t colorspace;
 

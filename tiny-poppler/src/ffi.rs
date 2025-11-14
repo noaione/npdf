@@ -84,6 +84,8 @@ struct SplashImageInfo {
     xref_object: i32,
     xref_generation: i32,
     page_number: u32,
+    dpi_x: f64,
+    dpi_y: f64,
     image_type: ImageType,
     colorspace: ImageColorSpace,
     color_space_handle: *const c_void,
@@ -394,6 +396,7 @@ pub struct ImageInfo {
     pub colorspace: PdfImageColorSpace,
     pub image_type: ImageType,
     pub page: u32,
+    pub dpi: (f64, f64),
     pub xref: Option<(i32, i32)>,
 }
 
@@ -412,6 +415,7 @@ impl From<SplashImageInfo> for ImageInfo {
             colorspace: convert_colorspace(value.color_space_handle),
             image_type: value.image_type,
             page: value.page_number,
+            dpi: (value.dpi_x, value.dpi_y),
             xref,
         }
     }
