@@ -44,16 +44,21 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Setup rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: "rustbuild-"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+
       - name: Install boost
         uses: MarkusJx/install-boost@v2
         id: install-boost
         with:
           boost_version: "1.89.0"
-
-      - name: Setup rust cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          prefix-key: "rust-cache-${{ matrix.os[1] }}-"
 
       - name: Install system dependencies (Linux)
         if: runner.os == 'Linux'
@@ -121,10 +126,15 @@ jobs:
           Boost_DIR: ${{ steps.install-boost.outputs.boost_root }}
           CI_RUNNER: "github"
 
-      - name: Compress artifcats
+      - name: Copy DLLs (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          uv run scripts/collect-dependents.py --exe ./target/release/npdf.exe
+          dir ./target/release
+
+      - name: Compress artifacts
         run:
-          ls -la target/release
-          python3 scripts/packer.py
+          uv run scripts/packer.py
 
       - name: Upload artifact
         uses: actions/upload-artifact@v5
