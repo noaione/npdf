@@ -168,24 +168,24 @@ fn emit_linker_flags(target: &str) {
     let is_windows = target.contains("windows");
     let is_apple = target.contains("apple");
 
-    println!("cargo:rustc-link-lib=static=freetype");
-    println!("cargo:rustc-link-lib=static=jpeg");
-    println!("cargo:rustc-link-lib=static=openjp2");
-    println!("cargo:rustc-link-lib=static=libpng");
-    println!("cargo:rustc-link-lib=static=tiff");
-    println!("cargo:rustc-link-lib=static=z");
+    println!("cargo:rustc-link-lib=freetype");
+    println!("cargo:rustc-link-lib=jpeg");
+    println!("cargo:rustc-link-lib=openjp2");
+    println!("cargo:rustc-link-lib=libpng");
+    println!("cargo:rustc-link-lib=tiff");
+    println!("cargo:rustc-link-lib=z");
 
     if !is_windows {
-        println!("cargo:rustc-link-lib=static=fontconfig");
+        println!("cargo:rustc-link-lib=fontconfig");
     }
 
     if is_apple {
-        println!("cargo:rustc-link-lib=static=iconv");
-        println!("cargo:rustc-link-lib=static=c++");
+        println!("cargo:rustc-link-lib=iconv");
+        println!("cargo:rustc-link-lib=c++");
     } else if is_windows {
         // MSVC links the C++ runtime automatically; no additional flags required.
     } else {
-        println!("cargo:rustc-link-lib=static=stdc++");
+        println!("cargo:rustc-link-lib=stdc++");
     }
 
     if is_windows {
