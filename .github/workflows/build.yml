@@ -50,6 +50,11 @@ jobs:
         with:
           boost_version: "1.89.0"
 
+      - name: Setup rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: "rust-cache-${{ matrix.os[1] }}-"
+
       - name: Install system dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -116,26 +121,10 @@ jobs:
           Boost_DIR: ${{ steps.install-boost.outputs.boost_root }}
           CI_RUNNER: "github"
 
-      - name: Compress artifacts (Linux/macOS)
-        if: runner.os != 'Windows'
-        shell: bash
-        run: |
-          pushd target/release
-          chmod +x npdf
-          tar -czvf npdf-${{ matrix.os[1] }}.tar.gz npdf
-          mv npdf-${{ matrix.os[1] }}.tar.gz ../..
-          popd
-
-      - name: Compress artifacts (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          python3 scripts/collect-dependents.py --exe target/release/npdf.exe
-          pushd target/release
-          $files = Get-ChildItem -Path . -Include 'npdf.exe','*.dll' -File | ForEach-Object { $_.FullName }
-          Compress-Archive -Path $files -DestinationPath npdf-${{ matrix.os[1] }}.zip -Force
-          mv npdf-${{ matrix.os[1] }}.zip ../..
-          popd
-        shell: powershell
+      - name: Compress artifcats
+        run:
+          ls -la target/release
+          python3 scripts/packer.py
 
       - name: Upload artifact
         uses: actions/upload-artifact@v5
