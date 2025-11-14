@@ -133,15 +133,11 @@ pub fn run(args: ExportArgs) -> Result<(), String> {
         .map(|slice| slice.to_vec())
         .unwrap_or_default();
 
-    let base_options = {
-        let mut opts = RenderOptions::default();
-        opts.dpi = dpi;
-        opts.crop_mode = crop.to_crop_mode();
-        opts.jpeg_quality = Some(quality);
-        if let Some(mode) = color.to_color_mode() {
-            opts.color_mode = mode;
-        }
-        opts
+    let base_options = RenderOptions {
+        dpi,
+        crop_mode: crop.to_crop_mode(),
+        color_mode: color.to_color_mode().unwrap_or(ColorMode::Rgb8),
+        jpeg_quality: Some(quality),
     };
 
     let mut images_mappings: HashMap<u32, Vec<ImageInfo>> = HashMap::new();
@@ -276,9 +272,7 @@ fn run_export_jobs(
                 )
             })?;
             while let Ok(job) = rx.recv() {
-                if let Err(err) = process_job(&mut document, job) {
-                    return Err(err);
-                }
+                process_job(&mut document, job)?;
             }
             Ok(())
         }));

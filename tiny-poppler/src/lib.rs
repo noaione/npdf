@@ -326,7 +326,7 @@ fn encode_image(image: &ffi::Image, quality: u8) -> Result<EncodedImage, RenderE
         .checked_mul(components)
         .and_then(|value| value.checked_mul(bits_per_component))
         .ok_or(RenderError::UnsupportedLayout)?;
-    let row_bytes = ((row_bits + 7) / 8).max(1);
+    let row_bytes = row_bits.div_ceil(8).max(1);
     let stride = image.stride as usize;
     if stride < row_bytes {
         return Err(RenderError::UnsupportedLayout);
