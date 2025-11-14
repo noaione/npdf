@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::{collections::HashMap, fs};
 
 use tiny_poppler::{
-    ColorMode, Document, ImageColorSpace, ImageInfo, ImageType, PdfCropMode, RenderOptions,
+    ColorMode, Document, ImageInfo, ImageType, PdfCropMode, PdfImageColorSpace, RenderOptions,
 };
 
 fn main() {
@@ -62,6 +62,8 @@ struct ExportArgs {
     /// Last page to export (1-based).
     #[arg(long)]
     last: Option<u32>,
+    #[arg(long, default_value_t = false)]
+    describe: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, ValueEnum)]
@@ -100,14 +102,14 @@ fn handle_list(args: ListArgs) -> Result<(), String> {
 
     for (idx, info) in images.iter().enumerate() {
         let position = idx + 1;
-        let colorspace = describe_colorspace(info.colorspace);
+        let colorspace = describe_colorspace(&info.colorspace);
         let xref = match info.xref {
             Some((obj, generation)) => format!("{} {} R", obj, generation),
             None => "inline".into(),
         };
         let image_type = describe_image_type(info.image_type);
         println!(
-            "{position:>4}: page {page:>4}, {image_type}, {width}x{height}px, {components} comps, {bits} bpc, colorspace {colorspace}, xref {xref}",
+            "{position:>4}: page {page:>4}, {image_type}, {width}x{height}px, {components} comps, {bits} bpc, {colorspace}, xref {xref}",
             page = info.page,
             width = info.width,
             height = info.height,
@@ -132,6 +134,7 @@ fn handle_export(args: ExportArgs) -> Result<(), String> {
         first,
         last,
         crop,
+        describe,
     } = args;
 
     println!("Loading PDF: {:#?}", &pdf);
@@ -154,7 +157,7 @@ fn handle_export(args: ExportArgs) -> Result<(), String> {
         return Err("last page must be greater than or equal to first page".into());
     }
 
-    if let Err(err) = fs::create_dir_all(&output) {
+    if !describe && let Err(err) = fs::create_dir_all(&output) {
         return Err(format!("failed to create output directory: {err}"));
     }
 
@@ -181,38 +184,95 @@ fn handle_export(args: ExportArgs) -> Result<(), String> {
         };
         let file_name = format!("page-{page:04}.png");
         let output_path = output.join(file_name);
-        document
-            .render_page_to_png(page - 1, &output_path, &options)
-            .map_err(|err| format!("failed to export page {page}: {err}"))?;
-        println!("Exported page {page} -> {}", output_path.display());
+        if describe {
+            println!(
+                "Will export page {page} -> {} (colorspace: {:?}, crop: {:?})",
+                output_path.display(),
+                options.color_mode,
+                options.crop_mode
+            );
+        } else {
+            document
+                .render_page_to_png(page - 1, &output_path, &options)
+                .map_err(|err| format!("failed to export page {page}: {err}"))?;
+            println!("Exported page {page} -> {}", output_path.display());
+        }
     }
 
     Ok(())
 }
 
 fn determine_page_colorspace(images: &[ImageInfo]) -> ColorMode {
-    // TODO!
-    ColorMode::Rgb8
-    // let has_color = images
-    //     .iter()
-    //     .find(|image| {
-    //         if
-    //     })
+    // Heuristic: fall back to grayscale unless we see any image that clearly carries color data.
+    if images.iter().any(image_has_color) {
+        ColorMode::Rgb8
+    } else {
+        ColorMode::Mono8
+    }
 }
 
-fn describe_colorspace(space: ImageColorSpace) -> &'static str {
+fn image_has_color(image: &ImageInfo) -> bool {
+    if !matches!(image.image_type, ImageType::Image | ImageType::Stencil) {
+        return false;
+    }
+    colorspace_contains_color(&image.colorspace, image.components)
+}
+
+fn colorspace_contains_color(space: &PdfImageColorSpace, components: u32) -> bool {
     match space {
-        ImageColorSpace::Unknown => "Unknown",
-        ImageColorSpace::DeviceGray => "DeviceGray",
-        ImageColorSpace::DeviceRgb => "DeviceRGB",
-        ImageColorSpace::DeviceCmyk => "DeviceCMYK",
-        ImageColorSpace::Lab => "Lab",
-        ImageColorSpace::Icc => "ICC",
-        ImageColorSpace::Indexed => "Indexed",
-        ImageColorSpace::Pattern => "Pattern",
-        ImageColorSpace::Separation => "Separation",
-        ImageColorSpace::DeviceN => "DeviceN",
-        ImageColorSpace::Other => "Other",
+        PdfImageColorSpace::DeviceGray => false,
+        PdfImageColorSpace::Unknown => components > 1,
+        PdfImageColorSpace::DeviceRGB
+        | PdfImageColorSpace::DeviceCMYK
+        | PdfImageColorSpace::Lab { .. }
+        | PdfImageColorSpace::ICC { .. }
+        | PdfImageColorSpace::Pattern => true,
+        PdfImageColorSpace::Indexed { base, .. } => colorspace_contains_color(base, components),
+        PdfImageColorSpace::Separation { alternate, .. } => {
+            colorspace_contains_color(alternate, components)
+        }
+        PdfImageColorSpace::DeviceN { alternate, .. } => {
+            colorspace_contains_color(alternate, components)
+        }
+    }
+}
+
+fn describe_colorspace(space: &PdfImageColorSpace) -> String {
+    match space {
+        PdfImageColorSpace::Unknown => "None".to_string(),
+        PdfImageColorSpace::DeviceGray => "DeviceGray".to_string(),
+        PdfImageColorSpace::DeviceRGB => "DeviceRGB".to_string(),
+        PdfImageColorSpace::DeviceCMYK => "DeviceCMYK".to_string(),
+        PdfImageColorSpace::Lab { white, black, a, b } => {
+            let white_box = format!("White,{:.4},{:.4},{:.4}", white.x, white.y, white.z);
+            let black_box = format!("Black,{:.4},{:.4},{:.4}", black.x, black.y, black.z);
+            let a_range = format!("A,{:.4}-{:.4}", a.min, a.max);
+            let b_range = format!("B,{:.4}-{:.4}", b.min, b.max);
+
+            format!("Lab[{white_box}|{black_box}|{a_range}|{b_range}]")
+        }
+        PdfImageColorSpace::ICC { alternate } => {
+            format!("ICC({})", describe_colorspace(alternate))
+        }
+        PdfImageColorSpace::Indexed { hival, base } => {
+            format!("Indexed({hival}, {})", describe_colorspace(base))
+        }
+        PdfImageColorSpace::Pattern => "Pattern".to_string(),
+        PdfImageColorSpace::Separation { name, alternate } => {
+            format!("Separation({name}, {})", describe_colorspace(alternate))
+        }
+        PdfImageColorSpace::DeviceN {
+            count,
+            names,
+            alternate,
+        } => {
+            let all_names = names.join(",");
+            format!(
+                "DeviceN({count}, [{}], {})",
+                all_names,
+                describe_colorspace(alternate)
+            )
+        }
     }
 }
 

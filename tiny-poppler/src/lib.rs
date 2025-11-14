@@ -6,7 +6,7 @@
 
 mod ffi;
 
-pub use ffi::{ColorMode, ImageColorSpace, ImageInfo, ImageType, PdfCropMode};
+pub use ffi::{ColorMode, ImageInfo, ImageType, PdfCropMode, PdfImageColorSpace};
 use png::{BitDepth, ColorType, Compression, Encoder};
 
 use std::fs::{self, File};

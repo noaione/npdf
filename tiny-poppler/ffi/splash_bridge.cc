@@ -137,7 +137,7 @@ splash_image_colorspace_t to_image_colorspace(const GfxColorSpace *color_space)
     case GfxColorSpaceMode::csDeviceN:
         return SPLASH_IMAGE_COLORSPACE_DEVICEN;
     default:
-        return SPLASH_IMAGE_COLORSPACE_OTHER;
+        return SPLASH_IMAGE_COLORSPACE_UNKNOWN;
     }
 }
 
@@ -199,7 +199,18 @@ struct CollectedImage {
     uint32_t page_number = 0;
     splash_image_type_t image_type = SPLASH_IMAGE_TYPE_UNKNOWN;
     splash_image_colorspace_t colorspace = SPLASH_IMAGE_COLORSPACE_UNKNOWN;
+    const void *color_space_handle = nullptr;
 };
+
+const void *copy_color_space(const GfxColorSpace *space)
+{
+    if (!space) {
+        return nullptr;
+    }
+
+    std::unique_ptr<GfxColorSpace> copy = space->copy();
+    return static_cast<const void *>(copy.release());
+}
 
 class ImageCollector final : public OutputDev
 {
@@ -311,11 +322,14 @@ private:
         if (color_map) {
             info.components = static_cast<uint32_t>(color_map->getNumPixelComps());
             info.bits_per_component = static_cast<uint32_t>(color_map->getBits());
-            info.colorspace = to_image_colorspace(color_map->getColorSpace());
+            const GfxColorSpace *space = color_map->getColorSpace();
+            info.colorspace = to_image_colorspace(space);
+            info.color_space_handle = copy_color_space(space);
         } else {
             info.components = 1;
             info.bits_per_component = 1;
             info.colorspace = SPLASH_IMAGE_COLORSPACE_DEVICE_GRAY;
+            info.color_space_handle = nullptr;
         }
 
         if (ref && ref->isRef()) {
@@ -345,6 +359,7 @@ private:
         info.components = 1;
         info.bits_per_component = 1;
         info.colorspace = SPLASH_IMAGE_COLORSPACE_DEVICE_GRAY;
+        info.color_space_handle = nullptr;
         if (ref && ref->isRef()) {
             const auto reference = ref->getRef();
             info.xref_object = static_cast<int32_t>(reference.num);
@@ -629,8 +644,21 @@ int splash_renderer_collect_images(splash_renderer_t *renderer,
         return errNone;
     }
 
-    splash_image_info_t *buffer = static_cast<splash_image_info_t *>(std::calloc(collected.size(), sizeof(splash_image_info_t)));
+    const size_t allocation_count = collected.size();
+    const size_t header_size = sizeof(size_t);
+    const size_t payload_size = allocation_count * sizeof(splash_image_info_t);
+    void *raw = std::malloc(header_size + payload_size);
+    if (!raw) {
+        set_error(error_out, "unable to allocate image metadata buffer");
+        return errInternal;
+    }
+
+    auto *header = static_cast<size_t *>(raw);
+    *header = allocation_count;
+
+    splash_image_info_t *buffer = reinterpret_cast<splash_image_info_t *>(header + 1);
     if (!buffer) {
+        std::free(raw);
         set_error(error_out, "unable to allocate image metadata buffer");
         return errInternal;
     }
@@ -644,6 +672,7 @@ int splash_renderer_collect_images(splash_renderer_t *renderer,
         buffer[i].xref_generation = collected[i].xref_generation;
         buffer[i].image_type = collected[i].image_type;
         buffer[i].colorspace = collected[i].colorspace;
+        buffer[i].color_space_handle = collected[i].color_space_handle;
         buffer[i].page_number = collected[i].page_number;
     }
 
@@ -679,5 +708,123 @@ void splash_renderer_free_cstr(char *message)
 
 void splash_renderer_free_image_info(splash_image_info_t *images)
 {
-    std::free(images);
+    if (!images) {
+        return;
+    }
+
+    auto *header = reinterpret_cast<size_t *>(images) - 1;
+    const size_t len = *header;
+
+    for (size_t i = 0; i < len; ++i) {
+        if (images[i].color_space_handle) {
+            auto *space = static_cast<GfxColorSpace *>(const_cast<void *>(images[i].color_space_handle));
+            delete space;
+            images[i].color_space_handle = nullptr;
+        }
+    }
+
+    std::free(header);
+}
+
+//! Colorspace related functions
+splash_image_colorspace_t gfxcs_get_color_mode(const void *cs_ptr) {
+    const auto *cs = static_cast<const GfxColorSpace*>(cs_ptr);
+    return to_image_colorspace(cs);
+}
+
+bool gfxcs_get_indexed_info(const void *cs_ptr, colorspaces_indexed_info_t *out) {
+    const auto *cs = static_cast<const GfxColorSpace*>(cs_ptr);
+    if (cs->getMode() != csIndexed) return false;
+
+    auto *idxColor = const_cast<GfxIndexedColorSpace*>(
+        static_cast<const GfxIndexedColorSpace*>(cs)
+    );
+
+    out->hival = idxColor->getIndexHigh();
+    out->base = static_cast<void*>(idxColor->getBase());
+    return true;
+}
+
+bool gfxcs_get_separation_info(const void *cs_ptr, colorspaces_separation_info_t *out) {
+    auto *cs = static_cast<const GfxColorSpace*>(cs_ptr);
+    if (cs->getMode() != csSeparation) return false;
+
+    auto *sep = const_cast<GfxSeparationColorSpace*>(
+        static_cast<const GfxSeparationColorSpace*>(cs)
+    );
+
+    std::string s = sep->getName()->toStr();
+
+    out->name = strdup(s.c_str());
+    out->alternate = static_cast<const void*>(sep->getAlt());  // recursive
+    return true;
+}
+
+bool gfxcs_get_devicen_info(const void *cs_ptr, colorspaces_devicen_info_t *out) {
+    auto *cs = static_cast<const GfxColorSpace*>(cs_ptr);
+    if (cs->getMode() != csDeviceN) return false;
+
+    // Cast away const only temporarily
+    auto *dn = const_cast<GfxDeviceNColorSpace*>(
+        static_cast<const GfxDeviceNColorSpace*>(cs)
+    );
+
+    int count = dn->getNComps();
+    out->count = (uint32_t)count;
+
+    const char **names = (const char**) malloc(sizeof(char*) * count);
+
+    for (int i = 0; i < count; i++) {
+        const std::string &s = dn->getColorantName(i);
+        names[i] = strdup(s.c_str());
+    }
+    out->names = names;
+
+    out->alternate = static_cast<const void*>(dn->getAlt());
+    return true;
+}
+
+bool gfxcs_get_labxyz_info(const void *cs_ptr, colorspaces_labxyz_info_t *out) {
+    auto *cs = static_cast<const GfxColorSpace*>(cs_ptr);
+    if (cs->getMode() != csLab) return false;
+
+    auto *sep = const_cast<GfxLabColorSpace*>(
+        static_cast<const GfxLabColorSpace*>(cs)
+    );
+
+    out->whiteX = sep->getWhiteX();
+    out->whiteY = sep->getWhiteY();
+    out->whiteZ = sep->getWhiteZ();
+    out->blackX = sep->getBlackX();
+    out->blackY = sep->getBlackY();
+    out->blackZ = sep->getBlackZ();
+    out->minA = sep->getAMin();
+    out->maxA = sep->getAMax();
+    out->minB = sep->getBMin();
+    out->maxB = sep->getBMax();
+    return true;
+}
+
+bool gfxcs_get_icc_info(const void *cs_ptr, colorspaces_icc_info_t *out) {
+    auto *cs = static_cast<const GfxColorSpace*>(cs_ptr);
+    if (cs->getMode() != csICCBased) return false;
+
+    auto *sep = const_cast<GfxICCBasedColorSpace*>(
+        static_cast<const GfxICCBasedColorSpace*>(cs)
+    );
+
+    out->alternate = static_cast<const void*>(sep->getAlt());  // recursive
+    return true;
+}
+
+void gfxcs_free_string(const char *s) {
+    free((void*)s);
+}
+
+void gfxcs_free_string_array(const char **arr, uint32_t count) {
+    if (!arr) return;
+    for (uint32_t i = 0; i < count; i++) {
+        free((void*)arr[i]);
+    }
+    free((void*)arr);
 }

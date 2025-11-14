@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <math.h>
+#include <GfxState.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -32,7 +33,6 @@ typedef enum splash_image_colorspace {
     SPLASH_IMAGE_COLORSPACE_PATTERN = 7,
     SPLASH_IMAGE_COLORSPACE_SEPARATION = 8,
     SPLASH_IMAGE_COLORSPACE_DEVICEN = 9,
-    SPLASH_IMAGE_COLORSPACE_OTHER = 10,
 } splash_image_colorspace_t;
 
 typedef enum splash_image_type {
@@ -72,6 +72,9 @@ typedef struct splash_image_info {
     uint32_t page_number;
     splash_image_type_t image_type;
     splash_image_colorspace_t colorspace;
+
+    // Not exposed through FFI; only used internally inside the C++ wrapper
+    const void *color_space_handle;
 } splash_image_info_t;
 
 typedef struct splash_crop_area {
@@ -126,6 +129,54 @@ int splash_renderer_collect_images(splash_renderer_t *renderer,
 void splash_renderer_free_image(splash_image_t *image);
 void splash_renderer_free_cstr(char *message);
 void splash_renderer_free_image_info(splash_image_info_t *images);
+
+//! Colorspace related functions
+splash_image_colorspace_t gfxcs_get_color_mode(const void *cs_ptr);
+typedef struct {
+    uint32_t hival;
+    const void *base; // opaque pointer to GfxColorSpace*
+} colorspaces_indexed_info_t;
+
+bool gfxcs_get_indexed_info(const void *cs_ptr, colorspaces_indexed_info_t *out);
+
+typedef struct {
+    const char *name;
+    const void *alternate; // child colorspace
+} colorspaces_separation_info_t;
+
+bool gfxcs_get_separation_info(const void *cs_ptr, colorspaces_separation_info_t *out);
+
+typedef struct {
+    uint32_t count;
+    const char **names;       // char*[count]
+    const void *alternate;    // child colorspace
+} colorspaces_devicen_info_t;
+
+bool gfxcs_get_devicen_info(const void *cs_ptr, colorspaces_devicen_info_t *out);
+
+typedef struct {
+    double whiteX;
+    double whiteY;
+    double whiteZ;
+    double blackX;
+    double blackY;
+    double blackZ;
+    double minA;
+    double minB;
+    double maxA;
+    double maxB;
+} colorspaces_labxyz_info_t;
+
+bool gfxcs_get_labxyz_info(const void *cs_ptr, colorspaces_labxyz_info_t *out);
+
+typedef struct {
+    const void *alternate; // alternative
+} colorspaces_icc_info_t;
+
+bool gfxcs_get_icc_info(const void *cs_ptr, colorspaces_icc_info_t *out);
+
+void gfxcs_free_string(const char *s);
+void gfxcs_free_string_array(const char **arr, uint32_t count);
 
 #ifdef __cplusplus
 }

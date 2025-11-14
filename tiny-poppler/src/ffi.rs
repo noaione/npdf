@@ -1,4 +1,5 @@
-use std::ffi::{CStr, CString};
+use std::ffi::{CStr, CString, c_void};
+use std::mem::MaybeUninit;
 use std::os::raw::{c_char, c_double, c_uint};
 use std::path::Path;
 use std::ptr;
@@ -25,8 +26,9 @@ pub enum ColorMode {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ImageColorSpace {
+#[derive(Clone, Copy, Debug)]
+#[expect(dead_code)]
+enum ImageColorSpace {
     Unknown = 0,
     DeviceGray = 1,
     DeviceRgb = 2,
@@ -37,7 +39,6 @@ pub enum ImageColorSpace {
     Pattern = 7,
     Separation = 8,
     DeviceN = 9,
-    Other = 10,
 }
 
 #[repr(C)]
@@ -85,6 +86,46 @@ struct SplashImageInfo {
     page_number: u32,
     image_type: ImageType,
     colorspace: ImageColorSpace,
+    color_space_handle: *const c_void,
+}
+
+/// Colorspace related
+#[repr(C)]
+struct ColorspaceIndexedInfo {
+    hival: u32,
+    base: *const c_void,
+}
+
+#[repr(C)]
+struct ColorspaceSeparationInfo {
+    name: *const c_char,
+    alternate: *const c_void,
+}
+
+#[repr(C)]
+struct ColorspaceDeviceNInfo {
+    count: u32,
+    names: *const *const c_char,
+    alternate: *const c_void,
+}
+
+#[repr(C)]
+struct ColorspaceLabXYZInfo {
+    white_x: f64,
+    white_y: f64,
+    white_z: f64,
+    black_x: f64,
+    black_y: f64,
+    black_z: f64,
+    min_a: f64,
+    min_b: f64,
+    max_a: f64,
+    max_b: f64,
+}
+
+#[repr(C)]
+struct ColorspaceICCInfo {
+    alternate: *const c_void,
 }
 
 unsafe extern "C" {
@@ -119,6 +160,17 @@ unsafe extern "C" {
         error_out: *mut *mut c_char,
     ) -> i32;
     fn splash_renderer_free_image_info(images: *mut SplashImageInfo);
+
+    /// Colorspace related
+    fn gfxcs_get_color_mode(ptr: *const c_void) -> ImageColorSpace;
+    fn gfxcs_get_indexed_info(ptr: *const c_void, out: *mut ColorspaceIndexedInfo) -> bool;
+    fn gfxcs_get_separation_info(ptr: *const c_void, out: *mut ColorspaceSeparationInfo) -> bool;
+    fn gfxcs_get_devicen_info(ptr: *const c_void, out: *mut ColorspaceDeviceNInfo) -> bool;
+    fn gfxcs_get_labxyz_info(ptr: *const c_void, out: *mut ColorspaceLabXYZInfo) -> bool;
+    fn gfxcs_get_icc_info(ptr: *const c_void, out: *mut ColorspaceICCInfo) -> bool;
+
+    fn gfxcs_free_string(s: *const c_char);
+    fn gfxcs_free_string_array(arr: *const *const c_char, count: c_uint);
 }
 
 fn take_error(message: *mut c_char) -> String {
@@ -288,13 +340,58 @@ pub struct Image {
     pub bits_per_component: u32,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct XYZColor {
+    pub x: f64,
+    pub y: f64,
+    pub z: f64,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct MinMaxColorRange {
+    pub min: f64,
+    pub max: f64,
+}
+
+/// Metadata about the colorspaces used by images.
+#[derive(Debug, Clone)]
+pub enum PdfImageColorSpace {
+    Unknown,
+    DeviceGray,
+    DeviceRGB,
+    DeviceCMYK,
+    Lab {
+        white: XYZColor,
+        black: XYZColor,
+        a: MinMaxColorRange,
+        b: MinMaxColorRange,
+    },
+    ICC {
+        alternate: Box<PdfImageColorSpace>,
+    },
+    Indexed {
+        hival: u32,
+        base: Box<PdfImageColorSpace>,
+    },
+    Pattern,
+    Separation {
+        name: String,
+        alternate: Box<PdfImageColorSpace>,
+    },
+    DeviceN {
+        count: u32,
+        names: Vec<String>,
+        alternate: Box<PdfImageColorSpace>,
+    },
+}
+
 #[derive(Debug, Clone)]
 pub struct ImageInfo {
     pub width: u32,
     pub height: u32,
     pub components: u32,
     pub bits_per_component: u32,
-    pub colorspace: ImageColorSpace,
+    pub colorspace: PdfImageColorSpace,
     pub image_type: ImageType,
     pub page: u32,
     pub xref: Option<(i32, i32)>,
@@ -312,10 +409,123 @@ impl From<SplashImageInfo> for ImageInfo {
             height: value.height,
             components: value.components,
             bits_per_component: value.bits_per_component,
-            colorspace: value.colorspace,
+            colorspace: convert_colorspace(value.color_space_handle),
             image_type: value.image_type,
             page: value.page_number,
             xref,
         }
+    }
+}
+
+fn convert_colorspace(cs: *const c_void) -> PdfImageColorSpace {
+    // if NULL pointer, return Unknown immediately
+    if cs.is_null() {
+        return PdfImageColorSpace::Unknown;
+    }
+
+    let kind = unsafe { gfxcs_get_color_mode(cs) };
+
+    match kind {
+        ImageColorSpace::DeviceGray => PdfImageColorSpace::DeviceGray,
+        ImageColorSpace::DeviceRgb => PdfImageColorSpace::DeviceRGB,
+        ImageColorSpace::DeviceCmyk => PdfImageColorSpace::DeviceCMYK,
+        ImageColorSpace::Lab => {
+            let mut info = MaybeUninit::<ColorspaceLabXYZInfo>::uninit();
+            let ok = unsafe { gfxcs_get_labxyz_info(cs, info.as_mut_ptr()) };
+            if !ok {
+                return PdfImageColorSpace::Unknown;
+            }
+            let info = unsafe { info.assume_init() };
+
+            PdfImageColorSpace::Lab {
+                white: XYZColor {
+                    x: info.white_x,
+                    y: info.white_y,
+                    z: info.white_z,
+                },
+                black: XYZColor {
+                    x: info.black_x,
+                    y: info.black_y,
+                    z: info.black_z,
+                },
+                a: MinMaxColorRange {
+                    min: info.min_a,
+                    max: info.max_a,
+                },
+                b: MinMaxColorRange {
+                    min: info.min_b,
+                    max: info.max_b,
+                },
+            }
+        }
+        ImageColorSpace::Icc => {
+            let mut info = MaybeUninit::<ColorspaceICCInfo>::uninit();
+            let ok = unsafe { gfxcs_get_icc_info(cs, info.as_mut_ptr()) };
+            if !ok {
+                return PdfImageColorSpace::Unknown;
+            }
+            let info = unsafe { info.assume_init() };
+
+            PdfImageColorSpace::ICC {
+                alternate: Box::new(convert_colorspace(info.alternate)),
+            }
+        }
+        ImageColorSpace::Pattern => PdfImageColorSpace::Pattern,
+
+        ImageColorSpace::Indexed => {
+            let mut info = MaybeUninit::<ColorspaceIndexedInfo>::uninit();
+            let ok = unsafe { gfxcs_get_indexed_info(cs, info.as_mut_ptr()) };
+            if !ok {
+                return PdfImageColorSpace::Unknown;
+            }
+            let info = unsafe { info.assume_init() };
+
+            PdfImageColorSpace::Indexed {
+                hival: info.hival,
+                base: Box::new(convert_colorspace(info.base)),
+            }
+        }
+
+        ImageColorSpace::Separation => {
+            let mut info = MaybeUninit::<ColorspaceSeparationInfo>::uninit();
+            let ok = unsafe { gfxcs_get_separation_info(cs, info.as_mut_ptr()) };
+            if !ok {
+                return PdfImageColorSpace::Unknown;
+            }
+            let info = unsafe { info.assume_init() };
+
+            let name = unsafe { CStr::from_ptr(info.name).to_string_lossy().into_owned() };
+            unsafe { gfxcs_free_string(info.name) };
+
+            PdfImageColorSpace::Separation {
+                name,
+                alternate: Box::new(convert_colorspace(info.alternate)),
+            }
+        }
+
+        ImageColorSpace::DeviceN => {
+            let mut info = MaybeUninit::<ColorspaceDeviceNInfo>::uninit();
+            let ok = unsafe { gfxcs_get_devicen_info(cs, info.as_mut_ptr()) };
+            if !ok {
+                return PdfImageColorSpace::Unknown;
+            }
+            let info = unsafe { info.assume_init() };
+
+            let mut names = Vec::new();
+            for i in 0..info.count {
+                let ptr = unsafe { *info.names.add(i as usize) };
+                unsafe { names.push(CStr::from_ptr(ptr).to_string_lossy().into_owned()) };
+            }
+
+            unsafe { gfxcs_free_string_array(info.names, info.count) };
+
+            PdfImageColorSpace::DeviceN {
+                count: info.count,
+                names,
+                alternate: Box::new(convert_colorspace(info.alternate)),
+            }
+        }
+
+        _ => PdfImageColorSpace::Unknown,
     }
 }
