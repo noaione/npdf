@@ -129,8 +129,10 @@ jobs:
       - name: Compress artifacts (Windows)
         if: runner.os == 'Windows'
         run: |
+          python3 scripts/collect-dependents.py --exe target/release/npdf.exe
           pushd target/release
-          Compress-Archive -Path npdf.exe -DestinationPath npdf-${{ matrix.os[1] }}.zip
+          $files = Get-ChildItem -Path . -Include 'npdf.exe','*.dll' -File | ForEach-Object { $_.FullName }
+          Compress-Archive -Path $files -DestinationPath npdf-${{ matrix.os[1] }}.zip -Force
           mv npdf-${{ matrix.os[1] }}.zip ../..
           popd
         shell: powershell
