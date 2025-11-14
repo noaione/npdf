@@ -5,11 +5,11 @@ an opinionated pdf-to-png exporter using poppler splash output renderer
 ## why?
 
 poppler/pdftoppm itself is already solid CLI tools but lacks some features that I need:
-- automatic color mode selection based on images
-- automatically chose DPI based on the possible page size *(Soon)*
+- automatic color mode selection based on images (`--color auto`)
+- automatically chose DPI based on the possible page size (`--auto-dpi vertical`)
 
 this version of exporter is custom-made for people that want to export their comic and manga PDF bought from
-humble bundle into a collection of PNGs.
+somewhere into a collection of PNGs.
 
 as for why I use the SplashOutput renderer? mainly because it works much better on grayscale/mono images compared to the cairo backend.<br />
 this is why I don't use any pre-existing glib/cairo backend available in crates.io.

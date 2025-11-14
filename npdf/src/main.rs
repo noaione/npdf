@@ -56,6 +56,13 @@ struct ExportArgs {
     /// DPI used when rendering the page raster.
     #[arg(long, default_value_t = 150.0)]
     dpi: f64,
+    /// Auto-DPI based on image characteristics.
+    ///
+    /// Select the direction constraint for auto-DPI calculation.
+    /// - Horizontal: x-dpi
+    /// - Vertical: y-dpi (Manga/Comics/etc)
+    #[arg(long, value_enum)]
+    auto_dpi: Option<AutoDPIDirection>,
     /// First page to export (1-based).
     #[arg(long)]
     first: Option<u32>,
@@ -76,6 +83,12 @@ enum ColorChoice {
     Xbgr8,
     Cmyk8,
     Devicen8,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, ValueEnum)]
+enum AutoDPIDirection {
+    Horizontal,
+    Vertical,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, ValueEnum)]
@@ -109,12 +122,14 @@ fn handle_list(args: ListArgs) -> Result<(), String> {
         };
         let image_type = describe_image_type(info.image_type);
         println!(
-            "{position:>4}: page {page:>4}, {image_type}, {width}x{height}px, {components} comps, {bits} bpc, {colorspace}, xref {xref}",
+            "{position:>4}: page {page:>4}, {image_type}, {width}x{height}px, {components} comps, {bits} bpc, {colorspace}, xref {xref}, {dpi_x} xdpi, {dpi_y} ydpi",
             page = info.page,
             width = info.width,
             height = info.height,
             components = info.components,
-            bits = info.bits_per_component
+            bits = info.bits_per_component,
+            dpi_x = fmt_dpi(info.dpi.0),
+            dpi_y = fmt_dpi(info.dpi.1),
         );
     }
 
@@ -135,6 +150,7 @@ fn handle_export(args: ExportArgs) -> Result<(), String> {
         last,
         crop,
         describe,
+        auto_dpi,
     } = args;
 
     println!("Loading PDF: {:#?}", &pdf);
@@ -182,14 +198,22 @@ fn handle_export(args: ExportArgs) -> Result<(), String> {
                 None => ColorMode::Mono8,
             };
         };
+        if let Some(auto_dpi) = auto_dpi {
+            let image_map = images_mappings.get(&page);
+            options.dpi = match image_map {
+                Some(img_map) => determine_export_dpi(&img_map, dpi, auto_dpi),
+                None => dpi,
+            };
+        }
         let file_name = format!("page-{page:04}.png");
         let output_path = output.join(file_name);
         if describe {
             println!(
-                "Will export page {page} -> {} (colorspace: {:?}, crop: {:?})",
+                "Will export page {page} -> {} (colorspace: {:?}, crop: {:?}, dpi: {})",
                 output_path.display(),
                 options.color_mode,
-                options.crop_mode
+                options.crop_mode,
+                options.dpi,
             );
         } else {
             document
@@ -211,11 +235,55 @@ fn determine_page_colorspace(images: &[ImageInfo]) -> ColorMode {
     }
 }
 
-fn determine_export_dpi(images: &[ImageInfo], target_dpi: f64) -> f64 {
-    // // Placeholder for potential future logic to adjust DPI based on image characteristics.
-    target_dpi
+fn determine_export_dpi(images: &[ImageInfo], target_dpi: f64, direction: AutoDPIDirection) -> f64 {
+    if images.is_empty() {
+        return target_dpi;
+    }
 
-    // This is how we do it
+    // This is how we do it, depending on the "direction" we would select either x-dpi or y-dpi
+    // If the image is smask/mask, we ignore.
+    // If the image is image/stencil, we then calculate it.
+    let candidates: Vec<f64> = if direction == AutoDPIDirection::Vertical {
+        images
+            .iter()
+            .filter(|&img| matches!(img.image_type, ImageType::Stencil | ImageType::Image))
+            .filter(|&img| img.dpi.1 >= img.dpi.0 * 1.25)
+            .map(|f| f.dpi.1)
+            .collect()
+    } else {
+        images
+            .iter()
+            .filter(|&img| matches!(img.image_type, ImageType::Stencil | ImageType::Image))
+            .filter(|&img| img.dpi.1 * 1.25 <= img.dpi.0)
+            .map(|f| f.dpi.0)
+            .collect()
+    };
+
+    if images.len() == 1 {
+        let smallest = if direction == AutoDPIDirection::Vertical {
+            images[0].dpi.1
+        } else {
+            images[0].dpi.0
+        };
+
+        nearest_5(smallest).min(target_dpi).max(72.0)
+    } else if candidates.is_empty() {
+        target_dpi
+    } else {
+        let mut smallest = candidates[0];
+        for dpi in candidates {
+            if dpi < smallest {
+                smallest = dpi;
+            }
+        }
+
+        // if dpi is larger than target_dpi, clamp max to there
+        nearest_5(smallest).min(target_dpi).max(72.0)
+    }
+}
+
+fn nearest_5(dpi: f64) -> f64 {
+    (dpi / 5.0).round() * 5.0
 }
 
 fn image_has_color(image: &ImageInfo) -> bool {
@@ -317,5 +385,37 @@ impl CropChoice {
             // CropChoice::TrimBox => PdfCropMode::TrimBox,
             // CropChoice::ArtBox => PdfCropMode::ArtBox,
         }
+    }
+}
+
+fn fmt_dpi(num: f64) -> String {
+    if num.is_nan() {
+        return "NaN".to_string();
+    }
+    if num.is_infinite() {
+        return if num.is_sign_positive() {
+            "inf"
+        } else {
+            "-inf"
+        }
+        .to_string();
+    }
+
+    // Handle 0.0 and -0.0 explicitly to avoid "0.000"
+    if num == 0.0 {
+        return "0".to_string();
+    }
+
+    if num.abs() < 1.0 {
+        format!("{:.3}", num)
+    } else {
+        let mut formatted_str = format!("{:.1}", num);
+
+        // Refinement: "or just XXXX"
+        // If the formatted string ends with ".0", remove it.
+        if formatted_str.ends_with(".0") {
+            formatted_str.truncate(formatted_str.len() - 2);
+        }
+        formatted_str
     }
 }
