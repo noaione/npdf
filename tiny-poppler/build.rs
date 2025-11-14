@@ -173,16 +173,15 @@ fn emit_linker_flags(target: &str) {
     println!("cargo:rustc-link-lib=jpeg");
     println!("cargo:rustc-link-lib=openjp2");
     println!("cargo:rustc-link-lib=tiff");
+    println!("cargo:rustc-link-lib=lcms2");
 
     if is_windows {
         println!("cargo:rustc-link-lib=libpng16");
         println!("cargo:rustc-link-lib=zlib");
-        println!("cargo:rustc-link-lib=lcms");
     } else {
         println!("cargo:rustc-link-lib=png");
         println!("cargo:rustc-link-lib=z");
         println!("cargo:rustc-link-lib=fontconfig");
-        println!("cargo:rustc-link-lib=lcms2");
     }
 
     if is_apple {
