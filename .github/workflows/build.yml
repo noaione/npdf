@@ -121,6 +121,12 @@ jobs:
           echo "VCPKG_DEFAULT_TRIPLET=x64-windows" >> $env:GITHUB_ENV
           echo "VCPKG_FEATURE_FLAGS=manifests" >> $env:GITHUB_ENV
 
+          # List manually installed packages for debugging
+          echo "Installed vcpkg packages:"
+          C:\vcpkg\vcpkg.exe list
+          dir C:\vcpkg\installed\x64-windows\bin
+          dir C:\vcpkg\installed\x64-windows\lib
+
       - name: Build
         run: cargo build --profile release --workspace --all-targets --verbose
         env:
