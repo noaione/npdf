@@ -6,3 +6,5 @@
 *.jpg
 *.pdf
 !tiny-poppler/tests/*.pdf
+
+build/

@@ -86,35 +86,6 @@ typedef struct splash_page_info {
     uint64_t object_count;
 } splash_page_info_t;
 
-typedef struct splash_crop_area {
-    int left;
-    int top;
-    int width;
-    int height;
-
-    splash_crop_area() {
-        left = top = width = height = 0;
-    }
-
-    void scale(double dpi)
-    {
-        double x = left * dpi / 72.0;
-        double y = top * dpi / 72.0;
-        double w = width * dpi / 72.0;
-        double h = height * dpi / 72.0;
-
-        left = (int)ceil(x);
-        top = (int)ceil(y);
-        width = (int)ceil(w);
-        height = (int)ceil(h);
-    }
-
-    bool is_valid() const
-    {
-        return width > 0 && height > 0;
-    }
-} splash_crop_area_t;
-
 int splash_renderer_create(const char *path, splash_renderer_t **out_renderer, char **error_out);
 void splash_renderer_destroy(splash_renderer_t *renderer);
 
