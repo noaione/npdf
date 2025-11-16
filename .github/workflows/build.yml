@@ -63,13 +63,6 @@ jobs:
       - name: Install system dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
-          # Add jpeg-turbo
-          sudo wget -q -O- https://packagecloud.io/dcommander/libjpeg-turbo/gpgkey | \
-            sudo gpg --dearmor > /etc/apt/trusted.gpg.d/libjpeg-turbo.gpg
-
-          sudo echo "deb [signed-by=/etc/apt/trusted.gpg.d/libjpeg-turbo.gpg] https://packagecloud.io/dcommander/libjpeg-turbo/any/ any main" | \
-            sudo tee /etc/apt/sources.list.d/libjpeg-turbo.list
-
           sudo apt update
           sudo apt install -y \
             build-essential \
@@ -78,7 +71,7 @@ jobs:
             pkg-config \
             libfreetype6-dev \
             libfontconfig1-dev \
-            libjpeg-turbo-official \
+            libjpeg-turbo8-dev \
             libpng-dev \
             libtiff-dev \
             libopenjp2-7-dev \
