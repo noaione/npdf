@@ -71,7 +71,7 @@ jobs:
             pkg-config \
             libfreetype6-dev \
             libfontconfig1-dev \
-            libjpeg-turbo8-dev \
+            libjpegturbo0-dev \
             libpng-dev \
             libtiff-dev \
             libopenjp2-7-dev \
@@ -124,7 +124,7 @@ jobs:
           # List manually installed packages for debugging
           echo "Installed vcpkg packages:"
           C:\vcpkg\vcpkg.exe list
-          dir C:\vcpkg\installed\x64-windows-static\bin
+          # dir C:\vcpkg\installed\x64-windows-static\bin
           dir C:\vcpkg\installed\x64-windows-static\lib
 
       - name: Build
