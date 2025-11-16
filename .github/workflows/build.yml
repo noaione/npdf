@@ -124,8 +124,8 @@ jobs:
           # List manually installed packages for debugging
           echo "Installed vcpkg packages:"
           C:\vcpkg\vcpkg.exe list
-          dir C:\vcpkg\installed\x64-windows\windows\bin
-          dir C:\vcpkg\installed\x64-windows\windows\lib
+          dir C:\vcpkg\installed\x64-windows-static\bin
+          dir C:\vcpkg\installed\x64-windows-static\lib
 
       - name: Build
         run: cargo build --profile release --workspace --all-targets --verbose

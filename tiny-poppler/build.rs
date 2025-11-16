@@ -175,6 +175,8 @@ fn emit_linker_flags(target: &str) {
     let is_windows = target.contains("windows");
     let is_apple = target.contains("apple");
 
+    let some_commons = vec!["turbojpeg", "openjp2", "tiff", "lcms2"];
+
     if is_windows {
         // Some pre-requisites
         println!("cargo:rustc-link-lib=static=brotlidec");
@@ -185,19 +187,25 @@ fn emit_linker_flags(target: &str) {
 
         // Do static linking
         println!("cargo:rustc-link-lib=static=freetype");
-        println!("cargo:rustc-link-lib=static=turbojpeg");
-        println!("cargo:rustc-link-lib=static=openjp2");
-        println!("cargo:rustc-link-lib=static=tiff");
-        println!("cargo:rustc-link-lib=static=lcms2");
+        for lib in some_commons {
+            println!("cargo:rustc-link-lib=static={}", lib);
+        }
         println!("cargo:rustc-link-lib=static=libpng16");
         println!("cargo:rustc-link-lib=static=zlib");
     } else {
         println!("cargo:rustc-link-lib=freetype");
-        println!("cargo:rustc-link-lib=static=turbojpeg");
-        println!("cargo:rustc-link-lib=static=openjp2");
-        println!("cargo:rustc-link-lib=static=tiff");
-        println!("cargo:rustc-link-lib=static=lcms2");
-        println!("cargo:rustc-link-lib=static=png");
+        for lib in some_commons {
+            if is_apple {
+                println!("cargo:rustc-link-lib=static={}", lib);
+            } else {
+                println!("cargo:rustc-link-lib={}", lib);
+            }
+        }
+        if is_apple {
+            println!("cargo:rustc-link-lib=static=png");
+        } else {
+            println!("cargo:rustc-link-lib=png");
+        }
         println!("cargo:rustc-link-lib=z");
 
         println!("cargo:rustc-link-lib=fontconfig");
