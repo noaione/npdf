@@ -330,7 +330,7 @@ fn process_job(document: &mut Document, job: PagePlan) -> Result<(), String> {
     let total_page = job.total_pages.to_string().len();
     let pad_page = format!("{:0width$}", job.page_number, width = total_page);
     cprintln!(
-        "Exported <m,s>p{}</m,s> -> <m,s>{}</m,s> ({:?}, {:?}, {} dpi)",
+        "Exported <m,s>page {}</m,s> -> <m,s>{}</m,s> ({:?}, {:?}, {} dpi)",
         pad_page,
         job.output_path.display(),
         encoded.format,

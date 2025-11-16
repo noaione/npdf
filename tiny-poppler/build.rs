@@ -186,12 +186,13 @@ fn emit_linker_flags(target: &str) {
         println!("cargo:rustc-link-lib=static=zlib");
     } else {
         println!("cargo:rustc-link-lib=freetype");
-        println!("cargo:rustc-link-lib=jpeg");
-        println!("cargo:rustc-link-lib=openjp2");
-        println!("cargo:rustc-link-lib=tiff");
-        println!("cargo:rustc-link-lib=lcms2");
-        println!("cargo:rustc-link-lib=png");
+        println!("cargo:rustc-link-lib=static=jpeg");
+        println!("cargo:rustc-link-lib=static=openjp2");
+        println!("cargo:rustc-link-lib=static=tiff");
+        println!("cargo:rustc-link-lib=static=lcms2");
+        println!("cargo:rustc-link-lib=static=png");
         println!("cargo:rustc-link-lib=z");
+
         println!("cargo:rustc-link-lib=fontconfig");
         println!("cargo:rustc-link-lib=nss3");
         println!("cargo:rustc-link-lib=nssutil3");

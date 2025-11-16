@@ -5,6 +5,6 @@
 *.png
 *.jpg
 *.pdf
-!tiny-poppler/tests/*.pdf
+!tiny-poppler/tests/**/*.pdf
 
 build/
