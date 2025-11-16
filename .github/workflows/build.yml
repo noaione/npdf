@@ -64,10 +64,10 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           # Add jpeg-turbo
-          wget -q -O- https://packagecloud.io/dcommander/libjpeg-turbo/gpgkey | \
+          sudo wget -q -O- https://packagecloud.io/dcommander/libjpeg-turbo/gpgkey | \
             sudo gpg --dearmor > /etc/apt/trusted.gpg.d/libjpeg-turbo.gpg
 
-          echo "deb [signed-by=/etc/apt/trusted.gpg.d/libjpeg-turbo.gpg] https://packagecloud.io/dcommander/libjpeg-turbo/any/ any main" | \
+          sudo echo "deb [signed-by=/etc/apt/trusted.gpg.d/libjpeg-turbo.gpg] https://packagecloud.io/dcommander/libjpeg-turbo/any/ any main" | \
             sudo tee /etc/apt/sources.list.d/libjpeg-turbo.list
 
           sudo apt update
