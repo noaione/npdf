@@ -175,47 +175,65 @@ fn emit_linker_flags(target: &str) {
     let is_windows = target.contains("windows");
     let is_apple = target.contains("apple");
 
-    let some_commons = vec!["turbojpeg", "openjp2", "tiff", "lcms2"];
+    let loonix_search = vec![
+        "/usr/lib/x86_64-linux-gnu",
+        "/usr/local/lib/x86_64-linux-gnu",
+        "/usr/lib",
+        "/usr/local/lib",
+    ];
+    let some_commons = vec!["turbojpeg", "openjp2", "tiff"];
+
+    if is_apple {
+        emit_homebrew_search_hint("bzip2");
+        emit_homebrew_search_hint("brotli");
+        emit_homebrew_search_hint("xz");
+        emit_homebrew_search_hint("expat");
+    }
+
+    println!("cargo:rustc-link-lib=static=bz2");
+    println!("cargo:rustc-link-lib=static=brotlidec");
+    println!("cargo:rustc-link-lib=static=brotlienc");
+    println!("cargo:rustc-link-lib=static=brotlicommon");
+    println!("cargo:rustc-link-lib=static=lzma");
 
     if is_windows {
-        // Some pre-requisites
-        println!("cargo:rustc-link-lib=static=brotlidec");
-        println!("cargo:rustc-link-lib=static=brotlienc");
-        println!("cargo:rustc-link-lib=static=brotlicommon");
-        println!("cargo:rustc-link-lib=static=bz2");
-        println!("cargo:rustc-link-lib=static=lzma");
-
         // Do static linking
         println!("cargo:rustc-link-lib=static=freetype");
         for lib in some_commons {
             println!("cargo:rustc-link-lib=static={}", lib);
         }
+        println!("cargo:rustc-link-lib=static=lcms2");
         println!("cargo:rustc-link-lib=static=libpng16");
         println!("cargo:rustc-link-lib=static=zlib");
     } else {
-        println!("cargo:rustc-link-lib=freetype");
+        println!("cargo:rustc-link-lib=static=expat");
+        println!("cargo:rustc-link-lib=static=freetype");
         for lib in some_commons {
-            if is_apple {
-                println!("cargo:rustc-link-lib=static={}", lib);
-            } else {
-                println!("cargo:rustc-link-lib={}", lib);
-            }
+            println!("cargo:rustc-link-lib=static={}", lib);
         }
         if is_apple {
-            println!("cargo:rustc-link-lib=static=png");
+            println!("cargo:rustc-link-lib=static=lcms2");
         } else {
-            println!("cargo:rustc-link-lib=png");
+            println!("cargo:rustc-link-lib=lcms2");
         }
+        println!("cargo:rustc-link-lib=static=png");
         println!("cargo:rustc-link-lib=z");
 
-        println!("cargo:rustc-link-lib=fontconfig");
+        println!("cargo:rustc-link-lib=static=fontconfig");
         println!("cargo:rustc-link-lib=nss3");
         println!("cargo:rustc-link-lib=nssutil3");
         println!("cargo:rustc-link-lib=smime3");
         println!("cargo:rustc-link-lib=ssl3");
-        println!("cargo:rustc-link-lib=plds4");
-        println!("cargo:rustc-link-lib=plc4");
-        println!("cargo:rustc-link-lib=nspr4");
+        println!("cargo:rustc-link-lib=static=plds4");
+        println!("cargo:rustc-link-lib=static=plc4");
+        println!("cargo:rustc-link-lib=static=nspr4");
+    }
+
+    if !is_apple && !is_windows {
+        // Try searching in common Linux library path
+        for path in loonix_search {
+            println!("cargo:rustc-link-search=native={}", path);
+        }
     }
 
     if is_apple {

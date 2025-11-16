@@ -69,9 +69,14 @@ jobs:
             cmake \
             ninja-build \
             pkg-config \
+            libexpat1-dev \
+            libbrotli-dev \
+            liblzma-dev \
+            libbz2-dev \
             libfreetype6-dev \
             libfontconfig1-dev \
-            libjpegturbo0-dev \
+            libturbojpeg \
+            libturbojpeg0-dev \
             libpng-dev \
             libtiff-dev \
             libopenjp2-7-dev \
@@ -87,6 +92,10 @@ jobs:
             cmake \
             ninja \
             pkg-config \
+            bzip2 \
+            brotli \
+            xz \
+            expat \
             freetype \
             fontconfig \
             jpeg-turbo \
@@ -133,12 +142,6 @@ jobs:
           BOOST_ROOT: ${{ steps.install-boost.outputs.boost_root }}
           Boost_DIR: ${{ steps.install-boost.outputs.boost_root }}
           CI_RUNNER: "github"
-
-      - name: Copy DLLs (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          uv run scripts/collect-dependents.py --exe ./target/release/npdf.exe
-          dir ./target/release
 
       - name: Compress artifacts
         run:
