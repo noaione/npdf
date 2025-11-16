@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::thread;
 use tiny_poppler::{
     ColorMode, Document, DocumentFactory, ImageInfo, ImageType, PageInfo, PdfCropMode,
-    PdfImageColorSpace, RenderOptions,
+    PdfImageColorSpace, PdfPasswords, RenderOptions,
 };
 
 #[derive(Args)]
@@ -82,7 +82,7 @@ pub enum CropChoice {
     // TrimBox,
 }
 
-pub fn run(args: ExportArgs) -> Result<(), String> {
+pub fn run(args: ExportArgs, passwords: Option<&PdfPasswords>) -> Result<(), String> {
     if args.dpi <= 0.0 {
         return Err("dpi must be a positive number".into());
     }
@@ -108,7 +108,8 @@ pub fn run(args: ExportArgs) -> Result<(), String> {
     } = args;
 
     cprintln!("Loading PDF: <m,s>{:#?}</m,s>", &pdf);
-    let factory = DocumentFactory::with_images(&pdf).map_err(|err| err.to_string())?;
+    let factory = DocumentFactory::with_images_with_passwords(&pdf, passwords.cloned())
+        .map_err(|err| err.to_string())?;
     let page_count = factory.page_count();
 
     let first_page = first.unwrap_or(1);

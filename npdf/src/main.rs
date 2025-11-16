@@ -8,6 +8,7 @@ use clap::{
     },
 };
 use commands::{ExportArgs, ListArgs, export, list};
+use tiny_poppler::PdfPasswords;
 
 fn main() {
     let cli = Cli::parse();
@@ -18,9 +19,17 @@ fn main() {
 }
 
 fn execute(cli: Cli) -> Result<(), String> {
-    match cli.command {
-        Commands::List(args) => list::run(args),
-        Commands::Export(args) => export::run(args),
+    let Cli {
+        command,
+        user_password,
+        owner_password,
+    } = cli;
+
+    let passwords = build_passwords(owner_password, user_password);
+
+    match command {
+        Commands::List(args) => list::run(args, passwords.as_ref()),
+        Commands::Export(args) => export::run(args, passwords.as_ref()),
     }
 }
 
@@ -29,6 +38,17 @@ fn execute(cli: Cli) -> Result<(), String> {
 #[command(author, version, about, long_about = None, styles = cli_styles())]
 #[command(propagate_version = true, disable_help_subcommand = true)]
 struct Cli {
+    /// User password for encrypted PDFs.
+    #[arg(
+        long = "password",
+        alias = "user-password",
+        global = true,
+        value_name = "PASSWORD"
+    )]
+    user_password: Option<String>,
+    /// Owner password for encrypted PDFs.
+    #[arg(long = "owner-password", global = true, value_name = "PASSWORD")]
+    owner_password: Option<String>,
     #[command(subcommand)]
     command: Commands,
 }
@@ -47,4 +67,15 @@ fn cli_styles() -> Styles {
         .usage(AnsiColor::Magenta.on_default() | Effects::BOLD | Effects::UNDERLINE)
         .literal(AnsiColor::Blue.on_default() | Effects::BOLD)
         .placeholder(AnsiColor::BrightCyan.on_default())
+}
+
+fn build_passwords(
+    owner_password: Option<String>,
+    user_password: Option<String>,
+) -> Option<PdfPasswords> {
+    if owner_password.is_none() && user_password.is_none() {
+        None
+    } else {
+        Some(PdfPasswords::new(owner_password, user_password))
+    }
 }

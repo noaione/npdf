@@ -37,6 +37,31 @@ impl Default for RenderOptions {
     }
 }
 
+/// Optional owner/user passwords used when opening encrypted PDFs.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PdfPasswords {
+    pub owner: Option<String>,
+    pub user: Option<String>,
+}
+
+impl PdfPasswords {
+    pub fn new(owner: Option<String>, user: Option<String>) -> Self {
+        Self { owner, user }
+    }
+
+    pub fn owner(&self) -> Option<&str> {
+        self.owner.as_deref()
+    }
+
+    pub fn user(&self) -> Option<&str> {
+        self.user.as_deref()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.owner.is_none() && self.user.is_none()
+    }
+}
+
 /// Encoded image formats supported by the renderer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ImageFormat {
@@ -123,6 +148,20 @@ impl Document {
     /// rendering multiple pages.
     pub fn open(pdf_path: &Path) -> Result<Self, RenderError> {
         let renderer = ffi::Renderer::open(pdf_path).map_err(RenderError::Poppler)?;
+        Ok(Self { renderer })
+    }
+
+    /// Open a PDF file using the provided owner/user password combination.
+    pub fn open_with_passwords(
+        pdf_path: &Path,
+        passwords: Option<&PdfPasswords>,
+    ) -> Result<Self, RenderError> {
+        let renderer = ffi::Renderer::open_with_passwords(
+            pdf_path,
+            passwords.and_then(|bundle| bundle.owner()),
+            passwords.and_then(|bundle| bundle.user()),
+        )
+        .map_err(RenderError::Poppler)?;
         Ok(Self { renderer })
     }
 
@@ -241,13 +280,24 @@ pub struct DocumentFactory {
     page_count: u32,
     images: Option<Arc<[ImageInfo]>>,
     pages: Option<Arc<[PageInfo]>>,
+    passwords: Option<Arc<PdfPasswords>>,
 }
 
 impl DocumentFactory {
     /// Prepare a factory from the provided PDF path, optionally caching image metadata for
     /// later use (useful for extracting per-page heuristics prior to spawning threads).
     pub fn prepare(pdf_path: &Path, cache_images: bool) -> Result<Self, RenderError> {
-        let mut document = Document::open(pdf_path)?;
+        Self::prepare_with_passwords(pdf_path, cache_images, None)
+    }
+
+    /// Prepare a factory using the provided passwords when opening the underlying PDF.
+    pub fn prepare_with_passwords(
+        pdf_path: &Path,
+        cache_images: bool,
+        passwords: Option<PdfPasswords>,
+    ) -> Result<Self, RenderError> {
+        let passwords_arc = passwords.map(Arc::new);
+        let mut document = Document::open_with_passwords(pdf_path, passwords_arc.as_deref())?;
         let page_count = document.page_count()?;
         let (images, pages) = if cache_images {
             let metadata = document.image_metadata()?;
@@ -263,22 +313,39 @@ impl DocumentFactory {
             page_count,
             images,
             pages,
+            passwords: passwords_arc,
         })
     }
 
     /// Convenience constructor that preloads image metadata.
     pub fn with_images(pdf_path: &Path) -> Result<Self, RenderError> {
-        Self::prepare(pdf_path, true)
+        Self::prepare_with_passwords(pdf_path, true, None)
+    }
+
+    /// Convenience constructor that preloads image metadata using optional passwords.
+    pub fn with_images_with_passwords(
+        pdf_path: &Path,
+        passwords: Option<PdfPasswords>,
+    ) -> Result<Self, RenderError> {
+        Self::prepare_with_passwords(pdf_path, true, passwords)
     }
 
     /// Convenience constructor that skips image metadata caching.
     pub fn from_path(pdf_path: &Path) -> Result<Self, RenderError> {
-        Self::prepare(pdf_path, false)
+        Self::prepare_with_passwords(pdf_path, false, None)
+    }
+
+    /// Convenience constructor that skips image metadata caching while supplying passwords.
+    pub fn from_path_with_passwords(
+        pdf_path: &Path,
+        passwords: Option<PdfPasswords>,
+    ) -> Result<Self, RenderError> {
+        Self::prepare_with_passwords(pdf_path, false, passwords)
     }
 
     /// Reopen the backing PDF as a fresh [`Document`].
     pub fn open(&self) -> Result<Document, RenderError> {
-        Document::open(self.pdf_path())
+        Document::open_with_passwords(self.pdf_path(), self.passwords.as_deref())
     }
 
     /// Cached page count collected during [`DocumentFactory::prepare`].

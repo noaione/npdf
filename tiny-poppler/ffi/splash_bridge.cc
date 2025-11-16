@@ -478,7 +478,11 @@ private:
 
 } // namespace
 
-int splash_renderer_create(const char *path, splash_renderer_t **out_renderer, char **error_out)
+int splash_renderer_create(const char *path,
+                           const char *owner_password,
+                           const char *user_password,
+                           splash_renderer_t **out_renderer,
+                           char **error_out)
 {
     if (!path || !out_renderer) {
         set_error(error_out, "invalid renderer arguments");
@@ -488,7 +492,18 @@ int splash_renderer_create(const char *path, splash_renderer_t **out_renderer, c
     ensure_global_params();
 
     auto goo_path = std::make_unique<GooString>(path);
-    std::unique_ptr<PDFDoc> doc = std::make_unique<PDFDoc>(std::move(goo_path));
+    std::optional<GooString> owner_pw;
+    if (owner_password != nullptr) {
+        owner_pw.emplace(owner_password);
+    }
+
+    std::optional<GooString> user_pw;
+    if (user_password != nullptr) {
+        user_pw.emplace(user_password);
+    }
+
+    std::unique_ptr<PDFDoc> doc =
+        std::make_unique<PDFDoc>(std::move(goo_path), owner_pw, user_pw);
 
     if (!doc->isOk()) {
         const int error_code = doc->getErrorCode();

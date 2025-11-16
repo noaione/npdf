@@ -141,6 +141,8 @@ struct ColorspaceICCInfo {
 unsafe extern "C" {
     fn splash_renderer_create(
         path: *const c_char,
+        owner_password: *const c_char,
+        user_password: *const c_char,
         out_renderer: *mut *mut SplashRenderer,
         error_out: *mut *mut c_char,
     ) -> i32;
@@ -215,6 +217,14 @@ fn path_to_cstring(path: &Path) -> Result<CString, String> {
     }
 }
 
+fn optional_cstring(value: Option<&str>) -> Result<Option<CString>, String> {
+    value
+        .map(|password| {
+            CString::new(password).map_err(|_| "password contains an internal NUL byte".to_string())
+        })
+        .transpose()
+}
+
 /// Safe wrapper over the Splash renderer.
 pub struct Renderer {
     raw: *mut SplashRenderer,
@@ -222,10 +232,32 @@ pub struct Renderer {
 
 impl Renderer {
     pub fn open(path: &Path) -> Result<Self, String> {
+        Self::open_with_passwords(path, None, None)
+    }
+
+    pub fn open_with_passwords(
+        path: &Path,
+        owner_password: Option<&str>,
+        user_password: Option<&str>,
+    ) -> Result<Self, String> {
         let c_path = path_to_cstring(path)?;
-        let mut raw = ptr::null_mut();
+        let owner_c = optional_cstring(owner_password)?;
+        let user_c = optional_cstring(user_password)?;
+        let mut raw: *mut SplashRenderer = ptr::null_mut();
         let mut error = ptr::null_mut();
-        let status = unsafe { splash_renderer_create(c_path.as_ptr(), &mut raw, &mut error) };
+        let status = unsafe {
+            splash_renderer_create(
+                c_path.as_ptr(),
+                owner_c
+                    .as_ref()
+                    .map_or(ptr::null(), |password| password.as_ptr()),
+                user_c
+                    .as_ref()
+                    .map_or(ptr::null(), |password| password.as_ptr()),
+                &mut raw,
+                &mut error,
+            )
+        };
         if status != 0 {
             return Err(take_error(error));
         }

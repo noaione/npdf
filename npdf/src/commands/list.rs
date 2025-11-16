@@ -2,7 +2,7 @@ use clap::Args;
 use color_print::cprintln;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
-use tiny_poppler::{Document, ImageInfo, ImageType, PdfImageColorSpace};
+use tiny_poppler::{Document, ImageInfo, ImageType, PdfImageColorSpace, PdfPasswords};
 
 #[derive(Args)]
 pub struct ListArgs {
@@ -10,12 +10,13 @@ pub struct ListArgs {
     pub pdf: PathBuf,
 }
 
-pub fn run(args: ListArgs) -> Result<(), String> {
+pub fn run(args: ListArgs, passwords: Option<&PdfPasswords>) -> Result<(), String> {
     if !args.pdf.exists() {
         return Err(format!("PDF file does not exist: {}", args.pdf.display()));
     }
 
-    let mut document = Document::open(&args.pdf).map_err(|err| err.to_string())?;
+    let mut document =
+        Document::open_with_passwords(&args.pdf, passwords).map_err(|err| err.to_string())?;
     let page_count = document.page_count().map_err(|err| err.to_string())?;
     let images = document.images().map_err(|err| err.to_string())?;
 

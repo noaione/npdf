@@ -68,7 +68,6 @@ fn configure_and_build_poppler(poppler_src: &Path, target: &str) -> PathBuf {
         .define("ENABLE_LIBCURL", "OFF")
         .define("ENABLE_LIBTIFF", "ON")
         .define("ENABLE_LCMS", "ON")
-        .define("ENABLE_NSS3", "OFF")
         .define("ENABLE_GPGME", "OFF")
         .define("ENABLE_PGP_SIGNATURES", "OFF")
         .define("ENABLE_BOOST", "ON")
@@ -89,7 +88,8 @@ fn configure_and_build_poppler(poppler_src: &Path, target: &str) -> PathBuf {
     }
 
     if target.contains("windows") {
-        cfg.define("FONT_CONFIGURATION", "win32");
+        cfg.define("FONT_CONFIGURATION", "win32")
+            .define("ENABLE_NSS3", "OFF");
 
         // 🟢 Enable vcpkg toolchain if available
         if let Ok(vcpkg_root) = std::env::var("VCPKG_ROOT") {
@@ -107,7 +107,8 @@ fn configure_and_build_poppler(poppler_src: &Path, target: &str) -> PathBuf {
 
         cfg.cxxflag("-DWIN32_LEAN_AND_MEAN").cxxflag("-DNOMINMAX");
     } else {
-        cfg.define("FONT_CONFIGURATION", "fontconfig");
+        cfg.define("FONT_CONFIGURATION", "fontconfig")
+            .define("ENABLE_NSS3", "ON");
     }
 
     cfg.build()
@@ -152,6 +153,11 @@ fn emit_system_library_hints(target: &str) {
         libraries.push(("FONTCONFIG_DIR", "fontconfig"));
     }
 
+    if !target.contains("windows") {
+        libraries.push(("NSS_DIR", "nss"));
+        libraries.push(("NSPR_DIR", "nspr"));
+    }
+
     for (env_var, formula) in libraries {
         if let Some(dir) = env::var_os(env_var).map(PathBuf::from) {
             let lib_dir = dir.join("lib");
@@ -187,6 +193,13 @@ fn emit_linker_flags(target: &str) {
         println!("cargo:rustc-link-lib=png");
         println!("cargo:rustc-link-lib=z");
         println!("cargo:rustc-link-lib=fontconfig");
+        println!("cargo:rustc-link-lib=nss3");
+        println!("cargo:rustc-link-lib=nssutil3");
+        println!("cargo:rustc-link-lib=smime3");
+        println!("cargo:rustc-link-lib=ssl3");
+        println!("cargo:rustc-link-lib=plds4");
+        println!("cargo:rustc-link-lib=plc4");
+        println!("cargo:rustc-link-lib=nspr4");
     }
 
     if is_apple {

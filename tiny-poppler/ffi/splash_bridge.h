@@ -86,7 +86,11 @@ typedef struct splash_page_info {
     uint64_t object_count;
 } splash_page_info_t;
 
-int splash_renderer_create(const char *path, splash_renderer_t **out_renderer, char **error_out);
+int splash_renderer_create(const char *path,
+                           const char *owner_password,
+                           const char *user_password,
+                           splash_renderer_t **out_renderer,
+                           char **error_out);
 void splash_renderer_destroy(splash_renderer_t *renderer);
 
 int splash_renderer_page_count(splash_renderer_t *renderer, uint32_t *out_count, char **error_out);
