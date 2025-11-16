@@ -178,7 +178,7 @@ fn emit_linker_flags(target: &str) {
     if is_windows {
         // Do static linking
         println!("cargo:rustc-link-lib=static=freetype");
-        println!("cargo:rustc-link-lib=static=jpeg");
+        println!("cargo:rustc-link-lib=static=turbojpeg");
         println!("cargo:rustc-link-lib=static=openjp2");
         println!("cargo:rustc-link-lib=static=tiff");
         println!("cargo:rustc-link-lib=static=lcms2");
@@ -186,7 +186,7 @@ fn emit_linker_flags(target: &str) {
         println!("cargo:rustc-link-lib=static=zlib");
     } else {
         println!("cargo:rustc-link-lib=freetype");
-        println!("cargo:rustc-link-lib=static=jpeg");
+        println!("cargo:rustc-link-lib=static=turbojpeg");
         println!("cargo:rustc-link-lib=static=openjp2");
         println!("cargo:rustc-link-lib=static=tiff");
         println!("cargo:rustc-link-lib=static=lcms2");

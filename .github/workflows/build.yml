@@ -63,6 +63,13 @@ jobs:
       - name: Install system dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
+          # Add jpeg-turbo
+          wget -q -O- https://packagecloud.io/dcommander/libjpeg-turbo/gpgkey | \
+            gpg --dearmor >/etc/apt/trusted.gpg.d/libjpeg-turbo.gpg
+          
+          echo "deb [signed-by=/etc/apt/trusted.gpg.d/libjpeg-turbo.gpg] https://packagecloud.io/dcommander/libjpeg-turbo/any/ any main" | \
+            tee /etc/apt/sources.list.d/libjpeg-turbo.list
+
           sudo apt-get update
           sudo apt-get install -y \
             build-essential \
@@ -71,7 +78,7 @@ jobs:
             pkg-config \
             libfreetype6-dev \
             libfontconfig1-dev \
-            libjpeg-dev \
+            libjpeg-turbo-official \
             libpng-dev \
             libtiff-dev \
             libopenjp2-7-dev \
@@ -112,9 +119,9 @@ jobs:
           cd C:\vcpkg
           .\bootstrap-vcpkg.bat
 
-          C:\vcpkg\vcpkg.exe install libpng:x64-windows zlib:x64-windows libiconv:x64-windows freetype:x64-windows tiff:x64-windows openjpeg:x64-windows libjpeg-turbo:x64-windows lcms:x64-windows --clean-after-build
+          C:\vcpkg\vcpkg.exe install libpng:x64-windows-static zlib:x64-windows-static libiconv:x64-windows-static freetype:x64-windows-static tiff:x64-windows-static openjpeg:x64-windows-static libjpeg-turbo:x64-windows-static lcms:x64-windows-static --clean-after-build
           echo "VCPKG_ROOT=C:\vcpkg" >> $env:GITHUB_ENV
-          echo "VCPKG_DEFAULT_TRIPLET=x64-windows" >> $env:GITHUB_ENV
+          echo "VCPKG_DEFAULT_TRIPLET=x64-windows-static" >> $env:GITHUB_ENV
           echo "VCPKG_FEATURE_FLAGS=manifests" >> $env:GITHUB_ENV
 
           # List manually installed packages for debugging
