@@ -122,7 +122,7 @@ jobs:
           .\bootstrap-vcpkg.bat
 
           # Install some pre-dependencies
-          C:\vcpkg\vcpkg.exe install bzip2:x64-windows-static brotli:x64-windows-static liblzma:x64-windows-static
+          C:\vcpkg\vcpkg.exe install bzip2:x64-windows-static brotli:x64-windows-static liblzma:x64-windows-static --clean-after-build
 
           # Install required packages as static libraries
           C:\vcpkg\vcpkg.exe install libpng:x64-windows-static zlib:x64-windows-static libiconv:x64-windows-static freetype:x64-windows-static tiff:x64-windows-static openjpeg:x64-windows-static libjpeg-turbo:x64-windows-static lcms:x64-windows-static --clean-after-build

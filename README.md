@@ -25,20 +25,26 @@ when building from source, you'll need the following tools installed:
 - C++ compiler that support C++20 standard
 
 and the following libraries installed and available for linking:
-- Rust toolchain (obviously)
-- cmake
+- zlib
 - freetype
-- jpeg-turbo
+    - bzip2
+    - brotli
+    - lzma/xz
+- fontconfig
+    - expat
+- turbojpeg
 - openjpeg
 - libtiff
 - lcms2
 - libpng
-- fontconfig
-- zlib
 - iconv (macOS)
-- nss + nspr (for encrypted PDFs)
+- nss3 + nspr4 (for encrypted PDFs)
 
-some depedencies is linked statically, so if you get the binary from CI you might not need to install all of them.
+most of the dependencies in CI has been statically linked into the final binary, with exception:
+- `libiconv` on macOS (dynamically linked against system version)
+- `zlib` on linux/macOS (dynamically linked against system version)
+- `nss3` and `nspr4` on linux/macOS
+- `lcms2` on linux/macOS
 
 windows version is fully statically linked, so you don't need to install anything extra (except maybe VC++ runtime).
 
