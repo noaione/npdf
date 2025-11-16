@@ -75,7 +75,9 @@ jobs:
             libpng-dev \
             libtiff-dev \
             libopenjp2-7-dev \
-            liblcms2-dev
+            liblcms2-dev \
+            libnss3-dev \
+            libnspr4-dev
 
       - name: Install system dependencies (macOS)
         if: runner.os == 'macOS'
@@ -91,7 +93,9 @@ jobs:
             libpng \
             libtiff \
             openjpeg \
-            lcms2
+            lcms2 \
+            nss \
+            nspr
 
       - name: Cache vcpkg dependencies
         uses: actions/cache@v4
