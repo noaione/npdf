@@ -176,6 +176,13 @@ fn emit_linker_flags(target: &str) {
     let is_apple = target.contains("apple");
 
     if is_windows {
+        // Some pre-requisites
+        println!("cargo:rustc-link-lib=static=brotlidec");
+        println!("cargo:rustc-link-lib=static=brotlienc");
+        println!("cargo:rustc-link-lib=static=brotlicommon");
+        println!("cargo:rustc-link-lib=static=bz2");
+        println!("cargo:rustc-link-lib=static=lzma");
+
         // Do static linking
         println!("cargo:rustc-link-lib=static=freetype");
         println!("cargo:rustc-link-lib=static=turbojpeg");
@@ -214,7 +221,8 @@ fn emit_linker_flags(target: &str) {
 
     if is_windows {
         if let Ok(root) = env::var("VCPKG_ROOT") {
-            let triplet = env::var("VCPKG_DEFAULT_TRIPLET").unwrap_or("x64-windows".to_string());
+            let triplet =
+                env::var("VCPKG_DEFAULT_TRIPLET").unwrap_or("x64-windows-static".to_string());
             let lib_path = PathBuf::from(root)
                 .join("installed")
                 .join(triplet)

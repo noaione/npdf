@@ -65,13 +65,13 @@ jobs:
         run: |
           # Add jpeg-turbo
           wget -q -O- https://packagecloud.io/dcommander/libjpeg-turbo/gpgkey | \
-            gpg --dearmor >/etc/apt/trusted.gpg.d/libjpeg-turbo.gpg
-          
-          echo "deb [signed-by=/etc/apt/trusted.gpg.d/libjpeg-turbo.gpg] https://packagecloud.io/dcommander/libjpeg-turbo/any/ any main" | \
-            tee /etc/apt/sources.list.d/libjpeg-turbo.list
+            sudo gpg --dearmor > /etc/apt/trusted.gpg.d/libjpeg-turbo.gpg
 
-          sudo apt-get update
-          sudo apt-get install -y \
+          echo "deb [signed-by=/etc/apt/trusted.gpg.d/libjpeg-turbo.gpg] https://packagecloud.io/dcommander/libjpeg-turbo/any/ any main" | \
+            sudo tee /etc/apt/sources.list.d/libjpeg-turbo.list
+
+          sudo apt update
+          sudo apt install -y \
             build-essential \
             cmake \
             ninja-build \
@@ -119,6 +119,10 @@ jobs:
           cd C:\vcpkg
           .\bootstrap-vcpkg.bat
 
+          # Install some pre-dependencies
+          C:\vcpkg\vcpkg.exe install bzip2:x64-windows-static brotli:x64-windows-static liblzma:x64-windows-static
+
+          # Install required packages as static libraries
           C:\vcpkg\vcpkg.exe install libpng:x64-windows-static zlib:x64-windows-static libiconv:x64-windows-static freetype:x64-windows-static tiff:x64-windows-static openjpeg:x64-windows-static libjpeg-turbo:x64-windows-static lcms:x64-windows-static --clean-after-build
           echo "VCPKG_ROOT=C:\vcpkg" >> $env:GITHUB_ENV
           echo "VCPKG_DEFAULT_TRIPLET=x64-windows-static" >> $env:GITHUB_ENV
@@ -127,8 +131,8 @@ jobs:
           # List manually installed packages for debugging
           echo "Installed vcpkg packages:"
           C:\vcpkg\vcpkg.exe list
-          dir C:\vcpkg\installed\x64-windows\bin
-          dir C:\vcpkg\installed\x64-windows\lib
+          dir C:\vcpkg\installed\x64-windows\windows\bin
+          dir C:\vcpkg\installed\x64-windows\windows\lib
 
       - name: Build
         run: cargo build --profile release --workspace --all-targets --verbose
