@@ -3,7 +3,7 @@ use std::path::Path;
 use tiny_poppler::RenderOptions;
 
 #[test]
-fn test_load_cid_one() {
+fn test_render_cid_one() {
     let pdf_path = Path::new("tests/pdf/font_cid_1.pdf");
 
     let mut document = tiny_poppler::Document::open(pdf_path).expect("Failed to open PDF");

@@ -13,22 +13,61 @@ env:
 
 jobs:
   sanitizer:
-    name: sanitizer tests (${{ matrix.os[1] }} - ${{ matrix.sanitizer }})
-    runs-on: ${{ matrix.os[0] }}
+    name: sanitizer tests (${{ matrix.os_label }} - ${{ matrix.sanitizer }})
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
-        os:
-          # Linux (x64)
-          - [ubuntu-24.04, x86_64-unknown-linux-gnu]
-          # macOS Apple Silicon (Tahoe)
-          - [macos-26, aarch64-apple-darwin]
-        sanitizer:
-          - asan
-          - lsan
-          - tsan
-          - ubsan
-    
+        include:
+          - runner: ubuntu-24.04
+            os_label: x86_64-unknown-linux-gnu
+            sanitizer: asan
+            rust_toolchain: stable
+            rustflags: ""
+            cargo_command: cargo test -p tiny-poppler --verbose --features asan
+
+          - runner: ubuntu-24.04
+            os_label: x86_64-unknown-linux-gnu
+            sanitizer: lsan
+            rust_toolchain: stable
+            rustflags: ""
+            cargo_command: cargo test -p tiny-poppler --verbose --features lsan
+
+          - runner: ubuntu-24.04
+            os_label: x86_64-unknown-linux-gnu
+            sanitizer: tsan
+            rust_toolchain: nightly
+            rustflags: "-Zsanitizer=thread"
+            cargo_command: cargo +nightly test -Z build-std --verbose -p tiny-poppler --features tsan
+
+          - runner: ubuntu-24.04
+            os_label: x86_64-unknown-linux-gnu
+            sanitizer: ubsan
+            rust_toolchain: stable
+            rustflags: ""
+            cargo_command: cargo test -p tiny-poppler --verbose --features ubsan
+
+          - runner: macos-26
+            os_label: aarch64-apple-darwin
+            sanitizer: asan
+            rust_toolchain: stable
+            rustflags: ""
+            cargo_command: cargo test -p tiny-poppler --verbose --features asan
+
+          - runner: macos-26
+            os_label: aarch64-apple-darwin
+            sanitizer: tsan
+            rust_toolchain: nightly
+            rustflags: "-Zsanitizer=thread"
+            cargo_command: cargo +nightly test -Z build-std --verbose -p tiny-poppler --features tsan
+
+          - runner: macos-26
+            os_label: aarch64-apple-darwin
+            sanitizer: ubsan
+            rust_toolchain: stable
+            rustflags: ""
+            cargo_command: cargo test -p tiny-poppler --verbose --features ubsan
+
     env:
       CARGO_TERM_COLOR: always
     
@@ -39,7 +78,10 @@ jobs:
           submodules: recursive
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust_toolchain }}
+          components: rust-src
 
       - name: Setup rust cache
         uses: Swatinem/rust-cache@v2
@@ -105,14 +147,11 @@ jobs:
             nspr
       
       - name: Build and run tests
-        run: |
-          if [[ "${{ matrix.sanitizer }}" == "lsan" && "${{ runner.os }}" == "macOS" ]]; then
-            echo "Skipping LeakSanitizer tests on macOS";
-            exit 0;
-          fi
-          cargo test -p tiny-poppler --verbose --features ${{ matrix.sanitizer }}
+        run: ${{ matrix.cargo_command }}
         shell: bash
         env:
           BOOST_ROOT: ${{ steps.install-boost.outputs.boost_root }}
           Boost_DIR: ${{ steps.install-boost.outputs.boost_root }}
           CI_RUNNER: "github"
+          RUSTFLAGS: ${{ matrix.rustflags }}
+          RUSTDOCFLAGS: ${{ matrix.rustflags }}
