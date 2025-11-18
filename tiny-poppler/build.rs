@@ -172,6 +172,7 @@ fn configure_and_build_poppler(
     target: &str,
     sanitizer: Option<Sanitizer>,
 ) -> PathBuf {
+    let is_windows = target.contains("windows");
     let mut cfg = cmake::Config::new(poppler_src);
 
     // Check build profile
@@ -220,7 +221,7 @@ fn configure_and_build_poppler(
         cfg.define("CMAKE_VERBOSE_MAKEFILE", "ON");
     }
 
-    if let Some(s) = sanitizer {
+    if !is_windows && let Some(s) = sanitizer {
         apply_sanitizer_to_cmake(&mut cfg, s);
     }
 
@@ -228,7 +229,6 @@ fn configure_and_build_poppler(
         cfg.define("FONT_CONFIGURATION", "win32")
             .define("ENABLE_NSS3", "OFF");
 
-        // 🟢 Enable vcpkg toolchain if available
         if let Ok(vcpkg_root) = std::env::var("VCPKG_ROOT") {
             let toolchain = Path::new(&vcpkg_root).join("scripts/buildsystems/vcpkg.cmake");
             if toolchain.exists() {
@@ -237,7 +237,6 @@ fn configure_and_build_poppler(
             }
         }
 
-        // You can also specify triplet if needed:
         if let Ok(triplet) = std::env::var("VCPKG_DEFAULT_TRIPLET") {
             cfg.define("VCPKG_TARGET_TRIPLET", triplet);
         }
@@ -257,6 +256,9 @@ fn compile_bridge(
     dst: &Path,
     sanitizer: Option<Sanitizer>,
 ) {
+    let is_windows = env::var("TARGET")
+        .map(|t| t.contains("windows"))
+        .unwrap_or(false);
     let include_dir = dst.join("include");
     let include_dir_poppler = include_dir.join("poppler");
 
@@ -278,7 +280,7 @@ fn compile_bridge(
         .flag_if_supported("-Wno-unused-parameter")
         .flag_if_supported("-Wno-unused-variable");
 
-    if let Some(s) = sanitizer {
+    if !is_windows && let Some(s) = sanitizer {
         apply_sanitizer_to_cc(&mut build, s);
     }
 
@@ -321,7 +323,7 @@ fn emit_linker_flags(target: &str, sanitizer: Option<Sanitizer>) {
     let is_windows = target.contains("windows");
     let is_apple = target.contains("apple");
 
-    if let Some(s) = sanitizer {
+    if !is_windows && let Some(s) = sanitizer {
         emit_sanitizer_link_args(target, s);
     }
 

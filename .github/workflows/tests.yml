@@ -25,6 +25,9 @@ jobs:
             rust_toolchain: stable
             rustflags: ""
             cargo_command: cargo test -p tiny-poppler --verbose --features asan
+            target: ""
+            target_env: ""
+            target_rustflags: ""
 
           - runner: ubuntu-24.04
             os_label: x86_64-unknown-linux-gnu
@@ -32,13 +35,19 @@ jobs:
             rust_toolchain: stable
             rustflags: ""
             cargo_command: cargo test -p tiny-poppler --verbose --features lsan
+            target: ""
+            target_env: ""
+            target_rustflags: ""
 
           - runner: ubuntu-24.04
             os_label: x86_64-unknown-linux-gnu
             sanitizer: tsan
             rust_toolchain: nightly
-            rustflags: "-Zsanitizer=thread"
+            rustflags: ""
             cargo_command: cargo +nightly test -Z build-std --verbose -p tiny-poppler --features tsan
+            target: x86_64-unknown-linux-gnu
+            target_env: X86_64_UNKNOWN_LINUX_GNU
+            target_rustflags: "-Zsanitizer=thread"
 
           - runner: ubuntu-24.04
             os_label: x86_64-unknown-linux-gnu
@@ -46,6 +55,9 @@ jobs:
             rust_toolchain: stable
             rustflags: ""
             cargo_command: cargo test -p tiny-poppler --verbose --features ubsan
+            target: ""
+            target_env: ""
+            target_rustflags: ""
 
           - runner: macos-26
             os_label: aarch64-apple-darwin
@@ -53,13 +65,19 @@ jobs:
             rust_toolchain: stable
             rustflags: ""
             cargo_command: cargo test -p tiny-poppler --verbose --features asan
+            target: ""
+            target_env: ""
+            target_rustflags: ""
 
           - runner: macos-26
             os_label: aarch64-apple-darwin
             sanitizer: tsan
             rust_toolchain: nightly
-            rustflags: "-Zsanitizer=thread"
+            rustflags: ""
             cargo_command: cargo +nightly test -Z build-std --verbose -p tiny-poppler --features tsan
+            target: aarch64-apple-darwin
+            target_env: AARCH64_APPLE_DARWIN
+            target_rustflags: "-Zsanitizer=thread"
 
           - runner: macos-26
             os_label: aarch64-apple-darwin
@@ -67,6 +85,9 @@ jobs:
             rust_toolchain: stable
             rustflags: ""
             cargo_command: cargo test -p tiny-poppler --verbose --features ubsan
+            target: ""
+            target_env: ""
+            target_rustflags: ""
 
     env:
       CARGO_TERM_COLOR: always
@@ -145,6 +166,15 @@ jobs:
             lcms2 \
             nss \
             nspr
+
+      - name: Configure target sanitizer flags
+        if: ${{ matrix.target != '' }}
+        shell: bash
+        run: |
+          echo "CARGO_TARGET_${{ matrix.target_env }}_RUSTFLAGS=${{ matrix.target_rustflags }}" >> "$GITHUB_ENV"
+          echo "CARGO_TARGET_${{ matrix.target_env }}_RUSTDOCFLAGS=${{ matrix.target_rustflags }}" >> "$GITHUB_ENV"
+          echo "RUSTFLAGS=${{ matrix.rustflags }}" >> "$GITHUB_ENV"
+          echo "RUSTDOCFLAGS=${{ matrix.rustflags }}" >> "$GITHUB_ENV"
       
       - name: Build and run tests
         run: ${{ matrix.cargo_command }}
