@@ -106,7 +106,7 @@ jobs:
       
       - name: Build and run tests
         run: |
-          if [ "${{ matrix.sanitizer }}" = "lsan" && "${{ runner.os }}" == "macOS" ]; then
+          if [[ "${{ matrix.sanitizer }}" == "lsan" && "${{ runner.os }}" == "macOS" ]]; then
             echo "Skipping LeakSanitizer tests on macOS";
             exit 0;
           fi

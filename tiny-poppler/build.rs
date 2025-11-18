@@ -321,6 +321,10 @@ fn emit_linker_flags(target: &str, sanitizer: Option<Sanitizer>) {
     let is_windows = target.contains("windows");
     let is_apple = target.contains("apple");
 
+    if let Some(s) = sanitizer {
+        emit_sanitizer_link_args(target, s);
+    }
+
     let loonix_search = vec![
         "/usr/lib/x86_64-linux-gnu",
         "/usr/local/lib/x86_64-linux-gnu",
@@ -403,10 +407,6 @@ fn emit_linker_flags(target: &str, sanitizer: Option<Sanitizer>) {
         }
     } else {
         emit_system_library_hints(target);
-    }
-
-    if let Some(s) = sanitizer {
-        emit_sanitizer_link_args(target, s);
     }
 }
 
