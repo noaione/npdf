@@ -32,6 +32,10 @@ pub struct ExportArgs {
     /// - Vertical: y-dpi (Manga/Comics/etc)
     #[arg(long, value_enum)]
     pub auto_dpi: Option<AutoDPIDirection>,
+    /// Width/height difference ratio threshold to consider an image
+    /// as predominantly horizontal/vertical for auto-DPI calculation.
+    #[arg(long, default_value_t = 1.25)]
+    pub auto_dpi_ratio: f64,
     /// When in Auto color mode, if we encounter RGB colorspace,
     /// do additional check whether there is CMYK content (or color with CMYK fallback).
     #[arg(long, default_value_t = false)]
@@ -105,6 +109,7 @@ pub fn run(args: ExportArgs, passwords: Option<&PdfPasswords>) -> Result<(), Str
         reverse,
         quality,
         threads,
+        auto_dpi_ratio,
     } = args;
 
     cprintln!("Loading PDF: <m,s>{:#?}</m,s>", &pdf);
@@ -165,8 +170,14 @@ pub fn run(args: ExportArgs, passwords: Option<&PdfPasswords>) -> Result<(), Str
             None => &[],
         };
         let page_info = page_stats_map.get(&page).copied();
-        let guessed =
-            precalculate_auto_export_config(images_slice, page_info, with_cmyk, dpi, auto_dpi);
+        let guessed = precalculate_auto_export_config(
+            images_slice,
+            page_info,
+            with_cmyk,
+            dpi,
+            auto_dpi,
+            auto_dpi_ratio,
+        );
         precalculated_settings.insert(page, guessed);
     }
 
@@ -351,10 +362,11 @@ fn precalculate_auto_export_config(
     with_cmyk: bool,
     target_dpi: f64,
     direction: Option<AutoDPIDirection>,
+    dpi_ratio: f64,
 ) -> GuessedImage {
     let color = determine_page_colorspace(images, page_info, with_cmyk);
     let dpi = if let Some(direction) = direction {
-        determine_export_dpi(images, target_dpi, direction)
+        determine_export_dpi(images, target_dpi, direction, dpi_ratio)
     } else {
         target_dpi
     };
@@ -383,7 +395,12 @@ fn determine_page_colorspace(
     }
 }
 
-fn determine_export_dpi(images: &[ImageInfo], target_dpi: f64, direction: AutoDPIDirection) -> f64 {
+fn determine_export_dpi(
+    images: &[ImageInfo],
+    target_dpi: f64,
+    direction: AutoDPIDirection,
+    dpi_ratio: f64,
+) -> f64 {
     if images.is_empty() {
         return target_dpi;
     }
@@ -392,14 +409,14 @@ fn determine_export_dpi(images: &[ImageInfo], target_dpi: f64, direction: AutoDP
         images
             .iter()
             .filter(|&img| matches!(img.image_type, ImageType::Stencil | ImageType::Image))
-            .filter(|&img| img.dpi.1 >= img.dpi.0 * 1.25)
+            .filter(|&img| u_t_f(img.height) >= u_t_f(img.width) * dpi_ratio)
             .map(|f| f.dpi.1)
             .collect()
     } else {
         images
             .iter()
             .filter(|&img| matches!(img.image_type, ImageType::Stencil | ImageType::Image))
-            .filter(|&img| img.dpi.1 * 1.25 <= img.dpi.0)
+            .filter(|&img| u_t_f(img.height) * dpi_ratio <= u_t_f(img.width))
             .map(|f| f.dpi.0)
             .collect()
     };
@@ -424,6 +441,10 @@ fn determine_export_dpi(images: &[ImageInfo], target_dpi: f64, direction: AutoDP
 
         nearest_5(smallest).min(target_dpi).max(72.0)
     }
+}
+
+fn u_t_f(num: u32) -> f64 {
+    num as f64
 }
 
 fn nearest_5(dpi: f64) -> f64 {
