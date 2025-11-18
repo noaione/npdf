@@ -8,6 +8,8 @@ use std::{
 };
 use tiny_poppler::PdfPasswords;
 
+use crate::common::{ensure_pdf_output, unlock_pdf};
+
 #[derive(Args)]
 pub struct UnwatermarkArgs {
     /// Path to the PDF file to unwatermark.
@@ -21,27 +23,12 @@ pub fn run(args: UnwatermarkArgs, passwords: Option<&PdfPasswords>) -> Result<()
         return Err(format!("PDF file does not exist: {}", args.pdf.display()));
     }
 
+    ensure_pdf_output(&args.output)?;
+
     cprintln!("<magenta,bold>Loading PDF</>: {}", args.pdf.display());
     let doc = Document::load(args.pdf).map_err(|err| err.to_string())?;
 
-    // Check if encrypted and encryption state is still None (i.e., not yet authenticated)
-    let is_encrypted = doc.is_encrypted() && doc.encryption_state.is_none();
-
-    match (passwords, is_encrypted) {
-        (Some(pwds), true) => {
-            if let Some(user_pwd) = &pwds.user {
-                doc.authenticate_password(user_pwd)
-                    .map_err(|err| err.to_string())?;
-            } else if let Some(owner_pwd) = &pwds.owner {
-                doc.authenticate_owner_password(owner_pwd)
-                    .map_err(|err| err.to_string())?;
-            }
-        }
-        (None, true) => {
-            return Err("PDF is encrypted but no passwords were provided.".to_string());
-        }
-        _ => {}
-    }
+    unlock_pdf(&doc, passwords)?;
 
     cprintln!("<magenta,bold>Processing pages</>...");
     let pages = doc.get_pages();
@@ -144,10 +131,8 @@ fn collect_images_deep(
     let mut images = Vec::new();
     let mut visited_forms = HashSet::new();
 
-    // 1. Get the Page Object
     let page = doc.get_object(page_id).and_then(|o| o.as_dict())?;
 
-    // 2. Start the recursion from the Page's Resources
     if let Ok(resources) = page.get(b"Resources") {
         let resources_dict = resolve_to_dict(doc, resources)?;
         scan_resources(doc, resources_dict, &mut images, &mut visited_forms)?;
@@ -236,7 +221,7 @@ fn resolve_to_dict<'a>(
         Object::Reference(id) => doc.get_object(*id)?.as_dict(),
         _ => Err(lopdf::Error::ObjectType {
             expected: "Dictionary or Reference",
-            found: "Other",
+            found: object.enum_variant(),
         }),
     }
 }
@@ -246,8 +231,6 @@ fn remove_watermark_references(doc: &mut Document, watermark_id: ObjectId) {
     let page_ids: Vec<ObjectId> = doc.page_iter().collect();
 
     for page_id in page_ids {
-        // --- STEP 1: Remove from Annotations ---
-        // (Watermarks are often technically 'annotations')
         if let Ok(page_obj) = doc.get_object_mut(page_id)
             && let Ok(page_dict) = page_obj.as_dict_mut()
             && let Ok(annots) = page_dict.get_mut(b"Annots")
@@ -260,10 +243,6 @@ fn remove_watermark_references(doc: &mut Document, watermark_id: ObjectId) {
             });
         }
 
-        // --- STEP 2: Remove from Resources & Content Stream ---
-        // (Watermarks stamped as images/forms)
-
-        // We need to find out what "Name" the page uses to refer to this object
         let mut names_to_remove = HashSet::new();
 
         if let Ok((Some(resources), _)) = doc.get_page_resources(page_id)
@@ -281,7 +260,6 @@ fn remove_watermark_references(doc: &mut Document, watermark_id: ObjectId) {
 
         // If this page actually uses the watermark, scrub the content
         if !names_to_remove.is_empty() {
-            // 1. Remove the mapping from the Resources dictionary
             if let Ok(page_obj) = doc.get_object_mut(page_id) {
                 let page_dict = page_obj.as_dict_mut().unwrap();
                 let resources = page_dict

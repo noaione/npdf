@@ -1,0 +1,289 @@
+use clap::{Args, ValueEnum};
+use color_print::{cformat, cprintln};
+use lopdf::{Document, Object, ObjectId};
+use std::path::PathBuf;
+use tiny_poppler::PdfPasswords;
+
+use crate::common::{ensure_pdf_output, unlock_pdf};
+
+#[derive(Args)]
+pub struct RecropArgs {
+    /// Path to the PDF file to unwatermark.
+    pub pdf: PathBuf,
+    /// Output file path to save the unwatermarked PDF.
+    pub output: PathBuf,
+    #[clap(long, value_enum)]
+    /// Choose which box to use for recropping pages.
+    pub cropbox: CropChoice,
+    #[arg(long, default_value_t = false)]
+    pub describe: bool,
+}
+
+pub fn run(args: RecropArgs, passwords: Option<&PdfPasswords>) -> Result<(), String> {
+    if !args.pdf.exists() {
+        return Err(format!("PDF file does not exist: {}", args.pdf.display()));
+    }
+
+    ensure_pdf_output(&args.output)?;
+
+    cprintln!("<magenta,bold>Loading PDF</>: {}", args.pdf.display());
+    let mut doc = Document::load(args.pdf).map_err(|err| err.to_string())?;
+
+    unlock_pdf(&doc, passwords)?;
+
+    // Check if encrypted and encryption state is still None (i.e., not yet authenticated)
+    let is_encrypted = doc.is_encrypted() && doc.encryption_state.is_none();
+
+    match (passwords, is_encrypted) {
+        (Some(pwds), true) => {
+            if let Some(user_pwd) = &pwds.user {
+                doc.authenticate_password(user_pwd)
+                    .map_err(|err| err.to_string())?;
+            } else if let Some(owner_pwd) = &pwds.owner {
+                doc.authenticate_owner_password(owner_pwd)
+                    .map_err(|err| err.to_string())?;
+            }
+        }
+        (None, true) => {
+            return Err("PDF is encrypted but no passwords were provided.".to_string());
+        }
+        _ => {}
+    }
+
+    cprintln!("<magenta,bold>Processing pages</>...");
+    for (page_num, object_id) in doc.get_pages() {
+        let page_box = get_page_box(&doc, object_id)
+            .map_err(|err| format!("Failed to get page box for page {}: {}", page_num, err))?;
+
+        if args.describe {
+            cprintln!(
+                " > <bold>Page <cyan>{page}</cyan></bold> ┆ {crop} ┆ {media} ┆ {art} ┆ {bleed} ┆ {trim} ┆ {orig}",
+                page = page_num,
+                crop = print_box("CropBox", page_box.cropbox),
+                media = print_box("MediaBox", page_box.mediabox),
+                art = print_box("ArtBox", page_box.artbox),
+                bleed = print_box("BleedBox", page_box.bleedbox),
+                trim = print_box("TrimBox", page_box.trimbox),
+                orig = print_box("OriginalCropBox", page_box.old_cropbox),
+            );
+            continue;
+        }
+
+        match page_box.get_box(args.cropbox) {
+            Some(new_box) => {
+                set_new_crop_box(&mut doc, object_id, new_box).map_err(|err| {
+                    format!("Failed to set new crop box for page {}: {}", page_num, err)
+                })?;
+                cprintln!("<green>Recropped page</> {} to {:?}", page_num, new_box);
+            }
+            None => {
+                cprintln!(
+                    "<yellow>Warning:</> Page {} does not have the specified box {:?}. Skipping.",
+                    page_num,
+                    args.cropbox
+                );
+            }
+        }
+    }
+
+    if args.describe {
+        return Ok(());
+    }
+
+    cprintln!(
+        "<magenta,bold>Saving output PDF</>: {}",
+        args.output.display()
+    );
+    doc.save(&args.output)
+        .map_err(|err| format!("Failed to save output PDF: {}", err))?;
+
+    cprintln!("<green,bold>Done!</>");
+    Ok(())
+}
+
+struct PageBox {
+    cropbox: Option<[f32; 4]>,
+    mediabox: Option<[f32; 4]>,
+    artbox: Option<[f32; 4]>,
+    bleedbox: Option<[f32; 4]>,
+    trimbox: Option<[f32; 4]>,
+    old_cropbox: Option<[f32; 4]>,
+}
+
+impl PageBox {
+    fn get_box(&self, choice: CropChoice) -> Option<[f32; 4]> {
+        match choice {
+            // Always use old cropbox for recropping to CropBox
+            CropChoice::CropBox => self.old_cropbox,
+            CropChoice::MediaBox => self.mediabox,
+            CropChoice::ArtBox => self.artbox,
+            CropChoice::BleedBox => self.bleedbox,
+            CropChoice::TrimBox => self.trimbox,
+        }
+    }
+}
+
+fn get_page_box(doc: &Document, page_id: ObjectId) -> Result<PageBox, lopdf::Error> {
+    let page = doc.get_object(page_id).and_then(|o| o.as_dict())?;
+
+    let mut page_box = PageBox {
+        cropbox: None,
+        mediabox: None,
+        artbox: None,
+        bleedbox: None,
+        trimbox: None,
+        old_cropbox: None,
+    };
+
+    if let Ok(cropbox) = page.get(b"CropBox").and_then(Object::as_array) {
+        if cropbox.len() == 4 {
+            let vals: [f32; 4] = [
+                f32_or_i64(&cropbox[0])?,
+                f32_or_i64(&cropbox[1])?,
+                f32_or_i64(&cropbox[2])?,
+                f32_or_i64(&cropbox[3])?,
+            ];
+            page_box.cropbox = Some(vals);
+        }
+    }
+    if let Ok(original_cropbox) = page.get(b"OriginalCropBox").and_then(Object::as_array) {
+        if original_cropbox.len() == 4 {
+            let vals: [f32; 4] = [
+                f32_or_i64(&original_cropbox[0])?,
+                f32_or_i64(&original_cropbox[1])?,
+                f32_or_i64(&original_cropbox[2])?,
+                f32_or_i64(&original_cropbox[3])?,
+            ];
+            page_box.old_cropbox = Some(vals);
+        }
+    }
+    if let Ok(mediabox) = page.get(b"MediaBox").and_then(Object::as_array) {
+        if mediabox.len() == 4 {
+            let vals: [f32; 4] = [
+                f32_or_i64(&mediabox[0])?,
+                f32_or_i64(&mediabox[1])?,
+                f32_or_i64(&mediabox[2])?,
+                f32_or_i64(&mediabox[3])?,
+            ];
+            page_box.mediabox = Some(vals);
+        }
+    }
+    if let Ok(artbox) = page.get(b"ArtBox").and_then(Object::as_array) {
+        if artbox.len() == 4 {
+            let vals: [f32; 4] = [
+                f32_or_i64(&artbox[0])?,
+                f32_or_i64(&artbox[1])?,
+                f32_or_i64(&artbox[2])?,
+                f32_or_i64(&artbox[3])?,
+            ];
+            page_box.artbox = Some(vals);
+        }
+    }
+    if let Ok(bleedbox) = page.get(b"BleedBox").and_then(Object::as_array) {
+        if bleedbox.len() == 4 {
+            let vals: [f32; 4] = [
+                f32_or_i64(&bleedbox[0])?,
+                f32_or_i64(&bleedbox[1])?,
+                f32_or_i64(&bleedbox[2])?,
+                f32_or_i64(&bleedbox[3])?,
+            ];
+            page_box.bleedbox = Some(vals);
+        }
+    }
+    if let Ok(trimbox) = page.get(b"TrimBox").and_then(Object::as_array) {
+        if trimbox.len() == 4 {
+            let vals: [f32; 4] = [
+                f32_or_i64(&trimbox[0])?,
+                f32_or_i64(&trimbox[1])?,
+                f32_or_i64(&trimbox[2])?,
+                f32_or_i64(&trimbox[3])?,
+            ];
+            page_box.trimbox = Some(vals);
+        }
+    }
+
+    Ok(page_box)
+}
+
+fn set_new_crop_box(
+    doc: &mut Document,
+    page_id: ObjectId,
+    new_box: [f32; 4],
+) -> Result<(), lopdf::Error> {
+    // Get the old cropbox
+    let old_cropbox = {
+        let page = doc.get_object(page_id).and_then(|o| o.as_dict())?;
+        if let Ok(cropbox) = page.get(b"CropBox").and_then(Object::as_array) {
+            if cropbox.len() == 4 {
+                Some([
+                    cropbox[0].as_f32()?,
+                    cropbox[1].as_f32()?,
+                    cropbox[2].as_f32()?,
+                    cropbox[3].as_f32()?,
+                ])
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    };
+
+    let new_cropbox = Object::Array(vec![
+        Object::Real(new_box[0]),
+        Object::Real(new_box[1]),
+        Object::Real(new_box[2]),
+        Object::Real(new_box[3]),
+    ]);
+
+    let page = doc.get_object_mut(page_id).and_then(|o| o.as_dict_mut())?;
+    page.set(b"CropBox", new_cropbox);
+    // check if have OriginalCropBox
+    let has_original_cropbox = page.get(b"OriginalCropBox").is_ok();
+    if !has_original_cropbox && let Some(old_box) = old_cropbox {
+        let original_cropbox = Object::Array(vec![
+            Object::Real(old_box[0]),
+            Object::Real(old_box[1]),
+            Object::Real(old_box[2]),
+            Object::Real(old_box[3]),
+        ]);
+
+        page.set(b"OriginalCropBox", original_cropbox);
+    }
+    Ok(())
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, ValueEnum)]
+pub enum CropChoice {
+    CropBox,
+    MediaBox,
+    ArtBox,
+    BleedBox,
+    TrimBox,
+}
+
+fn f32_or_i64(obj: &Object) -> Result<f32, lopdf::Error> {
+    match obj {
+        Object::Real(val) => Ok(*val),
+        Object::Integer(val) => Ok(*val as f32),
+        _ => Err(lopdf::Error::ObjectType {
+            expected: "Real or Integer",
+            found: obj.enum_variant(),
+        }),
+    }
+}
+
+fn print_box(box_name: &str, box_values: Option<[f32; 4]>) -> String {
+    if let Some(values) = box_values {
+        cformat!(
+            "<blue>{}</>: [{:.2}, {:.2}, {:.2}, {:.2}]",
+            box_name,
+            values[0],
+            values[1],
+            values[2],
+            values[3]
+        )
+    } else {
+        cformat!("<blue>{}</>: <yellow>Not Set</>", box_name)
+    }
+}

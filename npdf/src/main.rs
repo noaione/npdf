@@ -1,4 +1,5 @@
 mod commands;
+mod common;
 
 use clap::{
     Parser, Subcommand,
@@ -7,10 +8,10 @@ use clap::{
         styling::{AnsiColor, Effects},
     },
 };
-use commands::{ExportArgs, ListArgs, export, list};
+use commands::{
+    ExportArgs, ListArgs, RecropArgs, UnwatermarkArgs, export, list, recrop, unwatermark,
+};
 use tiny_poppler::PdfPasswords;
-
-use crate::commands::unwatermark::{self, UnwatermarkArgs};
 
 fn main() {
     let cli = Cli::parse();
@@ -33,6 +34,7 @@ fn execute(cli: Cli) -> Result<(), String> {
         Commands::List(args) => list::run(args, passwords.as_ref()),
         Commands::Export(args) => export::run(args, passwords.as_ref()),
         Commands::Unwatermark(args) => unwatermark::run(args, passwords.as_ref()),
+        Commands::Recrop(args) => recrop::run(args, passwords.as_ref()),
     }
 }
 
@@ -64,6 +66,8 @@ enum Commands {
     Export(ExportArgs),
     /// Remove watermarks from the PDF.
     Unwatermark(UnwatermarkArgs),
+    /// Recrop pages in the PDF based on specified box.
+    Recrop(RecropArgs),
 }
 
 fn cli_styles() -> Styles {
