@@ -1,6 +1,120 @@
 use std::env;
 use std::path::{Path, PathBuf};
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Sanitizer {
+    Address,
+    Leak,
+    Thread,
+    Undefined,
+}
+
+impl Sanitizer {
+    fn detect(target: &str) -> Result<Option<Self>, String> {
+        let mut enabled = Vec::new();
+
+        if env::var_os("CARGO_FEATURE_ASAN").is_some() {
+            enabled.push(Sanitizer::Address);
+        }
+        if env::var_os("CARGO_FEATURE_LSAN").is_some() {
+            enabled.push(Sanitizer::Leak);
+        }
+        if env::var_os("CARGO_FEATURE_TSAN").is_some() {
+            enabled.push(Sanitizer::Thread);
+        }
+        if env::var_os("CARGO_FEATURE_UBSAN").is_some() {
+            enabled.push(Sanitizer::Undefined);
+        }
+
+        if enabled.len() > 1 {
+            return Err("more than one sanitizer feature enabled; choose exactly one".to_string());
+        }
+
+        let sanitizer = enabled.into_iter().next();
+
+        if let Some(choice) = sanitizer {
+            if target.contains("windows-msvc") {
+                return Err(format!(
+                    "{} sanitizer is not supported on MSVC targets",
+                    choice.display_name()
+                ));
+            }
+
+            if target.contains("apple") && matches!(choice, Sanitizer::Leak) {
+                return Err(format!(
+                    "{} sanitizer is not available on Apple targets",
+                    choice.display_name()
+                ));
+            }
+        }
+
+        Ok(sanitizer)
+    }
+
+    fn display_name(self) -> &'static str {
+        match self {
+            Sanitizer::Address => "AddressSanitizer",
+            Sanitizer::Leak => "LeakSanitizer",
+            Sanitizer::Thread => "ThreadSanitizer",
+            Sanitizer::Undefined => "UndefinedBehaviorSanitizer",
+        }
+    }
+
+    fn compile_flags(self) -> &'static [&'static str] {
+        match self {
+            Sanitizer::Address => &["-fsanitize=address", "-fno-omit-frame-pointer"],
+            Sanitizer::Leak => &["-fsanitize=leak", "-fno-omit-frame-pointer"],
+            Sanitizer::Thread => &["-fsanitize=thread"],
+            Sanitizer::Undefined => &["-fsanitize=undefined"],
+        }
+    }
+
+    fn link_args(self) -> &'static [&'static str] {
+        match self {
+            Sanitizer::Address => &["-fsanitize=address"],
+            Sanitizer::Leak => &["-fsanitize=leak"],
+            Sanitizer::Thread => &["-fsanitize=thread"],
+            Sanitizer::Undefined => &["-fsanitize=undefined"],
+        }
+    }
+
+    fn cfg_value(self) -> &'static str {
+        match self {
+            Sanitizer::Address => "address",
+            Sanitizer::Leak => "leak",
+            Sanitizer::Thread => "thread",
+            Sanitizer::Undefined => "undefined",
+        }
+    }
+
+    fn unix_runtime_lib(self) -> Option<&'static str> {
+        match self {
+            Sanitizer::Address => Some("asan"),
+            Sanitizer::Leak => Some("lsan"),
+            Sanitizer::Thread => Some("tsan"),
+            Sanitizer::Undefined => Some("ubsan"),
+        }
+    }
+
+    fn apple_runtime_dylib(self) -> &'static str {
+        match self {
+            Sanitizer::Address => "libclang_rt.asan_osx_dynamic.dylib",
+            Sanitizer::Leak => "libclang_rt.lsan_osx_dynamic.dylib",
+            Sanitizer::Thread => "libclang_rt.tsan_osx_dynamic.dylib",
+            Sanitizer::Undefined => "libclang_rt.ubsan_osx_dynamic.dylib",
+        }
+    }
+
+    fn apple_runtime_lib_name(self) -> &'static str {
+        match self {
+            Sanitizer::Address => "clang_rt.asan_osx_dynamic",
+            Sanitizer::Leak => "clang_rt.lsan_osx_dynamic",
+            Sanitizer::Thread => "clang_rt.tsan_osx_dynamic",
+            Sanitizer::Undefined => "clang_rt.ubsan_osx_dynamic",
+        }
+    }
+}
+
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=ffi/splash_bridge.cc");
@@ -26,19 +140,38 @@ fn main() {
         poppler_src.join("CMakeLists.txt").display()
     );
 
-    let dst = configure_and_build_poppler(&poppler_src, &target);
+    let sanitizer = Sanitizer::detect(&target)
+        .unwrap_or_else(|err| panic!("sanitizer configuration error: {err}"));
 
-    compile_bridge(&manifest_dir, &poppler_src, &dst);
+    if let Some(selected) = sanitizer {
+        println!(
+            "cargo:warning=Enabling {} instrumentation",
+            selected.display_name()
+        );
+        println!("cargo:rustc-cfg=tiny_poppler_has_sanitizer");
+        println!(
+            "cargo:rustc-cfg=tiny_poppler_sanitizer=\"{}\"",
+            selected.cfg_value()
+        );
+    }
+
+    let dst = configure_and_build_poppler(&poppler_src, &target, sanitizer);
+
+    compile_bridge(&manifest_dir, &poppler_src, &dst, sanitizer);
 
     let lib_dir = dst.join("lib");
     println!("cargo:rustc-link-search=native={}", lib_dir.display());
     println!("cargo:rustc-link-lib=static=poppler");
     // println!("cargo:rustc-link-lib=static=poppler-splash");
 
-    emit_linker_flags(&target);
+    emit_linker_flags(&target, sanitizer);
 }
 
-fn configure_and_build_poppler(poppler_src: &Path, target: &str) -> PathBuf {
+fn configure_and_build_poppler(
+    poppler_src: &Path,
+    target: &str,
+    sanitizer: Option<Sanitizer>,
+) -> PathBuf {
     let mut cfg = cmake::Config::new(poppler_src);
 
     // Check build profile
@@ -87,6 +220,10 @@ fn configure_and_build_poppler(poppler_src: &Path, target: &str) -> PathBuf {
         cfg.define("CMAKE_VERBOSE_MAKEFILE", "ON");
     }
 
+    if let Some(s) = sanitizer {
+        apply_sanitizer_to_cmake(&mut cfg, s);
+    }
+
     if target.contains("windows") {
         cfg.define("FONT_CONFIGURATION", "win32")
             .define("ENABLE_NSS3", "OFF");
@@ -114,7 +251,12 @@ fn configure_and_build_poppler(poppler_src: &Path, target: &str) -> PathBuf {
     cfg.build()
 }
 
-fn compile_bridge(manifest_dir: &Path, poppler_src: &Path, dst: &Path) {
+fn compile_bridge(
+    manifest_dir: &Path,
+    poppler_src: &Path,
+    dst: &Path,
+    sanitizer: Option<Sanitizer>,
+) {
     let include_dir = dst.join("include");
     let include_dir_poppler = include_dir.join("poppler");
 
@@ -135,6 +277,10 @@ fn compile_bridge(manifest_dir: &Path, poppler_src: &Path, dst: &Path) {
         .flag_if_supported("/std:c++20")
         .flag_if_supported("-Wno-unused-parameter")
         .flag_if_supported("-Wno-unused-variable");
+
+    if let Some(s) = sanitizer {
+        apply_sanitizer_to_cc(&mut build, s);
+    }
 
     build.compile("tiny_poppler_splash_bridge");
 }
@@ -171,7 +317,7 @@ fn emit_system_library_hints(target: &str) {
     }
 }
 
-fn emit_linker_flags(target: &str) {
+fn emit_linker_flags(target: &str, sanitizer: Option<Sanitizer>) {
     let is_windows = target.contains("windows");
     let is_apple = target.contains("apple");
 
@@ -258,6 +404,104 @@ fn emit_linker_flags(target: &str) {
     } else {
         emit_system_library_hints(target);
     }
+
+    if let Some(s) = sanitizer {
+        emit_sanitizer_link_args(target, s);
+    }
+}
+
+fn apply_sanitizer_to_cmake(cfg: &mut cmake::Config, sanitizer: Sanitizer) {
+    let compile_flags = sanitizer.compile_flags();
+    for flag in compile_flags {
+        cfg.cflag(flag);
+        cfg.cxxflag(flag);
+    }
+
+    let link_flags = sanitizer.link_args();
+    if !link_flags.is_empty() {
+        let joined = link_flags.join(" ");
+        cfg.define("CMAKE_EXE_LINKER_FLAGS", &joined);
+        cfg.define("CMAKE_SHARED_LINKER_FLAGS", &joined);
+        cfg.define("CMAKE_MODULE_LINKER_FLAGS", &joined);
+    }
+}
+
+fn apply_sanitizer_to_cc(build: &mut cc::Build, sanitizer: Sanitizer) {
+    for flag in sanitizer.compile_flags() {
+        build.flag(flag);
+    }
+}
+
+fn emit_sanitizer_link_args(target: &str, sanitizer: Sanitizer) {
+    let is_apple = target.contains("apple");
+    let is_windows = target.contains("windows");
+
+    if is_windows {
+        println!(
+            "cargo:warning={} sanitizer is not supported on Windows targets",
+            sanitizer.display_name()
+        );
+        return;
+    }
+
+    if is_apple {
+        emit_macos_sanitizer_runtime(target, sanitizer);
+        return;
+    }
+
+    for arg in sanitizer.link_args() {
+        println!("cargo:rustc-link-arg={}", arg);
+    }
+
+    if let Some(lib) = sanitizer.unix_runtime_lib() {
+        println!("cargo:rustc-link-lib={}", lib);
+    }
+}
+
+fn emit_macos_sanitizer_runtime(target: &str, sanitizer: Sanitizer) {
+    let mut builder = cc::Build::new();
+    if !target.is_empty() {
+        builder.target(target);
+    }
+
+    let compiler = builder.get_compiler();
+    let dylib = sanitizer.apple_runtime_dylib();
+
+    let resolved = {
+        let mut cmd = compiler.to_command();
+        cmd.arg(format!("-print-file-name={dylib}"));
+        cmd.output()
+            .ok()
+            .filter(|output| output.status.success())
+            .and_then(|output| {
+                let path = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+                if path.is_empty() || path == dylib {
+                    None
+                } else {
+                    Some(PathBuf::from(path))
+                }
+            })
+    };
+
+    let path = match resolved {
+        Some(path) => path,
+        None => {
+            println!(
+                "cargo:warning=Unable to locate {dylib}; make sure Xcode Command Line Tools are installed"
+            );
+            return;
+        }
+    };
+
+    if let Some(parent) = path.parent() {
+        let dir = parent.display().to_string();
+        println!("cargo:rustc-link-search=native={dir}");
+        println!("cargo:rustc-link-arg=-Wl,-rpath,{dir}");
+    }
+    println!(
+        "cargo:rustc-link-lib={}",
+        sanitizer.apple_runtime_lib_name()
+    );
 }
 
 fn emit_homebrew_search_hint(formula: &str) {
