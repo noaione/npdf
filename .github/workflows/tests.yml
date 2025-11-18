@@ -112,3 +112,7 @@ jobs:
           fi
           cargo test -p tiny-poppler --verbose --features ${{ matrix.sanitizer }}
         shell: bash
+        env:
+          BOOST_ROOT: ${{ steps.install-boost.outputs.boost_root }}
+          Boost_DIR: ${{ steps.install-boost.outputs.boost_root }}
+          CI_RUNNER: "github"
