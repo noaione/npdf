@@ -42,9 +42,9 @@ and the following libraries installed and available for linking:
 
 most of the dependencies in CI has been statically linked into the final binary, with exception:
 - `libiconv` on macOS (dynamically linked against system version)
-- `zlib` on linux/macOS (dynamically linked against system version)
-- `nss3` and `nspr4` on linux/macOS
-- `lcms2` on linux/macOS
+- `zlib` on Linux/macOS (dynamically linked against system version)
+- `nss3` and `nspr4` on Linux/macOS
+- `lcms2` on Linux
 
 windows version is fully statically linked, so you don't need to install anything extra (except maybe VC++ runtime).
 
@@ -69,6 +69,18 @@ pass `--threads 1` to run single-threaded or `--threads N` to clamp the worker c
 
 currently, the way this is implemented is that the main thread will parse the PDF once and then spawn worker threads that each open their own isolated `Document` instance from a shared `DocumentFactory`.<br />
 since i don't think poppler's `PDFDoc` is thread-safe *yet* to allow sharing between threads.
+
+### unwatermark
+
+```
+npdf unwatermark <pdf_file> <output_file>
+```
+
+remove watermark images from the PDF file and save the cleaned PDF into `<output_file>`.<br />
+this command works by scanning all images in the PDF and hashing them, then asking the user to select which images to remove based on their hashes.<br />
+note that this command may not be able to remove all watermarks, especially if the watermark is drawn using vector graphics or text.
+
+this use [`lopdf`](https://crates.io/crates/lopdf) crate to manipulate the PDF file directly.
 
 ## disclaimer
 

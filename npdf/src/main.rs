@@ -10,6 +10,8 @@ use clap::{
 use commands::{ExportArgs, ListArgs, export, list};
 use tiny_poppler::PdfPasswords;
 
+use crate::commands::unwatermark::{self, UnwatermarkArgs};
+
 fn main() {
     let cli = Cli::parse();
     if let Err(err) = execute(cli) {
@@ -30,6 +32,7 @@ fn execute(cli: Cli) -> Result<(), String> {
     match command {
         Commands::List(args) => list::run(args, passwords.as_ref()),
         Commands::Export(args) => export::run(args, passwords.as_ref()),
+        Commands::Unwatermark(args) => unwatermark::run(args, passwords.as_ref()),
     }
 }
 
@@ -59,6 +62,8 @@ enum Commands {
     List(ListArgs),
     /// Export pages from the PDF to PNG or JPEG files.
     Export(ExportArgs),
+    /// Remove watermarks from the PDF.
+    Unwatermark(UnwatermarkArgs),
 }
 
 fn cli_styles() -> Styles {
