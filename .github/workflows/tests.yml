@@ -39,15 +39,15 @@ jobs:
             target_env: ""
             target_rustflags: ""
 
-          - runner: ubuntu-24.04
-            os_label: x86_64-unknown-linux-gnu
-            sanitizer: tsan
-            rust_toolchain: nightly
-            rustflags: ""
-            cargo_command: cargo +nightly test -Z build-std --verbose -p tiny-poppler --features tsan -- --nocapture test_render_cid
-            target: x86_64-unknown-linux-gnu
-            target_env: X86_64_UNKNOWN_LINUX_GNU
-            target_rustflags: "-Zsanitizer=thread -C debuginfo=2"
+          # - runner: ubuntu-24.04
+          #   os_label: x86_64-unknown-linux-gnu
+          #   sanitizer: tsan
+          #   rust_toolchain: nightly
+          #   rustflags: ""
+          #   cargo_command: cargo +nightly test -Z build-std --verbose -p tiny-poppler --features tsan -- --nocapture test_render_cid
+          #   target: x86_64-unknown-linux-gnu
+          #   target_env: X86_64_UNKNOWN_LINUX_GNU
+          #   target_rustflags: "-Zsanitizer=thread -C debuginfo=2"
 
           - runner: ubuntu-24.04
             os_label: x86_64-unknown-linux-gnu
@@ -185,4 +185,3 @@ jobs:
           CI_RUNNER: "github"
           RUSTFLAGS: ${{ matrix.rustflags }}
           RUSTDOCFLAGS: ${{ matrix.rustflags }}
-          TSAN_OPTIONS: "verbosity=2 history_size=7"

@@ -3,14 +3,12 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
-#include <chrono>
 #include <memory>
 #include <mutex>
 #include <new>
 #include <optional>
 #include <string>
 #include <utility>
-#include <thread>
 #include <vector>
 
 #include "ErrorCodes.h"
@@ -170,7 +168,6 @@ bool copy_bitmap_to_image(SplashBitmap *bitmap, SplashColorMode mode, splash_ima
         return false;
     }
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
     std::memcpy(buffer, bitmap->getDataPtr(), total_size);
 
     const SplashColorMode bitmap_mode = bitmap->getMode();
