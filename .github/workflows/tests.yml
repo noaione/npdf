@@ -107,7 +107,7 @@ jobs:
       - name: Setup rust cache
         uses: Swatinem/rust-cache@v2
         with:
-          prefix-key: "rustbuild-"
+          prefix-key: "rustbuild-${{ matrix.sanitizer }}"
 
       - name: Install uv
         uses: astral-sh/setup-uv@v6

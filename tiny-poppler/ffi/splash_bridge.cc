@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <mutex>
 #include <new>
 #include <optional>
 #include <string>
@@ -55,10 +56,11 @@ std::optional<SplashColorMode> to_splash_color_mode(splash_color_mode_t mode)
 
 void ensure_global_params()
 {
-    if (!globalParams) {
+    static std::once_flag once;
+    std::call_once(once, [] {
         globalParams = std::make_unique<GlobalParams>();
         globalParams->setErrQuiet(true);
-    }
+    });
 }
 
 void set_error(char **error_out, const std::string &message)

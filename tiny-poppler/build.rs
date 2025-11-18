@@ -357,6 +357,9 @@ fn emit_linker_flags(target: &str, sanitizer: Option<Sanitizer>) {
         println!("cargo:rustc-link-lib=static=lcms2");
         println!("cargo:rustc-link-lib=static=libpng16");
         println!("cargo:rustc-link-lib=static=zlib");
+        println!("cargo:rustc-link-lib=dylib=advapi32");
+        println!("cargo:rustc-link-lib=dylib=shell32");
+        println!("cargo:rustc-link-lib=dylib=shfolder");
     } else {
         println!("cargo:rustc-link-lib=static=expat");
         println!("cargo:rustc-link-lib=static=freetype");
