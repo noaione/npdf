@@ -89,6 +89,8 @@ public:
         uint32_t stride;
         uint32_t components;
         uint32_t bits_per_component;
+        double wDPI;
+        double hDPI;
         ImageFormat format;
         ImageType type;
         ImageExtension extension;
@@ -155,14 +157,18 @@ private:
                       int width,
                       int height,
                       int components,
-                      int bitsPerComponent);
+                      int bitsPerComponent,
+                      double widthDPI,
+                      double heightDPI);
     void writeImageFile(Stream *str,
                         ImageFormat format,
                         ImageExtension ext,
                         ImageType type,
                         int width,
                         int height,
-                        GfxImageColorMap *colorMap);
+                        GfxImageColorMap *colorMap,
+                        double widthDPI,
+                        double heightDPI);
     long getInlineImageLength(Stream *str, int width, int height, GfxImageColorMap *colorMap);
     bool matchesTarget(Object *ref, bool inlineImg, ImageType imageType) const;
     void storeResult(const std::vector<uint8_t> &buffer,
@@ -173,7 +179,9 @@ private:
                      uint32_t height,
                      uint32_t stride,
                      uint32_t components,
-                     uint32_t bitsPerComponent);
+                     uint32_t bitsPerComponent,
+                     double widthDPI,
+                     double heightDPI);
 
     Ref targetRef; // reference to match
     bool matchByRef = true; // match by object reference or capture first occurrence

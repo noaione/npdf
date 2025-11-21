@@ -81,6 +81,8 @@ ImageOutputDev::ImageExtension defaultExtension(ImageOutputDev::ImageFormat form
     return format == ImageOutputDev::imgCMYK ? ImageOutputDev::extTiff : ImageOutputDev::extPng;
 }
 
+constexpr double kDefaultImageDPI = 72.0;
+
 } // namespace
 
 ImageOutputDev::ImageOutputDev(ImageOutput *outputBufferA, const Ref &targetRefA, bool matchRef, ImageType targetType)
@@ -138,7 +140,9 @@ void ImageOutputDev::storeResult(const std::vector<uint8_t> &buffer,
                                  uint32_t height,
                                  uint32_t stride,
                                  uint32_t components,
-                                 uint32_t bitsPerComponent)
+                                 uint32_t bitsPerComponent,
+                                 double widthDPI,
+                                 double heightDPI)
 {
     if (!outputBuffer) {
         return;
@@ -157,6 +161,8 @@ void ImageOutputDev::storeResult(const std::vector<uint8_t> &buffer,
     outputBuffer->stride = stride;
     outputBuffer->components = components;
     outputBuffer->bits_per_component = bitsPerComponent;
+    outputBuffer->wDPI = widthDPI;
+    outputBuffer->hDPI = heightDPI;
     outputBuffer->format = format;
     outputBuffer->type = type;
     outputBuffer->extension = ext;
@@ -186,7 +192,9 @@ void ImageOutputDev::writeRawImage(Stream *str,
                                    int width,
                                    int height,
                                    int components,
-                                   int bitsPerComponent)
+                                   int bitsPerComponent,
+                                   double widthDPI,
+                                   double heightDPI)
 {
     if (!outputBuffer) {
         return;
@@ -211,7 +219,7 @@ void ImageOutputDev::writeRawImage(Stream *str,
     const uint32_t h = height > 0 ? static_cast<uint32_t>(height) : 0;
     const uint32_t comps = components > 0 ? static_cast<uint32_t>(components) : 0;
     const uint32_t bpc = bitsPerComponent > 0 ? static_cast<uint32_t>(bitsPerComponent) : 0;
-    storeResult(buffer, imgUnknown, ext, type, w, h, 0, comps, bpc);
+    storeResult(buffer, imgUnknown, ext, type, w, h, 0, comps, bpc, widthDPI, heightDPI);
 }
 
 void ImageOutputDev::writeImageFile(Stream *str,
@@ -220,7 +228,9 @@ void ImageOutputDev::writeImageFile(Stream *str,
                                     ImageType type,
                                     int width,
                                     int height,
-                                    GfxImageColorMap *colorMap)
+                                    GfxImageColorMap *colorMap,
+                                    double widthDPI,
+                                    double heightDPI)
 {
     if (!outputBuffer) {
         return;
@@ -419,7 +429,9 @@ void ImageOutputDev::writeImageFile(Stream *str,
                 static_cast<uint32_t>(height),
                 stride,
                 components,
-                bitsPerComponent);
+                bitsPerComponent,
+                widthDPI,
+                heightDPI);
 }
 
 void ImageOutputDev::writeImage(GfxState *state,
@@ -435,6 +447,9 @@ void ImageOutputDev::writeImage(GfxState *state,
         return;
     }
 
+    const double widthDPI = kDefaultImageDPI;
+    const double heightDPI = kDefaultImageDPI;
+
     EmbedStream *embedStr = nullptr;
     if (inlineImg) {
         embedStr = static_cast<EmbedStream *>(str->getBaseStream());
@@ -447,21 +462,21 @@ void ImageOutputDev::writeImage(GfxState *state,
 
     const StreamKind kind = str->getKind();
     if (kind == strDCT) {
-        writeRawImage(str, extJpg, imageType, width, height, components, bitsPerComponent);
+        writeRawImage(str, extJpg, imageType, width, height, components, bitsPerComponent, widthDPI, heightDPI);
         if (inlineImg && embedStr) {
             embedStr->restore();
         }
         return;
     }
     if (kind == strJPX && !inlineImg) {
-        writeRawImage(str, extJp2, imageType, width, height, components, bitsPerComponent);
+        writeRawImage(str, extJp2, imageType, width, height, components, bitsPerComponent, widthDPI, heightDPI);
         if (inlineImg && embedStr) {
             embedStr->restore();
         }
         return;
     }
     if (kind == strJBIG2 && !inlineImg) {
-        writeRawImage(str, extJb2e, imageType, width, height, components, bitsPerComponent);
+        writeRawImage(str, extJb2e, imageType, width, height, components, bitsPerComponent, widthDPI, heightDPI);
         if (inlineImg && embedStr) {
             embedStr->restore();
         }
@@ -470,7 +485,7 @@ void ImageOutputDev::writeImage(GfxState *state,
     if (kind == strCCITTFax) {
         const bool preferTiff = imageType == imgImage;
         const ImageExtension ccittExt = preferTiff ? extCcittTiff : extCcitt;
-        writeRawImage(str, ccittExt, imageType, width, height, 1, 1);
+        writeRawImage(str, ccittExt, imageType, width, height, 1, 1, widthDPI, heightDPI);
         if (inlineImg && embedStr) {
             embedStr->restore();
         }
@@ -479,7 +494,7 @@ void ImageOutputDev::writeImage(GfxState *state,
 
     const ImageFormat format = determineFormat(colorMap);
     const ImageExtension ext = defaultExtension(format);
-    writeImageFile(str, format, ext, imageType, width, height, colorMap);
+    writeImageFile(str, format, ext, imageType, width, height, colorMap, widthDPI, heightDPI);
 
     if (inlineImg && embedStr) {
         embedStr->restore();
