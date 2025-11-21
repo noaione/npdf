@@ -466,7 +466,7 @@ impl Renderer {
             ImageExportSelector::FirstOfType => (ImageExportMatchMode::ByType, 0, 0),
         };
 
-        let mut params = ImageExportParams {
+        let params = ImageExportParams {
             page_index: request.page_index,
             match_mode,
             target_type: request.target_type,

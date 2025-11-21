@@ -19,6 +19,8 @@ exclude = [
 thiserror = "2.0.17"
 png = { version = "0.18.0" }
 jpeg-encoder = { version = "0.6.1", features = ["simd"] }
+fax = "0.2.6"
+tiff = { version = "0.10", default-features = false }
 
 [features]
 default = []

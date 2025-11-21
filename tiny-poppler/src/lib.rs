@@ -5,6 +5,7 @@
 //! Poppler (with Splash) as part of the Cargo build.
 
 mod ffi;
+mod sink;
 
 pub use ffi::{
     ColorMode, ExportedImage, ImageExportExtension, ImageExportFormat, ImageExportRequest,
@@ -13,6 +14,7 @@ pub use ffi::{
 };
 use jpeg_encoder::{ColorType as JpegColorType, Encoder as JpegEncoder};
 use png::{BitDepth, ColorType, Compression, Encoder};
+pub use sink::{EncodedExportedImage, ImageSinkError, sink_exported_image};
 
 use std::fs::{self, File};
 use std::io::{self, BufWriter, Write};
@@ -139,6 +141,14 @@ pub enum RenderError {
     },
 }
 
+#[derive(Debug, Error)]
+pub enum ImageExportError {
+    #[error("poppler: {0}")]
+    Poppler(String),
+    #[error(transparent)]
+    Sink(#[from] ImageSinkError),
+}
+
 const DEFAULT_JPEG_QUALITY: u8 = 95;
 
 /// Handle to an open PDF backed by Poppler's Splash renderer.
@@ -229,6 +239,25 @@ impl Document {
         file.write_all(&png_bytes)?;
         file.flush()?;
         Ok(())
+    }
+
+    /// Extract an embedded image using Poppler's exporter without re-encoding it.
+    pub fn export_image(
+        &mut self,
+        request: ImageExportRequest,
+    ) -> Result<ExportedImage, ImageExportError> {
+        self.renderer
+            .export_image(request)
+            .map_err(ImageExportError::Poppler)
+    }
+
+    /// Extract an embedded image and encode it into the requested sink format.
+    pub fn export_image_to_bytes(
+        &mut self,
+        request: ImageExportRequest,
+    ) -> Result<EncodedExportedImage, ImageExportError> {
+        let exported = self.export_image(request)?;
+        sink::sink_exported_image(exported).map_err(ImageExportError::Sink)
     }
 
     /// Retrieve metadata for all images embedded in the document.
