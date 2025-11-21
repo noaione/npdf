@@ -483,9 +483,7 @@ void ImageOutputDev::writeImage(GfxState *state,
         return;
     }
     if (kind == strCCITTFax) {
-        const bool preferTiff = imageType == imgImage;
-        const ImageExtension ccittExt = preferTiff ? extCcittTiff : extCcitt;
-        writeRawImage(str, ccittExt, imageType, width, height, 1, 1, widthDPI, heightDPI);
+        writeRawImage(str, extCcitt, imageType, width, height, 1, 1, widthDPI, heightDPI);
         if (inlineImg && embedStr) {
             embedStr->restore();
         }

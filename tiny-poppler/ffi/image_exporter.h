@@ -75,7 +75,6 @@ public:
         extJp2, // JPEG 2000
         extJb2e, // JBIG2 embedded
         extCcitt, // CCITT Group 4
-        extCcittTiff, // CCITT Group 4 in TIFF wrapper (for actual viewing)
         extPng, // PNG
         extTiff, // TIFF
         extPnm, // PNM (PBM/PGM/PPM) - Use ppm if RGB, else pbm
