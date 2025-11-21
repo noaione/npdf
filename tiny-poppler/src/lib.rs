@@ -8,9 +8,9 @@ mod ffi;
 mod sink;
 
 pub use ffi::{
-    ColorMode, ExportedImage, ImageExportExtension, ImageExportFormat, ImageExportRequest,
-    ImageExportSelector, ImageExportType, ImageInfo, ImageType, PageInfo, PdfCropMode,
-    PdfImageColorSpace,
+    CcittParams, ColorMode, ExportedImage, ImageExportExtension, ImageExportFormat,
+    ImageExportRequest, ImageExportSelector, ImageExportType, ImageInfo, ImageType, PageInfo,
+    PdfCropMode, PdfImageColorSpace,
 };
 use jpeg_encoder::{ColorType as JpegColorType, Encoder as JpegEncoder};
 use png::{BitDepth, ColorType, Compression, Encoder};

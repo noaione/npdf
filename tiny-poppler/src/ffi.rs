@@ -190,6 +190,19 @@ struct ImageExportParams {
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
+struct ImageCcittParams {
+    encoding: i32,
+    columns: i32,
+    rows: i32,
+    damaged_rows_before_error: i32,
+    end_of_line: u8,
+    byte_align: u8,
+    end_of_block: u8,
+    black_is_one: u8,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
 struct ImageExportImage {
     data: *mut u8,
     len: usize,
@@ -203,6 +216,10 @@ struct ImageExportImage {
     format: ImageExportFormat,
     image_type: ImageExportType,
     extension: ImageExportExtension,
+    jbig2_globals: *mut u8,
+    jbig2_globals_len: usize,
+    has_ccitt_params: u8,
+    ccitt: ImageCcittParams,
 }
 
 unsafe extern "C" {
@@ -487,6 +504,19 @@ impl Renderer {
             format: ImageExportFormat::Unknown,
             image_type: request.target_type,
             extension: ImageExportExtension::Png,
+            jbig2_globals: ptr::null_mut(),
+            jbig2_globals_len: 0,
+            has_ccitt_params: 0,
+            ccitt: ImageCcittParams {
+                encoding: 0,
+                columns: 0,
+                rows: 0,
+                damaged_rows_before_error: 0,
+                end_of_line: 0,
+                byte_align: 0,
+                end_of_block: 0,
+                black_is_one: 0,
+            },
         };
         let mut error = ptr::null_mut();
         let status = unsafe { image_exporter_extract(self.raw, &params, &mut raw, &mut error) };
@@ -499,6 +529,17 @@ impl Renderer {
             return Err("image exporter returned an empty buffer".into());
         }
 
+        let width = raw.width;
+        let height = raw.height;
+        let stride = raw.stride;
+        let components = raw.components;
+        let bits_per_component = raw.bits_per_component;
+        let width_dpi = raw.width_dpi;
+        let height_dpi = raw.height_dpi;
+        let format = raw.format;
+        let image_type = raw.image_type;
+        let extension = raw.extension;
+
         let data = if raw.len == 0 {
             Vec::new()
         } else {
@@ -507,20 +548,36 @@ impl Renderer {
             owned.extend_from_slice(bytes);
             owned
         };
+
+        let jbig2_globals = if raw.jbig2_globals_len == 0 || raw.jbig2_globals.is_null() {
+            None
+        } else {
+            let bytes = unsafe { slice::from_raw_parts(raw.jbig2_globals, raw.jbig2_globals_len) };
+            Some(bytes.to_vec())
+        };
+
+        let ccitt_params = if raw.has_ccitt_params == 0 {
+            None
+        } else {
+            Some(CcittParams::from(raw.ccitt))
+        };
+
         unsafe { image_exporter_free(&mut raw) };
 
         Ok(ExportedImage {
             data,
-            width: raw.width,
-            height: raw.height,
-            stride: raw.stride,
-            components: raw.components,
-            bits_per_component: raw.bits_per_component,
-            width_dpi: raw.width_dpi,
-            height_dpi: raw.height_dpi,
-            format: raw.format,
-            image_type: raw.image_type,
-            extension: raw.extension,
+            width,
+            height,
+            stride,
+            components,
+            bits_per_component,
+            width_dpi,
+            height_dpi,
+            format,
+            image_type,
+            extension,
+            jbig2_globals,
+            ccitt_params,
         })
     }
 }
@@ -558,6 +615,35 @@ pub struct ExportedImage {
     pub format: ImageExportFormat,
     pub image_type: ImageExportType,
     pub extension: ImageExportExtension,
+    pub jbig2_globals: Option<Vec<u8>>,
+    pub ccitt_params: Option<CcittParams>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CcittParams {
+    pub encoding: i32,
+    pub columns: i32,
+    pub rows: i32,
+    pub damaged_rows_before_error: i32,
+    pub end_of_line: bool,
+    pub byte_align: bool,
+    pub end_of_block: bool,
+    pub black_is_one: bool,
+}
+
+impl From<ImageCcittParams> for CcittParams {
+    fn from(value: ImageCcittParams) -> Self {
+        Self {
+            encoding: value.encoding,
+            columns: value.columns,
+            rows: value.rows,
+            damaged_rows_before_error: value.damaged_rows_before_error,
+            end_of_line: value.end_of_line != 0,
+            byte_align: value.byte_align != 0,
+            end_of_block: value.end_of_block != 0,
+            black_is_one: value.black_is_one != 0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

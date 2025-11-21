@@ -80,6 +80,17 @@ public:
         extPnm, // PNM (PBM/PGM/PPM) - Use ppm if RGB, else pbm
     };
 
+    struct CcittParams {
+        int encoding;
+        bool endOfLine;
+        bool byteAlign;
+        int columns;
+        int rows;
+        bool endOfBlock;
+        bool blackIs1;
+        int damagedRowsBeforeError;
+    };
+
     struct ImageOutput {
         uint8_t *data;
         size_t len;
@@ -93,6 +104,10 @@ public:
         ImageFormat format;
         ImageType type;
         ImageExtension extension;
+        uint8_t *jbig2Globals;
+        size_t jbig2GlobalsLen;
+        bool hasCcittParams;
+        CcittParams ccittParams;
     };
 
     // Create an extractor targeting a specific image reference. If matchRef is false,
@@ -158,7 +173,9 @@ private:
                       int components,
                       int bitsPerComponent,
                       double widthDPI,
-                      double heightDPI);
+                      double heightDPI,
+                      const std::vector<uint8_t> *jbig2Globals,
+                      const CcittParams *ccittParams);
     void writeImageFile(Stream *str,
                         ImageFormat format,
                         ImageExtension ext,
@@ -180,7 +197,9 @@ private:
                      uint32_t components,
                      uint32_t bitsPerComponent,
                      double widthDPI,
-                     double heightDPI);
+                     double heightDPI,
+                     const std::vector<uint8_t> *jbig2Globals,
+                     const CcittParams *ccittParams);
 
     Ref targetRef; // reference to match
     bool matchByRef = true; // match by object reference or capture first occurrence

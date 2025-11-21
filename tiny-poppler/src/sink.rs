@@ -1,4 +1,6 @@
-use crate::ffi::{ExportedImage, ImageExportExtension, ImageExportFormat, ImageExportType};
+use crate::ffi::{
+    CcittParams, ExportedImage, ImageExportExtension, ImageExportFormat, ImageExportType,
+};
 use png::{BitDepth, ColorType, Compression, Encoder, PixelDimensions, Unit};
 use std::fmt::Write as FmtWrite;
 use std::io::Cursor;
@@ -32,6 +34,8 @@ pub struct EncodedExportedImage {
     pub format: ImageExportFormat,
     pub image_type: ImageExportType,
     pub extension: ImageExportExtension,
+    pub jbig2_globals: Option<Vec<u8>>,
+    pub ccitt_params: Option<CcittParams>,
 }
 
 impl EncodedExportedImage {
@@ -76,6 +80,7 @@ fn encode_png_image(image: ExportedImage) -> Result<EncodedExportedImage, ImageS
         format,
         image_type,
         extension,
+        ..
     } = image;
 
     if width == 0 || height == 0 {
@@ -125,6 +130,8 @@ fn encode_png_image(image: ExportedImage) -> Result<EncodedExportedImage, ImageS
         format,
         image_type,
         extension,
+        jbig2_globals: None,
+        ccitt_params: None,
     })
 }
 
@@ -141,6 +148,7 @@ fn encode_tiff_image(image: ExportedImage) -> Result<EncodedExportedImage, Image
         format,
         image_type,
         extension,
+        ..
     } = image;
 
     if width == 0 || height == 0 {
@@ -215,6 +223,8 @@ fn encode_tiff_image(image: ExportedImage) -> Result<EncodedExportedImage, Image
         format,
         image_type,
         extension,
+        jbig2_globals: None,
+        ccitt_params: None,
     })
 }
 
@@ -231,6 +241,7 @@ fn encode_pnm_image(image: ExportedImage) -> Result<EncodedExportedImage, ImageS
         format,
         image_type,
         extension,
+        ..
     } = image;
 
     if width == 0 || height == 0 {
@@ -277,6 +288,8 @@ fn encode_pnm_image(image: ExportedImage) -> Result<EncodedExportedImage, ImageS
         format,
         image_type,
         extension,
+        jbig2_globals: None,
+        ccitt_params: None,
     })
 }
 
@@ -415,6 +428,8 @@ impl EncodedExportedImage {
             format: image.format,
             image_type: image.image_type,
             extension: image.extension,
+            jbig2_globals: image.jbig2_globals,
+            ccitt_params: image.ccitt_params,
         }
     }
 }

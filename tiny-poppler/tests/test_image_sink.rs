@@ -1,9 +1,5 @@
 use tiny_poppler::{
-    sink_exported_image,
-    ExportedImage,
-    ImageExportExtension,
-    ImageExportFormat,
-    ImageExportType,
+    ExportedImage, ImageExportExtension, ImageExportFormat, ImageExportType, sink_exported_image,
 };
 
 fn base_image() -> ExportedImage {
@@ -19,6 +15,8 @@ fn base_image() -> ExportedImage {
         format: ImageExportFormat::Unknown,
         image_type: ImageExportType::Image,
         extension: ImageExportExtension::Png,
+        jbig2_globals: None,
+        ccitt_params: None,
     }
 }
 
@@ -36,10 +34,10 @@ fn sink_png_includes_phys_chunk() {
 
     let encoded = sink_exported_image(image).expect("png sink failed");
     assert_eq!(&encoded.bytes[..8], &[137, 80, 78, 71, 13, 10, 26, 10]);
-    assert!(encoded
-        .bytes
-        .windows(4)
-        .any(|chunk| chunk == b"pHYs"), "missing pHYs chunk");
+    assert!(
+        encoded.bytes.windows(4).any(|chunk| chunk == b"pHYs"),
+        "missing pHYs chunk"
+    );
     assert_eq!(encoded.file_extension(), "png");
 }
 

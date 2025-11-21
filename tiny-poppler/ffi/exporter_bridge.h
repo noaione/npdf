@@ -50,6 +50,17 @@ typedef struct image_export_params {
 	int32_t xref_generation;
 } image_export_params_t;
 
+typedef struct image_ccitt_params {
+	int32_t encoding;
+	int32_t columns;
+	int32_t rows;
+	int32_t damaged_rows_before_error;
+	uint8_t end_of_line;
+	uint8_t byte_align;
+	uint8_t end_of_block;
+	uint8_t black_is_one;
+} image_ccitt_params_t;
+
 typedef struct image_export_image {
 	uint8_t *data;
 	size_t len;
@@ -58,9 +69,15 @@ typedef struct image_export_image {
 	uint32_t stride;
 	uint32_t components;
 	uint32_t bits_per_component;
+	double width_dpi;
+	double height_dpi;
 	image_export_format_t format;
 	image_export_type_t type;
 	image_export_extension_t extension;
+	uint8_t *jbig2_globals;
+	size_t jbig2_globals_len;
+	uint8_t has_ccitt_params;
+	image_ccitt_params_t ccitt;
 } image_export_image_t;
 
 int image_exporter_extract(splash_renderer_t *renderer,

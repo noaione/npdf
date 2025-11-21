@@ -16,6 +16,19 @@
 
 namespace {
 
+void free_captured(ImageOutputDev::ImageOutput &captured)
+{
+    if (captured.data) {
+        gfree(captured.data);
+        captured.data = nullptr;
+    }
+    if (captured.jbig2Globals) {
+        gfree(captured.jbig2Globals);
+        captured.jbig2Globals = nullptr;
+        captured.jbig2GlobalsLen = 0;
+    }
+}
+
 void ensure_global_params()
 {
     static std::once_flag once;
@@ -179,14 +192,13 @@ int image_exporter_extract(splash_renderer_t *renderer,
 
     const int dev_error = output_dev.getErrorCode();
     if (dev_error != errNone) {
-        if (captured.data) {
-            gfree(captured.data);
-        }
+        free_captured(captured);
         set_error(error_out, error_code_to_string(dev_error));
         return dev_error;
     }
 
     if (!output_dev.hasCaptured()) {
+        free_captured(captured);
         set_error(error_out, "target image was not found on the requested page");
         return errInternal;
     }
@@ -198,9 +210,28 @@ int image_exporter_extract(splash_renderer_t *renderer,
     out_image->stride = captured.stride;
     out_image->components = captured.components;
     out_image->bits_per_component = captured.bits_per_component;
+    out_image->width_dpi = captured.wDPI;
+    out_image->height_dpi = captured.hDPI;
     out_image->format = static_cast<image_export_format_t>(captured.format);
     out_image->type = static_cast<image_export_type_t>(captured.type);
     out_image->extension = static_cast<image_export_extension_t>(captured.extension);
+    out_image->jbig2_globals = captured.jbig2Globals;
+    out_image->jbig2_globals_len = captured.jbig2GlobalsLen;
+    captured.jbig2Globals = nullptr;
+    captured.jbig2GlobalsLen = 0;
+    if (captured.hasCcittParams) {
+        out_image->has_ccitt_params = 1;
+        out_image->ccitt.encoding = captured.ccittParams.encoding;
+        out_image->ccitt.columns = captured.ccittParams.columns;
+        out_image->ccitt.rows = captured.ccittParams.rows;
+        out_image->ccitt.damaged_rows_before_error = captured.ccittParams.damagedRowsBeforeError;
+        out_image->ccitt.end_of_line = captured.ccittParams.endOfLine ? 1 : 0;
+        out_image->ccitt.byte_align = captured.ccittParams.byteAlign ? 1 : 0;
+        out_image->ccitt.end_of_block = captured.ccittParams.endOfBlock ? 1 : 0;
+        out_image->ccitt.black_is_one = captured.ccittParams.blackIs1 ? 1 : 0;
+    } else {
+        out_image->has_ccitt_params = 0;
+    }
 
     return errNone;
 }
@@ -213,6 +244,9 @@ void image_exporter_free(image_export_image_t *image)
 
     if (image->data) {
         gfree(image->data);
+    }
+    if (image->jbig2_globals) {
+        gfree(image->jbig2_globals);
     }
 
     reset_output(image);

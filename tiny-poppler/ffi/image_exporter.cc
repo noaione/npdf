@@ -46,6 +46,7 @@
 
 #include "Error.h"
 #include "GfxState.h"
+#include "JBIG2Stream.h"
 #include "Stream.h"
 #include "goo/gmem.h"
 #include "image_exporter.h"
@@ -142,7 +143,9 @@ void ImageOutputDev::storeResult(const std::vector<uint8_t> &buffer,
                                  uint32_t components,
                                  uint32_t bitsPerComponent,
                                  double widthDPI,
-                                 double heightDPI)
+                                 double heightDPI,
+                                 const std::vector<uint8_t> *jbig2Globals,
+                                 const CcittParams *ccittParams)
 {
     if (!outputBuffer) {
         return;
@@ -152,6 +155,14 @@ void ImageOutputDev::storeResult(const std::vector<uint8_t> &buffer,
     if (!buffer.empty()) {
         payload = static_cast<uint8_t *>(gmalloc(buffer.size()));
         memcpy(payload, buffer.data(), buffer.size());
+    }
+
+    uint8_t *globalsPayload = nullptr;
+    size_t globalsLen = 0;
+    if (jbig2Globals && !jbig2Globals->empty()) {
+        globalsLen = jbig2Globals->size();
+        globalsPayload = static_cast<uint8_t *>(gmalloc(globalsLen));
+        memcpy(globalsPayload, jbig2Globals->data(), globalsLen);
     }
 
     outputBuffer->data = payload;
@@ -166,6 +177,15 @@ void ImageOutputDev::storeResult(const std::vector<uint8_t> &buffer,
     outputBuffer->format = format;
     outputBuffer->type = type;
     outputBuffer->extension = ext;
+    outputBuffer->jbig2Globals = globalsPayload;
+    outputBuffer->jbig2GlobalsLen = globalsLen;
+    if (ccittParams) {
+        outputBuffer->hasCcittParams = true;
+        outputBuffer->ccittParams = *ccittParams;
+    } else {
+        outputBuffer->hasCcittParams = false;
+        outputBuffer->ccittParams = {};
+    }
     captured = true;
 }
 
@@ -194,7 +214,9 @@ void ImageOutputDev::writeRawImage(Stream *str,
                                    int components,
                                    int bitsPerComponent,
                                    double widthDPI,
-                                   double heightDPI)
+                                   double heightDPI,
+                                   const std::vector<uint8_t> *jbig2Globals,
+                                   const CcittParams *ccittParams)
 {
     if (!outputBuffer) {
         return;
@@ -219,7 +241,7 @@ void ImageOutputDev::writeRawImage(Stream *str,
     const uint32_t h = height > 0 ? static_cast<uint32_t>(height) : 0;
     const uint32_t comps = components > 0 ? static_cast<uint32_t>(components) : 0;
     const uint32_t bpc = bitsPerComponent > 0 ? static_cast<uint32_t>(bitsPerComponent) : 0;
-    storeResult(buffer, imgUnknown, ext, type, w, h, 0, comps, bpc, widthDPI, heightDPI);
+    storeResult(buffer, imgUnknown, ext, type, w, h, 0, comps, bpc, widthDPI, heightDPI, jbig2Globals, ccittParams);
 }
 
 void ImageOutputDev::writeImageFile(Stream *str,
@@ -431,7 +453,9 @@ void ImageOutputDev::writeImageFile(Stream *str,
                 components,
                 bitsPerComponent,
                 widthDPI,
-                heightDPI);
+                heightDPI,
+                nullptr,
+                nullptr);
 }
 
 void ImageOutputDev::writeImage(GfxState *state,
@@ -462,28 +486,55 @@ void ImageOutputDev::writeImage(GfxState *state,
 
     const StreamKind kind = str->getKind();
     if (kind == strDCT) {
-        writeRawImage(str, extJpg, imageType, width, height, components, bitsPerComponent, widthDPI, heightDPI);
+        writeRawImage(str, extJpg, imageType, width, height, components, bitsPerComponent, widthDPI, heightDPI, nullptr, nullptr);
         if (inlineImg && embedStr) {
             embedStr->restore();
         }
         return;
     }
     if (kind == strJPX && !inlineImg) {
-        writeRawImage(str, extJp2, imageType, width, height, components, bitsPerComponent, widthDPI, heightDPI);
+        writeRawImage(str, extJp2, imageType, width, height, components, bitsPerComponent, widthDPI, heightDPI, nullptr, nullptr);
         if (inlineImg && embedStr) {
             embedStr->restore();
         }
         return;
     }
     if (kind == strJBIG2 && !inlineImg) {
-        writeRawImage(str, extJb2e, imageType, width, height, components, bitsPerComponent, widthDPI, heightDPI);
+        std::vector<uint8_t> globals;
+        if (auto *jbig2 = dynamic_cast<JBIG2Stream *>(str); jbig2) {
+            if (Object *globalsObj = jbig2->getGlobalsStream(); globalsObj && globalsObj->isStream()) {
+                Stream *globalsStream = globalsObj->getStream();
+                if (globalsStream && globalsStream->reset()) {
+                    int c;
+                    while ((c = globalsStream->getChar()) != EOF) {
+                        globals.push_back(static_cast<uint8_t>(c));
+                    }
+                    globalsStream->close();
+                }
+                globalsObj->streamClose();
+            }
+        }
+        writeRawImage(str, extJb2e, imageType, width, height, components, bitsPerComponent, widthDPI, heightDPI, &globals, nullptr);
         if (inlineImg && embedStr) {
             embedStr->restore();
         }
         return;
     }
     if (kind == strCCITTFax) {
-        writeRawImage(str, extCcitt, imageType, width, height, 1, 1, widthDPI, heightDPI);
+        CcittParams params {};
+        const CcittParams *paramsPtr = nullptr;
+        if (auto *ccitt = dynamic_cast<CCITTFaxStream *>(str); ccitt) {
+            params.encoding = ccitt->getEncoding();
+            params.endOfLine = ccitt->getEndOfLine();
+            params.byteAlign = ccitt->getEncodedByteAlign();
+            params.columns = ccitt->getColumns();
+            params.rows = height;
+            params.endOfBlock = ccitt->getEndOfBlock();
+            params.blackIs1 = ccitt->getBlackIs1();
+            params.damagedRowsBeforeError = ccitt->getDamagedRowsBeforeError();
+            paramsPtr = &params;
+        }
+        writeRawImage(str, extCcitt, imageType, width, height, 1, 1, widthDPI, heightDPI, nullptr, paramsPtr);
         if (inlineImg && embedStr) {
             embedStr->restore();
         }
