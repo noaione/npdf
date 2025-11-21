@@ -112,7 +112,12 @@ public:
 
     // Create an extractor targeting a specific image reference. If matchRef is false,
     // the first image of the requested type will be captured.
-    ImageOutputDev(ImageOutput *outputBuffer, const Ref &targetRef, bool matchRef, ImageType targetType);
+    ImageOutputDev(ImageOutput *outputBuffer,
+                   const Ref &targetRef,
+                   bool matchRef,
+                   ImageType targetType,
+                   bool matchOccurrence,
+                   uint32_t occurrenceIndex);
 
     // Destructor.
     ~ImageOutputDev() override;
@@ -202,8 +207,11 @@ private:
                      const CcittParams *ccittParams);
 
     Ref targetRef; // reference to match
-    bool matchByRef = true; // match by object reference or capture first occurrence
-    ImageType requestedType; // requested image type when not matching by ref
+    bool matchByRef = true; // match by object reference
+    bool matchByOccurrence = false; // capture nth occurrence of requested type
+    ImageType requestedType; // requested image type when matching by occurrence
+    uint32_t targetOccurrence = 0; // specific occurrence index to capture when matching by occurrence
+    mutable uint32_t seenOccurrences = 0; // number of matched images observed so far
     bool captured = false; // true once an image has been extracted
     ImageOutput *outputBuffer = nullptr; // output buffer for images
     int errorCode; // code for any error creating the output files

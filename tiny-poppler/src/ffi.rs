@@ -142,7 +142,7 @@ struct ColorspaceICCInfo {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ImageExportMatchMode {
     ByRef = 0,
-    ByType = 1,
+    ByOccurrence = 1,
 }
 
 #[repr(C)]
@@ -186,6 +186,7 @@ struct ImageExportParams {
     target_type: ImageExportType,
     xref_object: i32,
     xref_generation: i32,
+    occurrence_index: u32,
 }
 
 #[repr(C)]
@@ -476,11 +477,13 @@ impl Renderer {
     }
 
     pub fn export_image(&mut self, request: ImageExportRequest) -> Result<ExportedImage, String> {
-        let (match_mode, xref_object, xref_generation) = match request.selector {
+        let (match_mode, xref_object, xref_generation, occurrence_index) = match request.selector {
             ImageExportSelector::Reference { object, generation } => {
-                (ImageExportMatchMode::ByRef, object, generation)
+                (ImageExportMatchMode::ByRef, object, generation, 0)
             }
-            ImageExportSelector::FirstOfType => (ImageExportMatchMode::ByType, 0, 0),
+            ImageExportSelector::NthOfType { occurrence } => {
+                (ImageExportMatchMode::ByOccurrence, 0, 0, occurrence)
+            }
         };
 
         let params = ImageExportParams {
@@ -489,6 +492,7 @@ impl Renderer {
             target_type: request.target_type,
             xref_object,
             xref_generation,
+            occurrence_index,
         };
 
         let mut raw = ImageExportImage {
@@ -649,7 +653,7 @@ impl From<ImageCcittParams> for CcittParams {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ImageExportSelector {
     Reference { object: i32, generation: i32 },
-    FirstOfType,
+    NthOfType { occurrence: u32 },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

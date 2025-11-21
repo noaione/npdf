@@ -86,10 +86,18 @@ constexpr double kDefaultImageDPI = 72.0;
 
 } // namespace
 
-ImageOutputDev::ImageOutputDev(ImageOutput *outputBufferA, const Ref &targetRefA, bool matchRef, ImageType targetType)
+ImageOutputDev::ImageOutputDev(ImageOutput *outputBufferA,
+                               const Ref &targetRefA,
+                               bool matchRef,
+                               ImageType targetType,
+                               bool matchOccurrence,
+                               uint32_t occurrenceIndex)
     : targetRef(targetRefA)
     , matchByRef(matchRef)
+    , matchByOccurrence(matchOccurrence)
     , requestedType(targetType)
+    , targetOccurrence(occurrenceIndex)
+    , seenOccurrences(0)
     , outputBuffer(outputBufferA)
     , errorCode(0)
 {
@@ -203,7 +211,21 @@ bool ImageOutputDev::matchesTarget(Object *ref, bool inlineImg, ImageType imageT
         return candidate.num == targetRef.num && candidate.gen == targetRef.gen;
     }
 
-    return imageType == requestedType;
+    if (!matchByOccurrence) {
+        return false;
+    }
+
+    if (imageType != requestedType) {
+        return false;
+    }
+
+    if (seenOccurrences == targetOccurrence) {
+        ++seenOccurrences;
+        return true;
+    }
+
+    ++seenOccurrences;
+    return false;
 }
 
 void ImageOutputDev::writeRawImage(Stream *str,

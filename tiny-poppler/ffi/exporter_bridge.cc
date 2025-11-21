@@ -1,5 +1,6 @@
 #include "exporter_bridge.h"
 
+#include <climits>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
@@ -109,8 +110,8 @@ bool validate_params(const image_export_params_t *params, char **error_out)
     }
 
     const bool match_by_ref = params->match_mode == IMAGE_EXPORT_MATCH_BY_REF;
-    const bool match_by_type = params->match_mode == IMAGE_EXPORT_MATCH_BY_TYPE;
-    if (!match_by_ref && !match_by_type) {
+    const bool match_by_occurrence = params->match_mode == IMAGE_EXPORT_MATCH_BY_OCCURRENCE;
+    if (!match_by_ref && !match_by_occurrence) {
         set_error(error_out, "unsupported image match mode");
         return false;
     }
@@ -124,6 +125,11 @@ bool validate_params(const image_export_params_t *params, char **error_out)
             set_error(error_out, "image match requested with a negative generation");
             return false;
         }
+    }
+
+    if (match_by_occurrence && params->occurrence_index == UINT32_MAX) {
+        set_error(error_out, "occurrence index overflow");
+        return false;
     }
 
     return true;
@@ -186,7 +192,13 @@ int image_exporter_extract(splash_renderer_t *renderer,
         target_ref.gen = 0;
     }
 
-    ImageOutputDev output_dev(&captured, target_ref, match_by_ref, to_image_type(params->target_type));
+    const bool match_by_occurrence = params->match_mode == IMAGE_EXPORT_MATCH_BY_OCCURRENCE;
+    ImageOutputDev output_dev(&captured,
+                              target_ref,
+                              match_by_ref,
+                              to_image_type(params->target_type),
+                              match_by_occurrence,
+                              params->occurrence_index);
 
     renderer->doc->displayPage(&output_dev, page_number, 72.0, 72.0, 0, true, true, false);
 

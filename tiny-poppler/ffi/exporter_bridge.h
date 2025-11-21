@@ -12,7 +12,7 @@ extern "C" {
 
 typedef enum image_export_match_mode {
 	IMAGE_EXPORT_MATCH_BY_REF = 0,
-	IMAGE_EXPORT_MATCH_BY_TYPE = 1,
+	IMAGE_EXPORT_MATCH_BY_OCCURRENCE = 1,
 } image_export_match_mode_t;
 
 typedef enum image_export_type {
@@ -48,6 +48,7 @@ typedef struct image_export_params {
 	image_export_type_t target_type;
 	int32_t xref_object;
 	int32_t xref_generation;
+	uint32_t occurrence_index;
 } image_export_params_t;
 
 typedef struct image_ccitt_params {
