@@ -21,10 +21,7 @@
 #include "goo/GooString.h"
 #include "splash/SplashBitmap.h"
 #include "splash/SplashTypes.h"
-
-struct splash_renderer {
-    std::unique_ptr<PDFDoc> doc;
-};
+#include "splash_renderer_internal.h"
 
 namespace {
 constexpr int kBitmapRowPad = 4;

@@ -138,6 +138,71 @@ struct ColorspaceICCInfo {
     alternate: *const c_void,
 }
 
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImageExportMatchMode {
+    ByRef = 0,
+    ByType = 1,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImageExportType {
+    Image = 0,
+    Stencil = 1,
+    Mask = 2,
+    SoftMask = 3,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImageExportFormat {
+    Unknown = 0,
+    Rgb = 1,
+    Rgb48 = 2,
+    Gray = 3,
+    Monochrome = 4,
+    Cmyk = 5,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImageExportExtension {
+    Jpeg = 0,
+    Jp2 = 1,
+    Jbig2 = 2,
+    Ccitt = 3,
+    CcittTiff = 4,
+    Png = 5,
+    Tiff = 6,
+    Pnm = 7,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+struct ImageExportParams {
+    page_index: u32,
+    match_mode: ImageExportMatchMode,
+    target_type: ImageExportType,
+    xref_object: i32,
+    xref_generation: i32,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+struct ImageExportImage {
+    data: *mut u8,
+    len: usize,
+    width: u32,
+    height: u32,
+    stride: u32,
+    components: u32,
+    bits_per_component: u32,
+    format: ImageExportFormat,
+    image_type: ImageExportType,
+    extension: ImageExportExtension,
+}
+
 unsafe extern "C" {
     fn splash_renderer_create(
         path: *const c_char,
@@ -186,6 +251,14 @@ unsafe extern "C" {
 
     fn gfxcs_free_string(s: *const c_char);
     fn gfxcs_free_string_array(arr: *const *const c_char, count: c_uint);
+
+    fn image_exporter_extract(
+        renderer: *mut SplashRenderer,
+        params: *const ImageExportParams,
+        out_image: *mut ImageExportImage,
+        error_out: *mut *mut c_char,
+    ) -> i32;
+    fn image_exporter_free(image: *mut ImageExportImage);
 }
 
 fn take_error(message: *mut c_char) -> String {
@@ -382,6 +455,68 @@ impl Renderer {
             bits_per_component,
         })
     }
+
+    pub fn export_image(&mut self, request: ImageExportRequest) -> Result<ExportedImage, String> {
+        let (match_mode, xref_object, xref_generation) = match request.selector {
+            ImageExportSelector::Reference { object, generation } => {
+                (ImageExportMatchMode::ByRef, object, generation)
+            }
+            ImageExportSelector::FirstOfType => (ImageExportMatchMode::ByType, 0, 0),
+        };
+
+        let mut params = ImageExportParams {
+            page_index: request.page_index,
+            match_mode,
+            target_type: request.target_type,
+            xref_object,
+            xref_generation,
+        };
+
+        let mut raw = ImageExportImage {
+            data: ptr::null_mut(),
+            len: 0,
+            width: 0,
+            height: 0,
+            stride: 0,
+            components: 0,
+            bits_per_component: 0,
+            format: ImageExportFormat::Unknown,
+            image_type: request.target_type,
+            extension: ImageExportExtension::Png,
+        };
+        let mut error = ptr::null_mut();
+        let status = unsafe { image_exporter_extract(self.raw, &params, &mut raw, &mut error) };
+        if status != 0 {
+            unsafe { image_exporter_free(&mut raw) };
+            return Err(take_error(error));
+        }
+        if raw.len > 0 && raw.data.is_null() {
+            unsafe { image_exporter_free(&mut raw) };
+            return Err("image exporter returned an empty buffer".into());
+        }
+
+        let data = if raw.len == 0 {
+            Vec::new()
+        } else {
+            let bytes = unsafe { slice::from_raw_parts(raw.data, raw.len) };
+            let mut owned = Vec::with_capacity(bytes.len());
+            owned.extend_from_slice(bytes);
+            owned
+        };
+        unsafe { image_exporter_free(&mut raw) };
+
+        Ok(ExportedImage {
+            data,
+            width: raw.width,
+            height: raw.height,
+            stride: raw.stride,
+            components: raw.components,
+            bits_per_component: raw.bits_per_component,
+            format: raw.format,
+            image_type: raw.image_type,
+            extension: raw.extension,
+        })
+    }
 }
 
 impl Drop for Renderer {
@@ -402,6 +537,32 @@ pub struct Image {
     pub components: u32,
     pub color_mode: ColorMode,
     pub bits_per_component: u32,
+}
+
+#[derive(Debug, Clone)]
+pub struct ExportedImage {
+    pub data: Vec<u8>,
+    pub width: u32,
+    pub height: u32,
+    pub stride: u32,
+    pub components: u32,
+    pub bits_per_component: u32,
+    pub format: ImageExportFormat,
+    pub image_type: ImageExportType,
+    pub extension: ImageExportExtension,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImageExportSelector {
+    Reference { object: i32, generation: i32 },
+    FirstOfType,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ImageExportRequest {
+    pub page_index: u32,
+    pub target_type: ImageExportType,
+    pub selector: ImageExportSelector,
 }
 
 #[derive(Debug, Clone, Copy)]
