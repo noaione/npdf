@@ -125,6 +125,20 @@ fn main() {
     println!("cargo:rerun-if-changed=ffi/image_exporter.h");
     println!("cargo:rerun-if-changed=ffi/splash_renderer_internal.h");
 
+    // Rerun if ../third_party/poppler/poppler folder changes
+    let current_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+    let parent_dir = Path::new(&current_dir)
+        .parent()
+        .expect("crate should reside inside workspace root");
+    let poppler_path = parent_dir.join("third_party/poppler/poppler");
+    // iterate all cc and h files
+    for entry in walkdir::WalkDir::new(&poppler_path) {
+        let entry = entry.expect("failed to read file in poppler source tree");
+        if entry.file_type().is_file() {
+            println!("cargo:rerun-if-changed={}", entry.path().display());
+        }
+    }
+
     let target = env::var("TARGET").expect("TARGET not set");
 
     let manifest_dir =

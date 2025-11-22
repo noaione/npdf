@@ -185,7 +185,7 @@ jobs:
           CI_RUNNER: "github"
           RUSTFLAGS: ${{ matrix.rustflags }}
           RUSTDOCFLAGS: ${{ matrix.rustflags }}
-          TSAN_OPTIONS: "suppressions=${{ github.workspace }}/.tsan.supp"
-          LSAN_OPTIONS: "suppressions=${{ github.workspace }}/.lsan.supp"
+          # TSAN_OPTIONS: "suppressions=${{ github.workspace }}/.tsan.supp"
+          # LSAN_OPTIONS: "suppressions=${{ github.workspace }}/.lsan.supp"
           # UBSAN_OPTIONS: "suppressions=${{ github.workspace }}/sanitize.supp"
           # ASAN_OPTIONS: "suppressions=${{ github.workspace }}/sanitize.supp"
