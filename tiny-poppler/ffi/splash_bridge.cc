@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <mutex>
 #include <new>
 #include <optional>
 #include <string>
@@ -27,6 +28,9 @@ constexpr int kBitmapRowPad = 4;
 constexpr bool kReverseVideo = false;
 constexpr bool kTopDownBitmap = true;
 constexpr SplashThinLineMode kThinLineMode = splashThinLineDefault;
+
+// This flag handles the synchronization state
+static std::once_flag init_flag;
 
 std::optional<SplashColorMode> to_splash_color_mode(splash_color_mode_t mode)
 {
@@ -52,10 +56,10 @@ std::optional<SplashColorMode> to_splash_color_mode(splash_color_mode_t mode)
 
 void ensure_global_params()
 {
-    if (!globalParams) {
+    std::call_once(init_flag, []() {
         globalParams = std::make_unique<GlobalParams>();
         globalParams->setErrQuiet(true);
-    }
+    });
 }
 
 void set_error(char **error_out, const std::string &message)
