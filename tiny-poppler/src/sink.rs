@@ -45,7 +45,6 @@ impl EncodedExportedImage {
             ImageExportExtension::Jp2 => "jp2",
             ImageExportExtension::Jbig2 => "jb2",
             ImageExportExtension::Ccitt => "ccitt",
-            ImageExportExtension::CcittTiff => "tiff",
             ImageExportExtension::Png => "png",
             ImageExportExtension::Tiff => "tiff",
             ImageExportExtension::Pnm => match self.format {

@@ -172,10 +172,9 @@ pub enum ImageExportExtension {
     Jp2 = 1,
     Jbig2 = 2,
     Ccitt = 3,
-    CcittTiff = 4,
-    Png = 5,
-    Tiff = 6,
-    Pnm = 7,
+    Png = 4,
+    Tiff = 5,
+    Pnm = 6,
 }
 
 #[repr(C)]
