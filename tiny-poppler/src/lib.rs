@@ -14,7 +14,10 @@ pub use ffi::{
 };
 use jpeg_encoder::{ColorType as JpegColorType, Encoder as JpegEncoder};
 use png::{BitDepth, ColorType, Compression, Encoder};
-pub use sink::{EncodedExportedImage, ImageSinkError, sink_exported_image};
+pub use sink::{
+    EncodedExportedImage, ImageSinkError, ImageSinkOptions, PngCompression, TiffCompression,
+    TiffDeflateLevel, sink_exported_image,
+};
 
 use std::fs::{self, File};
 use std::io::{self, BufWriter, Write};
@@ -255,9 +258,10 @@ impl Document {
     pub fn export_image_to_bytes(
         &mut self,
         request: ImageExportRequest,
+        options: sink::ImageSinkOptions,
     ) -> Result<EncodedExportedImage, ImageExportError> {
         let exported = self.export_image(request)?;
-        sink::sink_exported_image(exported).map_err(ImageExportError::Sink)
+        sink::sink_exported_image(exported, options).map_err(ImageExportError::Sink)
     }
 
     /// Retrieve metadata for all images embedded in the document.

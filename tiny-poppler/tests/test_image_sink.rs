@@ -1,5 +1,6 @@
 use tiny_poppler::{
-    ExportedImage, ImageExportExtension, ImageExportFormat, ImageExportType, sink_exported_image,
+    ExportedImage, ImageExportExtension, ImageExportFormat, ImageExportType, ImageSinkOptions,
+    sink_exported_image,
 };
 
 fn base_image() -> ExportedImage {
@@ -32,7 +33,7 @@ fn sink_png_includes_phys_chunk() {
     image.format = ImageExportFormat::Rgb;
     image.extension = ImageExportExtension::Png;
 
-    let encoded = sink_exported_image(image).expect("png sink failed");
+    let encoded = sink_exported_image(image, ImageSinkOptions::default()).expect("png sink failed");
     assert_eq!(&encoded.bytes[..8], &[137, 80, 78, 71, 13, 10, 26, 10]);
     assert!(
         encoded.bytes.windows(4).any(|chunk| chunk == b"pHYs"),
@@ -53,7 +54,8 @@ fn sink_tiff_writes_header() {
     image.format = ImageExportFormat::Cmyk;
     image.extension = ImageExportExtension::Tiff;
 
-    let encoded = sink_exported_image(image).expect("tiff sink failed");
+    let encoded =
+        sink_exported_image(image, ImageSinkOptions::default()).expect("tiff sink failed");
     assert!(encoded.bytes.len() > 4);
     assert_eq!(&encoded.bytes[..4], b"II*\0");
     assert_eq!(encoded.file_extension(), "tiff");
@@ -71,7 +73,7 @@ fn sink_pnm_bitmap_layout() {
     image.format = ImageExportFormat::Monochrome;
     image.extension = ImageExportExtension::Pnm;
 
-    let encoded = sink_exported_image(image).expect("pnm sink failed");
+    let encoded = sink_exported_image(image, ImageSinkOptions::default()).expect("pnm sink failed");
     let header = b"P4\n8 1\n";
     assert!(encoded.bytes.starts_with(header));
     assert_eq!(&encoded.bytes[header.len()..], &[0b1010_0000]);

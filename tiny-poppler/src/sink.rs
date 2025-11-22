@@ -1,13 +1,17 @@
 use crate::ffi::{
     CcittParams, ExportedImage, ImageExportExtension, ImageExportFormat, ImageExportType,
 };
-use png::{BitDepth, ColorType, Compression, Encoder, PixelDimensions, Unit};
+use png::{BitDepth, ColorType, Encoder, PixelDimensions, Unit};
 use std::fmt::Write as FmtWrite;
 use std::io::Cursor;
 use thiserror::Error;
 use tiff::encoder::Rational;
 use tiff::encoder::{self, TiffEncoder, colortype};
 use tiff::tags::ResolutionUnit;
+
+pub use png::Compression as PngCompression;
+pub use tiff::encoder::Compression as TiffCompression;
+pub use tiff::encoder::DeflateLevel as TiffDeflateLevel;
 
 #[derive(Debug, Error)]
 pub enum ImageSinkError {
@@ -58,6 +62,36 @@ impl std::fmt::Debug for EncodedExportedImage {
     }
 }
 
+#[derive(Clone, Copy)]
+pub struct ImageSinkOptions {
+    pub tiff_compression: TiffCompression,
+    pub png_compression: PngCompression,
+}
+
+impl std::fmt::Debug for ImageSinkOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let tiff_dbg = match self.tiff_compression {
+            TiffCompression::Uncompressed => "Uncompressed".to_string(),
+            TiffCompression::Lzw => "Lzw".to_string(),
+            TiffCompression::Deflate(level) => format!("Deflate(level={:?})", level),
+            TiffCompression::Packbits => "Packbits".to_string(),
+        };
+        f.debug_struct("ImageSinkOptions")
+            .field("tiff_compression", &tiff_dbg)
+            .field("png_compression", &self.png_compression)
+            .finish()
+    }
+}
+
+impl Default for ImageSinkOptions {
+    fn default() -> Self {
+        Self {
+            tiff_compression: TiffCompression::Deflate(TiffDeflateLevel::Balanced),
+            png_compression: PngCompression::Balanced,
+        }
+    }
+}
+
 impl EncodedExportedImage {
     pub fn file_extension(&self) -> &'static str {
         match self.extension {
@@ -77,16 +111,22 @@ impl EncodedExportedImage {
     }
 }
 
-pub fn sink_exported_image(image: ExportedImage) -> Result<EncodedExportedImage, ImageSinkError> {
+pub fn sink_exported_image(
+    image: ExportedImage,
+    options: ImageSinkOptions,
+) -> Result<EncodedExportedImage, ImageSinkError> {
     match image.extension {
-        ImageExportExtension::Png => encode_png_image(image),
-        ImageExportExtension::Tiff => encode_tiff_image(image),
+        ImageExportExtension::Png => encode_png_image(image, options),
+        ImageExportExtension::Tiff => encode_tiff_image(image, options),
         ImageExportExtension::Pnm => encode_pnm_image(image),
         _ => Ok(EncodedExportedImage::from_exported(image)),
     }
 }
 
-fn encode_png_image(image: ExportedImage) -> Result<EncodedExportedImage, ImageSinkError> {
+fn encode_png_image(
+    image: ExportedImage,
+    options: ImageSinkOptions,
+) -> Result<EncodedExportedImage, ImageSinkError> {
     let ExportedImage {
         data,
         width,
@@ -126,7 +166,7 @@ fn encode_png_image(image: ExportedImage) -> Result<EncodedExportedImage, ImageS
     let mut buffer = Vec::new();
     {
         let mut encoder = Encoder::new(&mut buffer, width, height);
-        encoder.set_compression(Compression::Balanced);
+        encoder.set_compression(options.png_compression);
         encoder.set_color(color_type);
         encoder.set_depth(depth);
         if let Some(dimensions) = build_pixel_dims(width_dpi, height_dpi) {
@@ -154,7 +194,10 @@ fn encode_png_image(image: ExportedImage) -> Result<EncodedExportedImage, ImageS
     })
 }
 
-fn encode_tiff_image(image: ExportedImage) -> Result<EncodedExportedImage, ImageSinkError> {
+fn encode_tiff_image(
+    image: ExportedImage,
+    options: ImageSinkOptions,
+) -> Result<EncodedExportedImage, ImageSinkError> {
     let ExportedImage {
         data,
         width,
@@ -179,8 +222,9 @@ fn encode_tiff_image(image: ExportedImage) -> Result<EncodedExportedImage, Image
 
     let mut cursor = Cursor::new(Vec::new());
     {
-        let mut encoder =
-            TiffEncoder::new(&mut cursor).map_err(|err| ImageSinkError::Tiff(err.to_string()))?;
+        let mut encoder = TiffEncoder::new(&mut cursor)
+            .map_err(|err| ImageSinkError::Tiff(err.to_string()))?
+            .with_compression(options.tiff_compression);
         match (format, bits_per_component) {
             (ImageExportFormat::Rgb, 8) => {
                 let mut image = encoder

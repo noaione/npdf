@@ -5,7 +5,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tiny_poppler::{
     Document, EncodedExportedImage, ExportedImage, ImageExportRequest, ImageExportSelector,
-    ImageExportType, ImageInfo, ImageType, PdfPasswords, sink_exported_image,
+    ImageExportType, ImageInfo, ImageSinkOptions, ImageType, PdfPasswords, sink_exported_image,
 };
 
 #[derive(Args)]
@@ -111,7 +111,7 @@ pub fn run(args: ExtractArgs, passwords: Option<&PdfPasswords>) -> Result<(), St
                         &exported,
                     );
                 } else {
-                    let encoded = sink_exported_image(exported)
+                    let encoded = sink_exported_image(exported, ImageSinkOptions::default())
                         .map_err(|err| format!("failed to encode image: {err}"))?;
                     let extension = encoded.file_extension();
                     let path = build_output_path(

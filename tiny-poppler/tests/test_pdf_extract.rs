@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use tiny_poppler::ImageExportRequest;
+use tiny_poppler::{ImageExportRequest, ImageSinkOptions};
 
 const FLOAT_TOLERANCE: f64 = 1e-5;
 
@@ -75,8 +75,8 @@ fn test_extract_from_rgb8() {
     // Process into sink
     assert!(!extract_page.data.is_empty());
 
-    let sink_image =
-        tiny_poppler::sink_exported_image(extract_page).expect("Failed to sink exported image");
+    let sink_image = tiny_poppler::sink_exported_image(extract_page, ImageSinkOptions::default())
+        .expect("Failed to sink exported image");
 
     // Peek into data, make sure PNG header is present
     let png_header = &sink_image.bytes[0..8];
