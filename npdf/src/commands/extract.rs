@@ -31,6 +31,9 @@ pub struct ExtractArgs {
     /// Worker threads to use during extraction (omit for auto).
     #[arg(long, value_parser = clap::value_parser!(NonZeroUsize))]
     pub threads: Option<NonZeroUsize>,
+    /// Reverse the page order during extraction.
+    #[arg(long, default_value_t = false)]
+    pub reverse: bool,
 }
 
 pub fn run(args: ExtractArgs, passwords: Option<&PdfPasswords>) -> Result<(), String> {
@@ -45,6 +48,7 @@ pub fn run(args: ExtractArgs, passwords: Option<&PdfPasswords>) -> Result<(), St
         last,
         describe,
         threads,
+        reverse,
     } = args;
 
     let factory = DocumentFactory::with_images_with_passwords(&pdf, passwords.cloned())
@@ -103,7 +107,13 @@ pub fn run(args: ExtractArgs, passwords: Option<&PdfPasswords>) -> Result<(), St
     let mut total_groups = 0usize;
     let mut jobs = Vec::new();
 
-    for page in first_page..=last_page {
+    let pages: Vec<u32> = if reverse {
+        (first_page..=last_page).rev().collect()
+    } else {
+        (first_page..=last_page).collect()
+    };
+
+    for page in pages {
         let page_infos = grouped.get(&page).cloned().unwrap_or_default();
         if page_infos.is_empty() {
             continue;
