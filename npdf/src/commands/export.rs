@@ -20,7 +20,7 @@ pub struct ExportArgs {
     /// Colorspace to request from Poppler. Auto keeps the library default.
     #[arg(long, value_enum, default_value_t = ColorChoice::Auto)]
     pub color: ColorChoice,
-    #[arg(long, value_enum, default_value_t = CropChoice::CropBox)]
+    #[arg(long, value_enum, default_value_t = CropChoice::Crop)]
     pub crop: CropChoice,
     /// DPI used when rendering the page raster.
     #[arg(long, default_value_t = 150.0)]
@@ -79,8 +79,8 @@ pub enum AutoDPIDirection {
 
 #[derive(Clone, Copy, Debug, PartialEq, ValueEnum)]
 pub enum CropChoice {
-    CropBox,
-    MediaBox,
+    Crop,
+    Media,
     // ArtBox,
     // BleedBox,
     // TrimBox,
@@ -255,8 +255,8 @@ impl ColorChoice {
 impl CropChoice {
     fn to_crop_mode(self) -> PdfCropMode {
         match self {
-            CropChoice::CropBox => PdfCropMode::CropBox,
-            CropChoice::MediaBox => PdfCropMode::MediaBox,
+            CropChoice::Crop => PdfCropMode::CropBox,
+            CropChoice::Media => PdfCropMode::MediaBox,
         }
     }
 }

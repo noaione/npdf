@@ -327,7 +327,7 @@ fn compute_row_bytes(
         .checked_mul(components)
         .and_then(|value| value.checked_mul(bits))
         .ok_or(ImageSinkError::UnsupportedLayout)?;
-    Ok((row_bits + 7) / 8)
+    Ok(row_bits.div_ceil(8))
 }
 
 fn collect_rows(
@@ -363,7 +363,7 @@ fn collect_rows(
 }
 
 fn to_big_endian_words(mut data: Vec<u8>) -> Result<Vec<u8>, ImageSinkError> {
-    if data.len() % 2 != 0 {
+    if !data.len().is_multiple_of(2) {
         return Err(ImageSinkError::UnsupportedLayout);
     }
     for chunk in data.chunks_exact_mut(2) {
@@ -373,7 +373,7 @@ fn to_big_endian_words(mut data: Vec<u8>) -> Result<Vec<u8>, ImageSinkError> {
 }
 
 fn into_u16_samples(data: Vec<u8>) -> Result<Vec<u16>, ImageSinkError> {
-    if data.len() % 2 != 0 {
+    if !data.len().is_multiple_of(2) {
         return Err(ImageSinkError::UnsupportedLayout);
     }
     let mut out = Vec::with_capacity(data.len() / 2);
