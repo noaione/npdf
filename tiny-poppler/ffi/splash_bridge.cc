@@ -4,7 +4,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
-#include <mutex>
 #include <new>
 #include <optional>
 #include <string>
@@ -48,6 +47,14 @@ std::optional<SplashColorMode> to_splash_color_mode(splash_color_mode_t mode)
         return splashModeDeviceN8;
     default:
         return std::nullopt;
+    }
+}
+
+void ensure_global_params()
+{
+    if (!globalParams) {
+        globalParams = std::make_unique<GlobalParams>();
+        globalParams->setErrQuiet(true);
     }
 }
 

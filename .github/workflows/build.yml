@@ -11,6 +11,11 @@ on:
 env:
   POPPLER_VERSION: "25.11.0"
 
+# Do not run concurrent builds
+concurrency:
+  group: "build-npdf"
+  cancel-in-progress: true
+
 jobs:
   build:
     name: build (${{ matrix.os[1] }})
