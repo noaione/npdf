@@ -24,7 +24,7 @@ jobs:
             sanitizer: asan
             rust_toolchain: stable
             rustflags: ""
-            cargo_command: cargo test -p tiny-poppler --verbose --features asan
+            cargo_command: LSAN_OPTIONS=suppressions=lsan.supp cargo test -p tiny-poppler --verbose --features asan
             target: ""
             target_env: ""
             target_rustflags: ""
