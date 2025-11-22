@@ -152,8 +152,6 @@ int image_exporter_extract(splash_renderer_t *renderer,
         return errInternal;
     }
 
-    ensure_global_params();
-
     if (!renderer->doc || !renderer->doc->isOk()) {
         set_error(error_out, "renderer has no active document");
         return errInternal;
