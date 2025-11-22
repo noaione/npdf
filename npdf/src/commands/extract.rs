@@ -1,11 +1,16 @@
 use clap::Args;
 use color_print::{cformat, cprintln};
+use crossbeam_channel::unbounded;
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
+use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::thread;
 use tiny_poppler::{
-    Document, EncodedExportedImage, ExportedImage, ImageExportRequest, ImageExportSelector,
-    ImageExportType, ImageInfo, ImageSinkOptions, ImageType, PdfPasswords, sink_exported_image,
+    Document, DocumentFactory, EncodedExportedImage, ExportedImage, ImageExportRequest,
+    ImageExportSelector, ImageExportType, ImageInfo, ImageSinkOptions, ImageType, PdfPasswords,
+    sink_exported_image,
 };
 
 #[derive(Args)]
@@ -23,6 +28,9 @@ pub struct ExtractArgs {
     /// Describe discovered images without writing any files.
     #[arg(long)]
     pub describe: bool,
+    /// Worker threads to use during extraction (omit for auto).
+    #[arg(long, value_parser = clap::value_parser!(NonZeroUsize))]
+    pub threads: Option<NonZeroUsize>,
 }
 
 pub fn run(args: ExtractArgs, passwords: Option<&PdfPasswords>) -> Result<(), String> {
@@ -30,12 +38,21 @@ pub fn run(args: ExtractArgs, passwords: Option<&PdfPasswords>) -> Result<(), St
         return Err(format!("PDF file does not exist: {}", args.pdf.display()));
     }
 
-    let mut document =
-        Document::open_with_passwords(&args.pdf, passwords).map_err(|err| err.to_string())?;
-    let page_count = document.page_count().map_err(|err| err.to_string())?;
+    let ExtractArgs {
+        pdf,
+        output,
+        first,
+        last,
+        describe,
+        threads,
+    } = args;
 
-    let first_page = args.first.unwrap_or(1);
-    let last_page = args.last.unwrap_or(page_count);
+    let factory = DocumentFactory::with_images_with_passwords(&pdf, passwords.cloned())
+        .map_err(|err| err.to_string())?;
+    let page_count = factory.page_count();
+
+    let first_page = first.unwrap_or(1);
+    let last_page = last.unwrap_or(page_count);
 
     if first_page == 0 || first_page > page_count {
         return Err(format!(
@@ -51,9 +68,18 @@ pub fn run(args: ExtractArgs, passwords: Option<&PdfPasswords>) -> Result<(), St
         return Err("last page must be greater than or equal to first page".into());
     }
 
-    let images = document
-        .images_in_range(first_page, last_page)
-        .map_err(|err| format!("failed to enumerate images: {err}"))?;
+    let images: Vec<ImageInfo> = if let Some(all_images) = factory.images() {
+        all_images
+            .iter()
+            .filter(|info| info.page >= first_page && info.page <= last_page)
+            .cloned()
+            .collect()
+    } else {
+        let mut document = factory.open().map_err(|err| err.to_string())?;
+        document
+            .images_in_range(first_page, last_page)
+            .map_err(|err| format!("failed to enumerate images: {err}"))?
+    };
 
     if images.is_empty() {
         cprintln!(
@@ -69,13 +95,13 @@ pub fn run(args: ExtractArgs, passwords: Option<&PdfPasswords>) -> Result<(), St
         grouped.entry(info.page).or_default().push(info);
     }
 
-    if !args.describe {
-        fs::create_dir_all(&args.output)
+    if !describe {
+        fs::create_dir_all(&output)
             .map_err(|err| format!("failed to create output directory: {err}"))?;
     }
 
     let mut total_groups = 0usize;
-    let mut total_components = 0usize;
+    let mut jobs = Vec::new();
 
     for page in first_page..=last_page {
         let page_infos = grouped.get(&page).cloned().unwrap_or_default();
@@ -99,44 +125,18 @@ pub fn run(args: ExtractArgs, passwords: Option<&PdfPasswords>) -> Result<(), St
             let slot_display = if use_slots { Some(group_idx + 1) } else { None };
 
             for (component_suffix, entry) in group.into_components() {
-                let exported = export_image_entry(&mut document, &entry)
-                    .map_err(|err| format!("{} (page {})", err, entry.info.page))?;
-
-                if args.describe {
-                    describe_component(
-                        page,
-                        slot_display,
-                        component_suffix,
-                        &entry.info,
-                        &exported,
-                    );
-                } else {
-                    let encoded = sink_exported_image(exported, ImageSinkOptions::default())
-                        .map_err(|err| format!("failed to encode image: {err}"))?;
-                    let extension = encoded.file_extension();
-                    let path = build_output_path(
-                        &args.output,
-                        page,
-                        &slot_suffix,
-                        component_suffix,
-                        extension,
-                    );
-                    persist_encoded(
-                        &path,
-                        page,
-                        slot_display,
-                        component_suffix,
-                        &entry.info,
-                        &encoded,
-                    )?;
-                }
-
-                total_components += 1;
+                jobs.push(ExtractionJob {
+                    page,
+                    slot: slot_display,
+                    slot_suffix: slot_suffix.clone(),
+                    component_suffix,
+                    entry,
+                });
             }
         }
     }
 
-    if total_groups == 0 {
+    if total_groups == 0 || jobs.is_empty() {
         cprintln!(
             "<yellow>No embedded images found between page <c,s>{}</c,s> and <c,s>{}</c,s>.</yellow>",
             first_page,
@@ -145,7 +145,13 @@ pub fn run(args: ExtractArgs, passwords: Option<&PdfPasswords>) -> Result<(), St
         return Ok(());
     }
 
-    if !args.describe {
+    let total_components = jobs.len();
+    let thread_count = threads.map(NonZeroUsize::get);
+    let output_root = if describe { None } else { Some(output.clone()) };
+
+    run_extract_jobs(factory, jobs, describe, thread_count, output_root)?;
+
+    if !describe {
         cprintln!(
             "Saved <m,s>{}</m,s> image component(s) across <m,s>{}</m,s> group(s) between page <c,s>{}</c,s> and <c,s>{}</c,s>.",
             total_components,
@@ -224,6 +230,14 @@ impl ImageGroup {
         }
         entries
     }
+}
+
+struct ExtractionJob {
+    page: u32,
+    slot: Option<usize>,
+    slot_suffix: String,
+    component_suffix: &'static str,
+    entry: ImageEntry,
 }
 
 #[derive(Clone, Copy)]
@@ -476,6 +490,112 @@ fn persist_encoded(
         image.extension
     );
     Ok(())
+}
+
+fn run_extract_jobs(
+    factory: DocumentFactory,
+    jobs: Vec<ExtractionJob>,
+    describe: bool,
+    threads: Option<usize>,
+    output_root: Option<PathBuf>,
+) -> Result<(), String> {
+    if jobs.is_empty() {
+        return Ok(());
+    }
+
+    let cpu_count = num_cpus::get().max(1);
+    let (desired, requested_label) = match threads {
+        Some(value) => (value, value.to_string()),
+        None => (cpu_count, "auto".into()),
+    };
+    let worker_count = desired.max(1).min(jobs.len().max(1));
+    cprintln!(
+        "Spawning <m,s>{worker_count}</m,s> worker(s) (<c,s>{}</c,s> logical CPUs detected, requested: <c,s>{requested_label}</c,s>)...",
+        cpu_count,
+    );
+
+    let (sender, receiver) = unbounded::<ExtractionJob>();
+    let mut handles = Vec::with_capacity(worker_count);
+    let root = output_root.map(Arc::new);
+
+    for worker_index in 0..worker_count {
+        let rx = receiver.clone();
+        let factory = factory.clone();
+        let root = root.clone();
+        handles.push(thread::spawn(move || -> Result<(), String> {
+            let mut document = factory.open().map_err(|err| {
+                cformat!(
+                    "worker <c,s>{}</c,s> failed to open PDF: <m,s>{err}</m,s>",
+                    worker_index + 1
+                )
+            })?;
+            while let Ok(job) = rx.recv() {
+                let root_path = root.as_deref().map(|path| path.as_path());
+                process_extract_job(&mut document, job, describe, root_path)?;
+            }
+            Ok(())
+        }));
+    }
+
+    drop(receiver);
+
+    for job in jobs {
+        sender
+            .send(job)
+            .map_err(|_| "extraction queue closed unexpectedly".to_string())?;
+    }
+    drop(sender);
+
+    for handle in handles {
+        match handle.join() {
+            Ok(Ok(())) => {}
+            Ok(Err(err)) => return Err(err),
+            Err(_) => return Err("worker thread panicked".into()),
+        }
+    }
+
+    Ok(())
+}
+
+fn process_extract_job(
+    document: &mut Document,
+    job: ExtractionJob,
+    describe: bool,
+    output_root: Option<&Path>,
+) -> Result<(), String> {
+    let exported = export_image_entry(document, &job.entry)
+        .map_err(|err| format!("{} (page {})", err, job.entry.info.page))?;
+
+    if describe {
+        describe_component(
+            job.page,
+            job.slot,
+            job.component_suffix,
+            &job.entry.info,
+            &exported,
+        );
+        return Ok(());
+    }
+
+    let root = output_root.ok_or_else(|| "missing output directory for extraction".to_string())?;
+    let encoded = sink_exported_image(exported, ImageSinkOptions::default())
+        .map_err(|err| format!("failed to encode image: {err}"))?;
+    let extension = encoded.file_extension();
+    let path = build_output_path(
+        root,
+        job.page,
+        &job.slot_suffix,
+        job.component_suffix,
+        extension,
+    );
+    persist_encoded(
+        &path,
+        job.page,
+        job.slot,
+        job.component_suffix,
+        &job.entry.info,
+        &encoded,
+    )
 }
 
 fn build_output_path(
