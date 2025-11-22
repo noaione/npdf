@@ -44,7 +44,7 @@ jobs:
             sanitizer: tsan
             rust_toolchain: nightly
             rustflags: ""
-            cargo_command: RUST_TEST_THREADS=1 cargo +nightly test -Z build-std --verbose -p tiny-poppler --features tsan
+            cargo_command: cargo +nightly test -Z build-std --verbose -p tiny-poppler --features tsan -- --test-threads=1 
             target: x86_64-unknown-linux-gnu
             target_env: X86_64_UNKNOWN_LINUX_GNU
             target_rustflags: "-Zsanitizer=thread"
