@@ -24,7 +24,7 @@ jobs:
             sanitizer: asan
             rust_toolchain: stable
             rustflags: ""
-            cargo_command: LSAN_OPTIONS=suppressions=lsan.supp cargo test -p tiny-poppler --verbose --features asan
+            cargo_command: cargo test -p tiny-poppler --verbose --features asan
             target: ""
             target_env: ""
             target_rustflags: ""
@@ -34,7 +34,7 @@ jobs:
             sanitizer: lsan
             rust_toolchain: stable
             rustflags: ""
-            cargo_command: cargo test -p tiny-poppler --verbose --features lsan
+            cargo_command: LSAN_OPTIONS=suppressions=sanitize.supp cargo test -p tiny-poppler --verbose --features lsan
             target: ""
             target_env: ""
             target_rustflags: ""
@@ -74,7 +74,7 @@ jobs:
             sanitizer: tsan
             rust_toolchain: nightly
             rustflags: ""
-            cargo_command: cargo +nightly test -Z build-std --verbose -p tiny-poppler --features tsan
+            cargo_command: TSAN_OPTIONS=suppressions=sanitize.supp cargo +nightly test -Z build-std --verbose -p tiny-poppler --features tsan
             target: aarch64-apple-darwin
             target_env: AARCH64_APPLE_DARWIN
             target_rustflags: "-Zsanitizer=thread"
