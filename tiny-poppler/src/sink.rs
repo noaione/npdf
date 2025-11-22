@@ -24,7 +24,7 @@ pub enum ImageSinkError {
     Tiff(String),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct EncodedExportedImage {
     pub bytes: Vec<u8>,
     pub width: u32,
@@ -36,6 +36,26 @@ pub struct EncodedExportedImage {
     pub extension: ImageExportExtension,
     pub jbig2_globals: Option<Vec<u8>>,
     pub ccitt_params: Option<CcittParams>,
+}
+
+impl std::fmt::Debug for EncodedExportedImage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EncodedExportedImage")
+            .field("bytes[len]", &self.bytes.len())
+            .field("width", &self.width)
+            .field("height", &self.height)
+            .field("width_dpi", &self.width_dpi)
+            .field("height_dpi", &self.height_dpi)
+            .field("format", &self.format)
+            .field("image_type", &self.image_type)
+            .field("extension", &self.extension)
+            .field(
+                "jbig2_globals[len]",
+                &self.jbig2_globals.as_ref().map(|v| v.len()),
+            )
+            .field("ccitt_params", &self.ccitt_params)
+            .finish()
+    }
 }
 
 impl EncodedExportedImage {

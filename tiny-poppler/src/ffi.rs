@@ -605,7 +605,7 @@ pub struct Image {
     pub bits_per_component: u32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ExportedImage {
     pub data: Vec<u8>,
     pub width: u32,
@@ -620,6 +620,29 @@ pub struct ExportedImage {
     pub extension: ImageExportExtension,
     pub jbig2_globals: Option<Vec<u8>>,
     pub ccitt_params: Option<CcittParams>,
+}
+
+impl std::fmt::Debug for ExportedImage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ExportedImage")
+            .field("data[len]", &self.data.len())
+            .field("width", &self.width)
+            .field("height", &self.height)
+            .field("stride", &self.stride)
+            .field("components", &self.components)
+            .field("bits_per_component", &self.bits_per_component)
+            .field("width_dpi", &self.width_dpi)
+            .field("height_dpi", &self.height_dpi)
+            .field("format", &self.format)
+            .field("image_type", &self.image_type)
+            .field("extension", &self.extension)
+            .field(
+                "jbig2_globals[len]",
+                &self.jbig2_globals.as_ref().map(|v| v.len()),
+            )
+            .field("ccitt_params", &self.ccitt_params)
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
