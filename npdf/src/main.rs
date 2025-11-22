@@ -9,7 +9,8 @@ use clap::{
     },
 };
 use commands::{
-    ExportArgs, ListArgs, RecropArgs, UnwatermarkArgs, export, list, recrop, unwatermark,
+    ExportArgs, ExtractArgs, ListArgs, RecropArgs, UnwatermarkArgs, export, extract, list, recrop,
+    unwatermark,
 };
 use tiny_poppler::PdfPasswords;
 
@@ -33,6 +34,7 @@ fn execute(cli: Cli) -> Result<(), String> {
     match command {
         Commands::List(args) => list::run(args, passwords.as_ref()),
         Commands::Export(args) => export::run(args, passwords.as_ref()),
+        Commands::Extract(args) => extract::run(args, passwords.as_ref()),
         Commands::Unwatermark(args) => unwatermark::run(args, passwords.as_ref()),
         Commands::Recrop(args) => recrop::run(args, passwords.as_ref()),
     }
@@ -64,6 +66,8 @@ enum Commands {
     List(ListArgs),
     /// Export pages from the PDF to PNG or JPEG files.
     Export(ExportArgs),
+    /// Extract images embedded in the PDF.
+    Extract(ExtractArgs),
     /// Remove watermarks from the PDF.
     Unwatermark(UnwatermarkArgs),
     /// Recrop pages in the PDF based on specified box.

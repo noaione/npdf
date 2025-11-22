@@ -119,6 +119,11 @@ fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=ffi/splash_bridge.cc");
     println!("cargo:rerun-if-changed=ffi/splash_bridge.h");
+    println!("cargo:rerun-if-changed=ffi/exporter_bridge.cc");
+    println!("cargo:rerun-if-changed=ffi/exporter_bridge.h");
+    println!("cargo:rerun-if-changed=ffi/image_exporter.cc");
+    println!("cargo:rerun-if-changed=ffi/image_exporter.h");
+    println!("cargo:rerun-if-changed=ffi/splash_renderer_internal.h");
 
     let target = env::var("TARGET").expect("TARGET not set");
 
@@ -266,6 +271,8 @@ fn compile_bridge(
     build
         .cpp(true)
         .file(manifest_dir.join("ffi/splash_bridge.cc"))
+        .file(manifest_dir.join("ffi/exporter_bridge.cc"))
+        .file(manifest_dir.join("ffi/image_exporter.cc"))
         .include(manifest_dir.join("ffi"))
         .include(&include_dir)
         .include(&include_dir_poppler)

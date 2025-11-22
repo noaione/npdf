@@ -138,6 +138,90 @@ struct ColorspaceICCInfo {
     alternate: *const c_void,
 }
 
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImageExportMatchMode {
+    ByRef = 0,
+    ByOccurrence = 1,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImageExportType {
+    Image = 0,
+    Stencil = 1,
+    Mask = 2,
+    SoftMask = 3,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImageExportFormat {
+    Unknown = 0,
+    Rgb = 1,
+    Rgb48 = 2,
+    Gray = 3,
+    Monochrome = 4,
+    Cmyk = 5,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImageExportExtension {
+    Jpeg = 0,
+    Jp2 = 1,
+    Jbig2 = 2,
+    Ccitt = 3,
+    Png = 4,
+    Tiff = 5,
+    Pnm = 6,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+struct ImageExportParams {
+    page_index: u32,
+    match_mode: ImageExportMatchMode,
+    target_type: ImageExportType,
+    xref_object: i32,
+    xref_generation: i32,
+    occurrence_index: u32,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+struct ImageCcittParams {
+    encoding: i32,
+    columns: i32,
+    rows: i32,
+    damaged_rows_before_error: i32,
+    end_of_line: u8,
+    byte_align: u8,
+    end_of_block: u8,
+    black_is_one: u8,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+struct ImageExportImage {
+    data: *mut u8,
+    len: usize,
+    width: u32,
+    height: u32,
+    stride: u32,
+    components: u32,
+    bits_per_component: u32,
+    width_dpi: f64,
+    height_dpi: f64,
+    format: ImageExportFormat,
+    image_type: ImageExportType,
+    extension: ImageExportExtension,
+    jbig2_globals: *mut u8,
+    jbig2_globals_len: usize,
+    has_ccitt_params: u8,
+    ccitt: ImageCcittParams,
+}
+
 unsafe extern "C" {
     fn splash_renderer_create(
         path: *const c_char,
@@ -186,6 +270,14 @@ unsafe extern "C" {
 
     fn gfxcs_free_string(s: *const c_char);
     fn gfxcs_free_string_array(arr: *const *const c_char, count: c_uint);
+
+    fn image_exporter_extract(
+        renderer: *mut SplashRenderer,
+        params: *const ImageExportParams,
+        out_image: *mut ImageExportImage,
+        error_out: *mut *mut c_char,
+    ) -> i32;
+    fn image_exporter_free(image: *mut ImageExportImage);
 }
 
 fn take_error(message: *mut c_char) -> String {
@@ -382,6 +474,115 @@ impl Renderer {
             bits_per_component,
         })
     }
+
+    pub fn export_image(&mut self, request: ImageExportRequest) -> Result<ExportedImage, String> {
+        let (match_mode, xref_object, xref_generation, occurrence_index) = match request.selector {
+            ImageExportSelector::Reference { object, generation } => {
+                (ImageExportMatchMode::ByRef, object, generation, 0)
+            }
+            ImageExportSelector::NthOfType { occurrence } => {
+                (ImageExportMatchMode::ByOccurrence, 0, 0, occurrence)
+            }
+        };
+
+        let params = ImageExportParams {
+            page_index: request.page_index,
+            match_mode,
+            target_type: request.target_type,
+            xref_object,
+            xref_generation,
+            occurrence_index,
+        };
+
+        let mut raw = ImageExportImage {
+            data: ptr::null_mut(),
+            len: 0,
+            width: 0,
+            height: 0,
+            stride: 0,
+            components: 0,
+            bits_per_component: 0,
+            width_dpi: 0.0,
+            height_dpi: 0.0,
+            format: ImageExportFormat::Unknown,
+            image_type: request.target_type,
+            extension: ImageExportExtension::Png,
+            jbig2_globals: ptr::null_mut(),
+            jbig2_globals_len: 0,
+            has_ccitt_params: 0,
+            ccitt: ImageCcittParams {
+                encoding: 0,
+                columns: 0,
+                rows: 0,
+                damaged_rows_before_error: 0,
+                end_of_line: 0,
+                byte_align: 0,
+                end_of_block: 0,
+                black_is_one: 0,
+            },
+        };
+        let mut error = ptr::null_mut();
+        let status = unsafe { image_exporter_extract(self.raw, &params, &mut raw, &mut error) };
+        if status != 0 {
+            unsafe { image_exporter_free(&mut raw) };
+            return Err(take_error(error));
+        }
+        if raw.len > 0 && raw.data.is_null() {
+            unsafe { image_exporter_free(&mut raw) };
+            return Err("image exporter returned an empty buffer".into());
+        }
+
+        let width = raw.width;
+        let height = raw.height;
+        let stride = raw.stride;
+        let components = raw.components;
+        let bits_per_component = raw.bits_per_component;
+        let width_dpi = raw.width_dpi;
+        let height_dpi = raw.height_dpi;
+        let format = raw.format;
+        let image_type = raw.image_type;
+        let extension = raw.extension;
+
+        let data = if raw.len == 0 {
+            Vec::new()
+        } else {
+            let bytes = unsafe { slice::from_raw_parts(raw.data, raw.len) };
+            let mut owned = Vec::with_capacity(bytes.len());
+            owned.extend_from_slice(bytes);
+            owned
+        };
+
+        let jbig2_globals = if raw.jbig2_globals_len == 0 || raw.jbig2_globals.is_null() {
+            None
+        } else {
+            let bytes = unsafe { slice::from_raw_parts(raw.jbig2_globals, raw.jbig2_globals_len) };
+            Some(bytes.to_vec())
+        };
+
+        let ccitt_params = if raw.has_ccitt_params == 0 {
+            None
+        } else {
+            Some(CcittParams::from(raw.ccitt))
+        };
+
+        unsafe { image_exporter_free(&mut raw) };
+
+        Ok(ExportedImage {
+            data,
+            width,
+            height,
+            stride,
+            components,
+            bits_per_component,
+            width_dpi,
+            height_dpi,
+            format,
+            image_type,
+            extension,
+            jbig2_globals,
+            ccitt_params,
+        })
+    }
 }
 
 impl Drop for Renderer {
@@ -402,6 +603,86 @@ pub struct Image {
     pub components: u32,
     pub color_mode: ColorMode,
     pub bits_per_component: u32,
+}
+
+#[derive(Clone)]
+pub struct ExportedImage {
+    pub data: Vec<u8>,
+    pub width: u32,
+    pub height: u32,
+    pub stride: u32,
+    pub components: u32,
+    pub bits_per_component: u32,
+    pub width_dpi: f64,
+    pub height_dpi: f64,
+    pub format: ImageExportFormat,
+    pub image_type: ImageExportType,
+    pub extension: ImageExportExtension,
+    pub jbig2_globals: Option<Vec<u8>>,
+    pub ccitt_params: Option<CcittParams>,
+}
+
+impl std::fmt::Debug for ExportedImage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ExportedImage")
+            .field("data[len]", &self.data.len())
+            .field("width", &self.width)
+            .field("height", &self.height)
+            .field("stride", &self.stride)
+            .field("components", &self.components)
+            .field("bits_per_component", &self.bits_per_component)
+            .field("width_dpi", &self.width_dpi)
+            .field("height_dpi", &self.height_dpi)
+            .field("format", &self.format)
+            .field("image_type", &self.image_type)
+            .field("extension", &self.extension)
+            .field(
+                "jbig2_globals[len]",
+                &self.jbig2_globals.as_ref().map(|v| v.len()),
+            )
+            .field("ccitt_params", &self.ccitt_params)
+            .finish()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CcittParams {
+    pub encoding: i32,
+    pub columns: i32,
+    pub rows: i32,
+    pub damaged_rows_before_error: i32,
+    pub end_of_line: bool,
+    pub byte_align: bool,
+    pub end_of_block: bool,
+    pub black_is_one: bool,
+}
+
+impl From<ImageCcittParams> for CcittParams {
+    fn from(value: ImageCcittParams) -> Self {
+        Self {
+            encoding: value.encoding,
+            columns: value.columns,
+            rows: value.rows,
+            damaged_rows_before_error: value.damaged_rows_before_error,
+            end_of_line: value.end_of_line != 0,
+            byte_align: value.byte_align != 0,
+            end_of_block: value.end_of_block != 0,
+            black_is_one: value.black_is_one != 0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImageExportSelector {
+    Reference { object: i32, generation: i32 },
+    NthOfType { occurrence: u32 },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ImageExportRequest {
+    pub page_index: u32,
+    pub target_type: ImageExportType,
+    pub selector: ImageExportSelector,
 }
 
 #[derive(Debug, Clone, Copy)]

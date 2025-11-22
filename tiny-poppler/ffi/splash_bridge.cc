@@ -21,16 +21,16 @@
 #include "goo/GooString.h"
 #include "splash/SplashBitmap.h"
 #include "splash/SplashTypes.h"
-
-struct splash_renderer {
-    std::unique_ptr<PDFDoc> doc;
-};
+#include "splash_renderer_internal.h"
 
 namespace {
 constexpr int kBitmapRowPad = 4;
 constexpr bool kReverseVideo = false;
 constexpr bool kTopDownBitmap = true;
 constexpr SplashThinLineMode kThinLineMode = splashThinLineDefault;
+
+// This flag handles the synchronization state
+static std::once_flag init_flag;
 
 std::optional<SplashColorMode> to_splash_color_mode(splash_color_mode_t mode)
 {
@@ -56,8 +56,7 @@ std::optional<SplashColorMode> to_splash_color_mode(splash_color_mode_t mode)
 
 void ensure_global_params()
 {
-    static std::once_flag once;
-    std::call_once(once, [] {
+    std::call_once(init_flag, []() {
         globalParams = std::make_unique<GlobalParams>();
         globalParams->setErrQuiet(true);
     });

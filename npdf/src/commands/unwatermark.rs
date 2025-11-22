@@ -259,23 +259,23 @@ fn remove_watermark_references(doc: &mut Document, watermark_id: ObjectId) {
         }
 
         // If this page actually uses the watermark, scrub the content
-        if !names_to_remove.is_empty() {
-            if let Ok(page_obj) = doc.get_object_mut(page_id) {
-                let page_dict = page_obj.as_dict_mut().unwrap();
-                let resources = page_dict
-                    .get_mut(b"Resources")
-                    .unwrap()
-                    .as_dict_mut()
-                    .unwrap();
-                let xobjects = resources
-                    .get_mut(b"XObject")
-                    .unwrap()
-                    .as_dict_mut()
-                    .unwrap();
+        if !names_to_remove.is_empty()
+            && let Ok(page_obj) = doc.get_object_mut(page_id)
+        {
+            let page_dict = page_obj.as_dict_mut().unwrap();
+            let resources = page_dict
+                .get_mut(b"Resources")
+                .unwrap()
+                .as_dict_mut()
+                .unwrap();
+            let xobjects = resources
+                .get_mut(b"XObject")
+                .unwrap()
+                .as_dict_mut()
+                .unwrap();
 
-                for name in &names_to_remove {
-                    xobjects.remove(name);
-                }
+            for name in &names_to_remove {
+                xobjects.remove(name);
             }
         }
     }

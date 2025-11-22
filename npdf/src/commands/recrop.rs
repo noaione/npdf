@@ -114,11 +114,11 @@ impl PageBox {
     fn get_box(&self, choice: CropChoice) -> Option<[f32; 4]> {
         match choice {
             // Always use old cropbox for recropping to CropBox
-            CropChoice::CropBox => self.old_cropbox,
-            CropChoice::MediaBox => self.mediabox,
-            CropChoice::ArtBox => self.artbox,
-            CropChoice::BleedBox => self.bleedbox,
-            CropChoice::TrimBox => self.trimbox,
+            CropChoice::Crop => self.old_cropbox,
+            CropChoice::Media => self.mediabox,
+            CropChoice::Art => self.artbox,
+            CropChoice::Bleed => self.bleedbox,
+            CropChoice::Trim => self.trimbox,
         }
     }
 }
@@ -135,71 +135,71 @@ fn get_page_box(doc: &Document, page_id: ObjectId) -> Result<PageBox, lopdf::Err
         old_cropbox: None,
     };
 
-    if let Ok(cropbox) = page.get(b"CropBox").and_then(Object::as_array) {
-        if cropbox.len() == 4 {
-            let vals: [f32; 4] = [
-                f32_or_i64(&cropbox[0])?,
-                f32_or_i64(&cropbox[1])?,
-                f32_or_i64(&cropbox[2])?,
-                f32_or_i64(&cropbox[3])?,
-            ];
-            page_box.cropbox = Some(vals);
-        }
+    if let Ok(cropbox) = page.get(b"CropBox").and_then(Object::as_array)
+        && cropbox.len() == 4
+    {
+        let vals: [f32; 4] = [
+            f32_or_i64(&cropbox[0])?,
+            f32_or_i64(&cropbox[1])?,
+            f32_or_i64(&cropbox[2])?,
+            f32_or_i64(&cropbox[3])?,
+        ];
+        page_box.cropbox = Some(vals);
     }
-    if let Ok(original_cropbox) = page.get(b"OriginalCropBox").and_then(Object::as_array) {
-        if original_cropbox.len() == 4 {
-            let vals: [f32; 4] = [
-                f32_or_i64(&original_cropbox[0])?,
-                f32_or_i64(&original_cropbox[1])?,
-                f32_or_i64(&original_cropbox[2])?,
-                f32_or_i64(&original_cropbox[3])?,
-            ];
-            page_box.old_cropbox = Some(vals);
-        }
+    if let Ok(original_cropbox) = page.get(b"OriginalCropBox").and_then(Object::as_array)
+        && original_cropbox.len() == 4
+    {
+        let vals: [f32; 4] = [
+            f32_or_i64(&original_cropbox[0])?,
+            f32_or_i64(&original_cropbox[1])?,
+            f32_or_i64(&original_cropbox[2])?,
+            f32_or_i64(&original_cropbox[3])?,
+        ];
+        page_box.old_cropbox = Some(vals);
     }
-    if let Ok(mediabox) = page.get(b"MediaBox").and_then(Object::as_array) {
-        if mediabox.len() == 4 {
-            let vals: [f32; 4] = [
-                f32_or_i64(&mediabox[0])?,
-                f32_or_i64(&mediabox[1])?,
-                f32_or_i64(&mediabox[2])?,
-                f32_or_i64(&mediabox[3])?,
-            ];
-            page_box.mediabox = Some(vals);
-        }
+    if let Ok(mediabox) = page.get(b"MediaBox").and_then(Object::as_array)
+        && mediabox.len() == 4
+    {
+        let vals: [f32; 4] = [
+            f32_or_i64(&mediabox[0])?,
+            f32_or_i64(&mediabox[1])?,
+            f32_or_i64(&mediabox[2])?,
+            f32_or_i64(&mediabox[3])?,
+        ];
+        page_box.mediabox = Some(vals);
     }
-    if let Ok(artbox) = page.get(b"ArtBox").and_then(Object::as_array) {
-        if artbox.len() == 4 {
-            let vals: [f32; 4] = [
-                f32_or_i64(&artbox[0])?,
-                f32_or_i64(&artbox[1])?,
-                f32_or_i64(&artbox[2])?,
-                f32_or_i64(&artbox[3])?,
-            ];
-            page_box.artbox = Some(vals);
-        }
+    if let Ok(artbox) = page.get(b"ArtBox").and_then(Object::as_array)
+        && artbox.len() == 4
+    {
+        let vals: [f32; 4] = [
+            f32_or_i64(&artbox[0])?,
+            f32_or_i64(&artbox[1])?,
+            f32_or_i64(&artbox[2])?,
+            f32_or_i64(&artbox[3])?,
+        ];
+        page_box.artbox = Some(vals);
     }
-    if let Ok(bleedbox) = page.get(b"BleedBox").and_then(Object::as_array) {
-        if bleedbox.len() == 4 {
-            let vals: [f32; 4] = [
-                f32_or_i64(&bleedbox[0])?,
-                f32_or_i64(&bleedbox[1])?,
-                f32_or_i64(&bleedbox[2])?,
-                f32_or_i64(&bleedbox[3])?,
-            ];
-            page_box.bleedbox = Some(vals);
-        }
+    if let Ok(bleedbox) = page.get(b"BleedBox").and_then(Object::as_array)
+        && bleedbox.len() == 4
+    {
+        let vals: [f32; 4] = [
+            f32_or_i64(&bleedbox[0])?,
+            f32_or_i64(&bleedbox[1])?,
+            f32_or_i64(&bleedbox[2])?,
+            f32_or_i64(&bleedbox[3])?,
+        ];
+        page_box.bleedbox = Some(vals);
     }
-    if let Ok(trimbox) = page.get(b"TrimBox").and_then(Object::as_array) {
-        if trimbox.len() == 4 {
-            let vals: [f32; 4] = [
-                f32_or_i64(&trimbox[0])?,
-                f32_or_i64(&trimbox[1])?,
-                f32_or_i64(&trimbox[2])?,
-                f32_or_i64(&trimbox[3])?,
-            ];
-            page_box.trimbox = Some(vals);
-        }
+    if let Ok(trimbox) = page.get(b"TrimBox").and_then(Object::as_array)
+        && trimbox.len() == 4
+    {
+        let vals: [f32; 4] = [
+            f32_or_i64(&trimbox[0])?,
+            f32_or_i64(&trimbox[1])?,
+            f32_or_i64(&trimbox[2])?,
+            f32_or_i64(&trimbox[3])?,
+        ];
+        page_box.trimbox = Some(vals);
     }
 
     Ok(page_box)
@@ -255,11 +255,11 @@ fn set_new_crop_box(
 
 #[derive(Clone, Copy, Debug, PartialEq, ValueEnum)]
 pub enum CropChoice {
-    CropBox,
-    MediaBox,
-    ArtBox,
-    BleedBox,
-    TrimBox,
+    Crop,
+    Media,
+    Art,
+    Bleed,
+    Trim,
 }
 
 fn f32_or_i64(obj: &Object) -> Result<f32, lopdf::Error> {
