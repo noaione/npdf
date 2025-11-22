@@ -51,15 +51,6 @@ std::optional<SplashColorMode> to_splash_color_mode(splash_color_mode_t mode)
     }
 }
 
-void ensure_global_params()
-{
-    static std::once_flag once;
-    std::call_once(once, [] {
-        globalParams = std::make_unique<GlobalParams>();
-        globalParams->setErrQuiet(true);
-    });
-}
-
 void set_error(char **error_out, const std::string &message)
 {
     if (!error_out) {

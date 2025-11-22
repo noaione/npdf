@@ -30,15 +30,6 @@ void free_captured(ImageOutputDev::ImageOutput &captured)
     }
 }
 
-void ensure_global_params()
-{
-    static std::once_flag once;
-    std::call_once(once, [] {
-        globalParams = std::make_unique<GlobalParams>();
-        globalParams->setErrQuiet(true);
-    });
-}
-
 void set_error(char **error_out, const std::string &message)
 {
     if (!error_out) {
