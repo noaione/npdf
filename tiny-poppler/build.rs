@@ -282,8 +282,8 @@ fn compile_bridge(
         .include(poppler_src.join("fofi"))
         .define("WIN32_LEAN_AND_MEAN", None)
         .define("NOMINMAX", None)
-        .flag_if_supported("-std=c++20")
-        .flag_if_supported("/std:c++20")
+        .flag_if_supported("-std=c++23")
+        .flag_if_supported("/std:c++latest") // For MSVC (should be C++23 preview, requires VS 2022 17.14)
         .flag_if_supported("-Wno-unused-parameter")
         .flag_if_supported("-Wno-unused-variable");
 

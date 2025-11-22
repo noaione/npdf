@@ -22,7 +22,7 @@ when building from source, you'll need the following tools installed:
 - cmake
 - pkg-config
 - ninja
-- C++ compiler that support C++20 standard
+- C++ compiler that support C++23 standard
 
 and the following libraries installed and available for linking:
 - zlib
@@ -70,8 +70,17 @@ pass `--threads 1` to run single-threaded or `--threads N` to clamp the worker c
 currently, the way this is implemented is that the main thread will parse the PDF once and then spawn worker threads that each open their own isolated `Document` instance from a shared `DocumentFactory`.<br />
 since i don't think poppler's `PDFDoc` is thread-safe *yet* to allow sharing between threads.
 
-### unwatermark
+### extract
+```
+npdf extract <pdf_file> <output_dir>
+```
 
+extract all images embedded in the PDF file and save them into `<output_dir>`.<br />
+the images will be saved using their original format (png/jpg/tiff/etc.) if possible
+
+this command should be similar to `pdfimages` from poppler/xpdf.
+
+### unwatermark
 ```
 npdf unwatermark <pdf_file> <output_file>
 ```
@@ -79,6 +88,22 @@ npdf unwatermark <pdf_file> <output_file>
 remove watermark images from the PDF file and save the cleaned PDF into `<output_file>`.<br />
 this command works by scanning all images in the PDF and hashing them, then asking the user to select which images to remove based on their hashes.<br />
 note that this command may not be able to remove all watermarks, especially if the watermark is drawn using vector graphics or text.
+
+this use [`lopdf`](https://crates.io/crates/lopdf) crate to manipulate the PDF file directly.
+
+### recrop
+```
+npdf recrop --cropbox <crop_mode> <pdf_file> <output_file>
+```
+
+recrop all pages in the PDF file using the specified crop mode and save the recropped PDF into `<output_file>`.
+
+`<crop_mode>` can be one of the following:
+- `crop`: use the existing CropBox (or revert from previous `OriginalCropBox` if present)
+- `media`: use the MediaBox
+- `bleed`: use the BleedBox
+- `trim`: use the TrimBox
+- `art`: use the ArtBox
 
 this use [`lopdf`](https://crates.io/crates/lopdf) crate to manipulate the PDF file directly.
 
