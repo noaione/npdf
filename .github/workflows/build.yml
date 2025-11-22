@@ -13,7 +13,7 @@ env:
 
 # Do not run concurrent builds
 concurrency:
-  group: "build-npdf"
+  group: "build-npdf-${{ github.ref }}"
   cancel-in-progress: true
 
 jobs:
