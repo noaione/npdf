@@ -1,5 +1,5 @@
 use clap::Args;
-use color_print::cprintln;
+use color_print::{cformat, cprintln};
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -381,7 +381,7 @@ fn describe_component(
         .map(|(object, generation)| format!("{} {} R", object, generation))
         .unwrap_or_else(|| "inline".into());
     let slot_fragment = slot
-        .map(|idx| format!(" │ <bold>Group</>: #{idx:02}"))
+        .map(|idx| cformat!(" │ <bold>Group</>: #{idx:02}"))
         .unwrap_or_default();
     let component = component_label(component_suffix);
 
@@ -464,7 +464,7 @@ fn persist_encoded(
     }
 
     let slot_fragment = slot
-        .map(|idx| format!(" image <c,s>#{} </c,s>", idx))
+        .map(|idx| cformat!(" image <c,s>#{} </c,s>", idx))
         .unwrap_or_default();
     let component = component_label(component_suffix);
 
