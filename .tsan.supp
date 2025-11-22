@@ -1,2 +1,1 @@
-leak:make_GfxLCMSProfilePtr
 race:GfxXYZ2DisplayTransforms
