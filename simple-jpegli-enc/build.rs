@@ -3,10 +3,16 @@ use std::path::PathBuf;
 
 fn main() {
     println!("cargo:rerun-if-changed=wrapper.h");
+    println!("cargo:rerun-if-changed=src/error_shim.c");
 
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     // Adjust path to point to third_party/libjxl from simple-jpegli-enc/
     let libjxl_src = manifest_dir.join("../third_party/libjxl");
+
+    cc::Build::new()
+        .file("src/error_shim.c")
+        .include(&manifest_dir)
+        .compile("jpegli_error_shim");
 
     let dst = cmake::Config::new(libjxl_src)
         .define("JPEGXL_ENABLE_JPEGLI", "ON")
@@ -21,12 +27,17 @@ fn main() {
         .define("JPEGXL_ENABLE_PLUGINS", "OFF")
         .define("BUILD_SHARED_LIBS", "OFF")
         .define("BUILD_TESTING", "OFF")
+        .define("JPEGLI_LIBJPEG_LIBRARY_SOVERSION", "8")
+        .define("JPEGLI_LIBJPEG_LIBRARY_VERSION", "8.2.2")
         .build_target("jpegli-static")
         .build();
 
     println!("cargo:rustc-link-search=native={}/build/lib", dst.display());
     if cfg!(target_os = "linux") || cfg!(target_os = "macos") {
-        println!("cargo:rustc-link-search=native={}/build/third_party/highway", dst.display());
+        println!(
+            "cargo:rustc-link-search=native={}/build/third_party/highway",
+            dst.display()
+        );
     }
     emit_system_library_hints();
 

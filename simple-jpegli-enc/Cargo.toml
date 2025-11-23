@@ -17,3 +17,4 @@ thiserror = "2.0"
 [build-dependencies]
 cmake = "0.1"
 bindgen = "0.71"
+cc = "1.0"
