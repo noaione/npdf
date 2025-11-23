@@ -5,6 +5,7 @@
 //! Poppler (with Splash) as part of the Cargo build.
 
 mod ffi;
+mod helpers;
 mod sink;
 
 pub use ffi::{
@@ -13,7 +14,7 @@ pub use ffi::{
     PdfCropMode, PdfImageColorSpace,
 };
 use jpeg_encoder::{ColorType as JpegColorType, Encoder as JpegEncoder};
-use png::{BitDepth, ColorType, Compression, Encoder};
+use png::{BitDepth, ColorType, Encoder};
 pub use sink::{
     EncodedExportedImage, ImageSinkError, ImageSinkOptions, PngCompression, TiffCompression,
     TiffDeflateLevel, sink_exported_image,
@@ -210,7 +211,11 @@ impl Document {
         options: &RenderOptions,
     ) -> Result<EncodedImage, RenderError> {
         let image = self.render_page_image(page_index, options)?;
-        encode_image(&image, options.jpeg_quality.unwrap_or(DEFAULT_JPEG_QUALITY))
+        encode_image(
+            &image,
+            options.jpeg_quality.unwrap_or(DEFAULT_JPEG_QUALITY),
+            options.dpi,
+        )
     }
 
     /// Render a page to PNG bytes using the configured color mode.
@@ -461,7 +466,7 @@ pub fn get_images_single(pdf_path: &Path) -> Result<Vec<ImageInfo>, RenderError>
     document.images()
 }
 
-fn encode_image(image: &ffi::Image, quality: u8) -> Result<EncodedImage, RenderError> {
+fn encode_image(image: &ffi::Image, quality: u8, dpi: f64) -> Result<EncodedImage, RenderError> {
     if image.width == 0 || image.height == 0 {
         return Err(RenderError::UnsupportedLayout);
     }
@@ -507,6 +512,7 @@ fn encode_image(image: &ffi::Image, quality: u8) -> Result<EncodedImage, RenderE
                 &pixels,
                 width,
                 height,
+                dpi,
                 ColorType::Indexed,
                 BitDepth::One,
                 Some(&PALETTE),
@@ -522,6 +528,7 @@ fn encode_image(image: &ffi::Image, quality: u8) -> Result<EncodedImage, RenderE
                 &pixels,
                 width,
                 height,
+                dpi,
                 ColorType::Grayscale,
                 BitDepth::Eight,
                 None,
@@ -537,6 +544,7 @@ fn encode_image(image: &ffi::Image, quality: u8) -> Result<EncodedImage, RenderE
                 &pixels,
                 width,
                 height,
+                dpi,
                 ColorType::Rgb,
                 BitDepth::Eight,
                 None,
@@ -555,6 +563,7 @@ fn encode_image(image: &ffi::Image, quality: u8) -> Result<EncodedImage, RenderE
                 &pixels,
                 width,
                 height,
+                dpi,
                 ColorType::Rgb,
                 BitDepth::Eight,
                 None,
@@ -573,7 +582,15 @@ fn encode_image(image: &ffi::Image, quality: u8) -> Result<EncodedImage, RenderE
                 rgba.push(chunk[1]);
                 rgba.push(255);
             }
-            let bytes = encode_png(&rgba, width, height, ColorType::Rgba, BitDepth::Eight, None)?;
+            let bytes = encode_png(
+                &rgba,
+                width,
+                height,
+                dpi,
+                ColorType::Rgba,
+                BitDepth::Eight,
+                None,
+            )?;
             Ok(EncodedImage {
                 format: ImageFormat::Png,
                 bytes,
@@ -603,6 +620,7 @@ fn encode_png(
     pixels: &[u8],
     width: usize,
     height: usize,
+    dpi: f64,
     colorspace: ColorType,
     depth: BitDepth,
     palette: Option<&[u8]>,
@@ -617,11 +635,14 @@ fn encode_png(
     let mut buffer = Vec::new();
     {
         let mut encoder = Encoder::new(&mut buffer, width_u32, height_u32);
-        encoder.set_compression(Compression::Balanced);
+        encoder.set_compression(PngCompression::Balanced);
         encoder.set_color(colorspace);
         encoder.set_depth(depth);
         if let Some(palette_bytes) = palette {
             encoder.set_palette(palette_bytes.to_vec());
+        }
+        if let Some(pixel_dims) = helpers::build_pixel_dims_png(dpi, dpi) {
+            encoder.set_pixel_dims(Some(pixel_dims));
         }
         let mut writer = encoder.write_header().unwrap();
         writer.write_image_data(pixels).unwrap();

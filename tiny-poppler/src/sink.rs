@@ -1,7 +1,8 @@
 use crate::ffi::{
     CcittParams, ExportedImage, ImageExportExtension, ImageExportFormat, ImageExportType,
 };
-use png::{BitDepth, ColorType, Encoder, PixelDimensions, Unit};
+use crate::helpers::build_pixel_dims_png;
+use png::{BitDepth, ColorType, Encoder};
 use std::fmt::Write as FmtWrite;
 use std::io::Cursor;
 use thiserror::Error;
@@ -169,7 +170,7 @@ fn encode_png_image(
         encoder.set_compression(options.png_compression);
         encoder.set_color(color_type);
         encoder.set_depth(depth);
-        if let Some(dimensions) = build_pixel_dims(width_dpi, height_dpi) {
+        if let Some(dimensions) = build_pixel_dims_png(width_dpi, height_dpi) {
             encoder.set_pixel_dims(Some(dimensions));
         }
         let mut writer = encoder
@@ -425,27 +426,6 @@ fn into_u16_samples(data: Vec<u8>) -> Result<Vec<u16>, ImageSinkError> {
         out.push(u16::from_le_bytes([chunk[0], chunk[1]]));
     }
     Ok(out)
-}
-
-fn build_pixel_dims(x_dpi: f64, y_dpi: f64) -> Option<PixelDimensions> {
-    let xppu = dpi_to_pixels_per_meter(x_dpi)?;
-    let yppu = dpi_to_pixels_per_meter(y_dpi)?;
-    Some(PixelDimensions {
-        xppu,
-        yppu,
-        unit: Unit::Meter,
-    })
-}
-
-fn dpi_to_pixels_per_meter(value: f64) -> Option<u32> {
-    if !value.is_finite() || value <= 0.0 {
-        return None;
-    }
-    let ppm = (value / 0.0254).round();
-    if ppm < 1.0 || ppm > u32::MAX as f64 {
-        return None;
-    }
-    Some(ppm as u32)
 }
 
 fn dpi_to_rational(value: f64) -> Option<Rational> {
