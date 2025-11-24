@@ -5,32 +5,25 @@
 #include <cstring>
 #include <csetjmp>
 
-// Include the standard JPEG library (which links to Jpegli)
 #include <jpeglib.h>
 
 #define SJPEGLI_BAD_COLORSPACE 10 // Based on libjpeg error codes
 
-// 1. Custom Error Manager
-// We extend the standard error manager to include our jump buffer
+#define SJPEGLI_ERROR 0
+#define SJPEGLI_SUCCESS 1
+
 struct JpegliErrorManager
 {
-    struct jpeg_error_mgr pub; // "Base class"
-    jmp_buf jump_buffer;       // Context for longjmp
+    struct jpeg_error_mgr pub;
+    jmp_buf jump_buffer;
     char last_error_msg[JPEGLI_ERR_MSG_LEN];
 };
 
-// 2. The Error Callback
-// This replaces the default "exit program" behavior of libjpeg
 void sjpegli_error_exit(j_common_ptr cinfo)
 {
-    // Cast back to our custom struct
     auto *myerr = reinterpret_cast<JpegliErrorManager *>(cinfo->err);
-
-    // Format the message provided by the library
     (*cinfo->err->format_message)(cinfo, myerr->last_error_msg);
-
-    // Jump back to the setjmp point in the main function
-    longjmp(myerr->jump_buffer, 1);
+    longjmp(myerr->jump_buffer, 1); // jump to exit point
 }
 
 J_COLOR_SPACE sjpegli_convert_colorspace(simple_jpegli_colorspace_t colorspace) {
@@ -85,10 +78,9 @@ int sjpegli_get_input_comps(J_COLOR_SPACE colorspace, int width) {
     }
 }
 
-// 3. The Main Wrapper
 simple_jpegli_enc_result sjpegli_encode_pixels(const unsigned char *pixels, int width, int height, int quality, simple_jpegli_colorspace_t colorspace)
 {
-    // Initialize result with safe defaults
+    // safe default to avoid UB
     simple_jpegli_enc_result result;
     result.data = nullptr;
     result.size = 0;
@@ -96,10 +88,10 @@ simple_jpegli_enc_result sjpegli_encode_pixels(const unsigned char *pixels, int 
     result.error_code = 0;
     std::memset(result.error_message, 0, JPEGLI_ERR_MSG_LEN);
 
-    // Create colorspace
+    // convert to libjpeg colorspace
     J_COLOR_SPACE colorspace_t = sjpegli_convert_colorspace(colorspace);
     if (colorspace_t == JCS_UNKNOWN) {
-        result.success = 0;
+        result.success = SJPEGLI_ERROR;
         result.error_code = SJPEGLI_BAD_COLORSPACE;
         std::strncpy(result.error_message, "Unsupported colorspace", JPEGLI_ERR_MSG_LEN - 1);
         return result;
@@ -107,7 +99,7 @@ simple_jpegli_enc_result sjpegli_encode_pixels(const unsigned char *pixels, int 
 
     int input_comps = sjpegli_get_input_comps(colorspace_t, width);
     if (input_comps == 0) {
-        result.success = 0;
+        result.success = SJPEGLI_ERROR;
         result.error_code = SJPEGLI_BAD_COLORSPACE;
         std::strncpy(result.error_message, "Unsupported colorspace", JPEGLI_ERR_MSG_LEN - 1);
         return result;
@@ -116,26 +108,25 @@ simple_jpegli_enc_result sjpegli_encode_pixels(const unsigned char *pixels, int 
     struct jpeg_compress_struct cinfo;
     struct JpegliErrorManager jerr;
 
-    // We must track the output buffer manually to free it if an error occurs
+    // track output buffer
     unsigned char *outbuffer = nullptr;
     unsigned long outsize = 0;
 
-    // Set up the error handler
+    // set up the error handler
     cinfo.err = jpeg_std_error(&jerr.pub);
     jerr.pub.error_exit = sjpegli_error_exit;
 
     if (setjmp(jerr.jump_buffer))
     {
-        result.success = 0;
+        result.success = SJPEGLI_ERROR;
         result.error_code = jerr.pub.msg_code;
 
-        // Copy the formatted message we captured in the callback
         std::strncpy(result.error_message, jerr.last_error_msg, JPEGLI_ERR_MSG_LEN - 1);
 
-        // Cleanup libjpeg resources
+        // cleanup
         jpeg_destroy_compress(&cinfo);
 
-        // If libjpeg allocated a buffer before crashing, free it
+        // free output buffer if it was allocated, only happens if we jumped here after starting compression
         if (outbuffer)
         {
             std::free(outbuffer);
@@ -144,11 +135,9 @@ simple_jpegli_enc_result sjpegli_encode_pixels(const unsigned char *pixels, int 
         return result;
     }
 
-    // NORMAL EXECUTION BLOCK
     jpeg_create_compress(&cinfo);
 
-    // Use the memory destination manager (standard in newer libjpeg/jpegli)
-    // This tells libjpeg to allocate a buffer for us using malloc
+    // allocate memory destination
     jpeg_mem_dest(&cinfo, &outbuffer, &outsize);
 
     cinfo.image_width = width;
@@ -157,8 +146,6 @@ simple_jpegli_enc_result sjpegli_encode_pixels(const unsigned char *pixels, int 
     cinfo.in_color_space = colorspace_t;
 
     jpeg_set_defaults(&cinfo);
-
-    // This is where Jpegli applies its heuristics
     jpeg_set_quality(&cinfo, quality, TRUE);
 
     jpeg_start_compress(&cinfo, TRUE);
@@ -176,8 +163,7 @@ simple_jpegli_enc_result sjpegli_encode_pixels(const unsigned char *pixels, int 
     jpeg_finish_compress(&cinfo);
     jpeg_destroy_compress(&cinfo);
 
-    // Success! Populate result
-    result.success = 1;
+    result.success = SJPEGLI_SUCCESS;
     result.data = outbuffer;
     result.size = static_cast<size_t>(outsize);
     result.error_code = 0;
@@ -187,6 +173,8 @@ simple_jpegli_enc_result sjpegli_encode_pixels(const unsigned char *pixels, int 
 
 void sjpegli_free_result(simple_jpegli_enc_result result)
 {
+    // this should be fine since the pointer would only be assigned
+    // if all operations were successful, if not we cleaned up at the jump point
     if (result.data)
     {
         std::free(result.data);

@@ -36,6 +36,13 @@ fn main() {
     }
     emit_system_library_hints();
 
+    // print the data to show the content of the dest path
+    for entry in std::fs::read_dir(format!("{}/build/lib", dst.display())).unwrap() {
+        let entry = entry.unwrap();
+        let path = entry.path();
+        println!("cargo:warning=Found file in build/lib: {}", path.display());
+    }
+
     println!("cargo:rustc-link-lib=static=jpegli-static");
     println!("cargo:rustc-link-lib=static=hwy");
 
