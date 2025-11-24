@@ -147,6 +147,13 @@ fn main() {
         // or fallback to the same mac/linux search path
         println!("cargo:rustc-link-search=native={}", lib_dir.display());
     }
+
+    for entry in walkdir::WalkDir::new(&hwy_dir) {
+        let entry = entry.unwrap();
+        if entry.file_type().is_dir() {
+            println!("cargo:warning=Found file: {}", entry.path().display());
+        }
+    }
     emit_system_library_hints();
 
     println!("cargo:rustc-link-lib=static=jpegli-static");
