@@ -178,7 +178,7 @@ fn compile_bridge(
     let mut build = cc::Build::new();
     build
         .cpp(true)
-        .static_crt(false)
+        .static_crt(true)
         .file(manifest_dir.join("ffi/bridge.cc"))
         .include(manifest_dir.join("ffi"))
         .include(libjxl_dst.join("build/lib/include/jpegli"))
