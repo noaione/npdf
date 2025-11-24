@@ -34,6 +34,15 @@ typedef enum simple_jpegli_colorspace {
     RGB565 = 15
 } simple_jpegli_colorspace_t;
 
+typedef enum simple_jpegli_subsampling {
+    SUBSAMP_NONE = 0,
+    SUBSAMP_AUTO = 1,
+    SUBSAMP_S420 = 2,
+    SUBSAMP_S422 = 3,
+    SUBSAMP_S440 = 4,
+    SUBSAMP_S444 = 5 // Same as no subsampling
+} simple_jpegli_subsampling_t;
+
 typedef struct {
     unsigned char* data;      // Pointer to the JPEG bytes
     size_t size;              // Size of the JPEG bytes
@@ -47,9 +56,10 @@ simple_jpegli_enc_result sjpegli_encode_pixels(
     int width,
     int height,
     int quality,
-    simple_jpegli_colorspace_t colorspace,
     unsigned int x_dpi,
-    unsigned int y_dpi
+    unsigned int y_dpi,
+    simple_jpegli_colorspace_t colorspace,
+    simple_jpegli_subsampling_t subsampling
 );
 
 // Frees the buffer allocated by libjpeg

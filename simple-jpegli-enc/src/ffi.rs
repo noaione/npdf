@@ -22,6 +22,17 @@ pub enum ColorSpace {
     Rgb565 = 15,
 }
 
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Subsampling {
+    None = 0,
+    Auto = 1,
+    Sub420 = 2,
+    Sub422 = 3,
+    Sub440 = 4,
+    Sub444 = 5,
+}
+
 impl ColorSpace {
     pub fn get_components(&self) -> usize {
         match self {
@@ -77,9 +88,10 @@ unsafe extern "C" {
         width: c_int,
         height: c_int,
         quality: c_int,
-        color_space: ColorSpace,
         x_dpi: c_uint,
         y_dpi: c_uint,
+        color_space: ColorSpace,
+        subsampling: Subsampling,
     ) -> SJpegliResult;
 
     fn sjpegli_free_result(result: SJpegliResult);
@@ -105,8 +117,8 @@ pub(crate) fn encode_jpegli_internal(
     height: i32,
     quality: u8,
     color_space: ColorSpace,
-    x_dpi: u16,
-    y_dpi: u16,
+    subsampling: Subsampling,
+    dpi: (u16, u16),
 ) -> Result<Vec<u8>, SJpegliError> {
     unsafe {
         let result = sjpegli_encode_pixels(
@@ -114,9 +126,10 @@ pub(crate) fn encode_jpegli_internal(
             width,
             height,
             quality.into(),
+            dpi.0.into(),
+            dpi.1.into(),
             color_space,
-            x_dpi.into(),
-            y_dpi.into(),
+            subsampling,
         );
 
         if !result.is_success() {

@@ -101,21 +101,55 @@ int sjpegli_get_input_comps(J_COLOR_SPACE colorspace, int width)
     }
 }
 
-// void sjpegli_set_subsampling_factors(j_compress_ptr cinfo, J_COLOR_SPACE colorspace, int quality)
-// {
-//     // no chroma subsampling
-//     cinfo->comp_info[0].h_samp_factor = 1;
-//     cinfo->comp_info[0].v_samp_factor = 1;
-// }
+void sjpegli_auto_subsampling_factors(
+    j_compress_ptr cinfo,
+    J_COLOR_SPACE colorspace,
+    int quality)
+{
+    // TODO
+}
+
+void sjpegli_set_subsampling_factors(
+    j_compress_ptr cinfo,
+    J_COLOR_SPACE colorspace,
+    simple_jpegli_subsampling_t subsampling,
+    int quality)
+{
+    switch (subsampling)
+    {
+        case SUBSAMP_S420:
+            cinfo->comp_info[0].h_samp_factor = 2;
+            cinfo->comp_info[0].v_samp_factor = 2;
+            return;
+        case SUBSAMP_S422:
+            cinfo->comp_info[0].h_samp_factor = 2;
+            cinfo->comp_info[0].v_samp_factor = 1;
+            return;
+        case SUBSAMP_S440:
+            cinfo->comp_info[0].h_samp_factor = 1;
+            cinfo->comp_info[0].v_samp_factor = 2;
+            return;
+        case SUBSAMP_S444:
+        case SUBSAMP_NONE:
+            cinfo->comp_info[0].h_samp_factor = 1;
+            cinfo->comp_info[0].v_samp_factor = 1;
+            return;
+        case SUBSAMP_AUTO:
+        default:
+            sjpegli_auto_subsampling_factors(cinfo, colorspace, quality);
+            return;
+    }
+}
 
 simple_jpegli_enc_result sjpegli_encode_pixels(
     const unsigned char *pixels,
     int width,
     int height,
     int quality,
-    simple_jpegli_colorspace_t colorspace,
     unsigned int x_dpi,
-    unsigned int y_dpi)
+    unsigned int y_dpi,
+    simple_jpegli_colorspace_t colorspace,
+    simple_jpegli_subsampling_t subsampling)
 {
     // safe default to avoid UB
     simple_jpegli_enc_result result;
@@ -151,6 +185,11 @@ simple_jpegli_enc_result sjpegli_encode_pixels(
         result.error_code = SJPEGLI_BAD_DPI;
         std::strncpy(result.error_message, "DPI values must be between 0 and 65535", JPEGLI_ERR_MSG_LEN - 1);
         return result;
+    }
+
+    if (quality < 1 || quality > 100)
+    {
+        quality = 90; // reset to default quality
     }
 
     struct jpeg_compress_struct cinfo;
@@ -197,7 +236,7 @@ simple_jpegli_enc_result sjpegli_encode_pixels(
     jpeg_set_quality(&cinfo, quality, TRUE);
     jpeg_set_colorspace(&cinfo, colorspace_t);
     jpeg_simple_progression(&cinfo);
-    // sjpegli_set_subsampling_factors(&cinfo, colorspace_t, quality);
+    // sjpegli_set_subsampling_factors(&cinfo, colorspace_t, subsampling, quality);
     cinfo.write_Adobe_marker =
         (colorspace_t == JCS_CMYK ||
          colorspace_t == JCS_YCCK ||

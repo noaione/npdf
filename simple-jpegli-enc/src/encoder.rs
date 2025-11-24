@@ -1,4 +1,4 @@
-pub use crate::ffi::ColorSpace;
+pub use crate::ffi::{ColorSpace, Subsampling};
 
 use crate::ffi::encode_jpegli_internal;
 use thiserror::Error;
@@ -13,11 +13,15 @@ pub enum JpegError {
 
 pub struct JpegEncoder {
     quality: u8,
+    subsampling: crate::ffi::Subsampling,
 }
 
 impl Default for JpegEncoder {
     fn default() -> Self {
-        Self { quality: 90 }
+        Self {
+            quality: 90,
+            subsampling: crate::ffi::Subsampling::Auto,
+        }
     }
 }
 
@@ -28,6 +32,11 @@ impl JpegEncoder {
 
     pub fn quality(mut self, quality: u8) -> Self {
         self.quality = quality.clamp(0, 100);
+        self
+    }
+
+    pub fn subsampling(mut self, subsampling: crate::ffi::Subsampling) -> Self {
+        self.subsampling = subsampling;
         self
     }
 
@@ -55,8 +64,8 @@ impl JpegEncoder {
             height.into(),
             self.quality,
             colorspace,
-            dpi.0,
-            dpi.1,
+            self.subsampling,
+            dpi,
         ) {
             Ok(encoded) => Ok(encoded),
             Err(err) => Err(JpegError::JpegliError {
