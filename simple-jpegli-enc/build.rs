@@ -146,11 +146,19 @@ fn main() {
         );
         // or fallback to the same mac/linux search path
         println!("cargo:rustc-link-search=native={}", lib_dir.display());
+
+        // Use nested path for highway as well
+        println!(
+            "cargo:rustc-link-search=native={}",
+            hwy_dir.join(cmake_build_type).display()
+        );
+        // fallback again
+        println!("cargo:rustc-link-search=native={}", hwy_dir.display());
     }
 
     for entry in walkdir::WalkDir::new(&hwy_dir) {
         let entry = entry.unwrap();
-        if entry.file_type().is_dir() {
+        if entry.file_type().is_file() {
             println!("cargo:warning=Found file: {}", entry.path().display());
         }
     }
