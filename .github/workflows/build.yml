@@ -144,14 +144,6 @@ jobs:
           # dir C:\vcpkg\installed\x64-windows-static\bin
           dir C:\vcpkg\installed\x64-windows-static\lib
 
-      - name: Tests
-        run: cargo test --workspace --all --verbose
-        env:
-          BOOST_ROOT: ${{ steps.install-boost.outputs.boost_root }}
-          Boost_DIR: ${{ steps.install-boost.outputs.boost_root }}
-          CI_RUNNER: "github"
-          RUST_BACKTRACE: "full"
-
       - name: Build
         run: cargo build --profile release --workspace --all-targets -vv
         env:

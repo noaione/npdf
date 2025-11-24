@@ -189,3 +189,74 @@ jobs:
           # LSAN_OPTIONS: "suppressions=${{ github.workspace }}/.lsan.supp"
           # UBSAN_OPTIONS: "suppressions=${{ github.workspace }}/sanitize.supp"
           # ASAN_OPTIONS: "suppressions=${{ github.workspace }}/sanitize.supp"
+
+  tests-win:
+    name: standard tests (windows-2025)
+    runs-on: windows-2025
+
+    env:
+      CARGO_TERM_COLOR: always
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          components: rust-src
+
+      - name: Setup rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: "rusttests-wintests"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install boost
+        uses: MarkusJx/install-boost@v2
+        id: install-boost
+        with:
+          boost_version: "1.89.0"
+
+      - name: Cache vcpkg dependencies
+        uses: actions/cache@v4
+        with:
+          path: C:\vcpkg\installed
+          key: vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
+
+      - name: Install system dependencies
+        run: |
+          choco install ninja cmake pkgconfiglite -y --no-progress
+
+          cd C:\vcpkg
+          .\bootstrap-vcpkg.bat
+
+          # Install some pre-dependencies
+          C:\vcpkg\vcpkg.exe install bzip2:x64-windows-static brotli:x64-windows-static liblzma:x64-windows-static --clean-after-build
+
+          # Install required packages as static libraries
+          C:\vcpkg\vcpkg.exe install libpng:x64-windows-static zlib:x64-windows-static libiconv:x64-windows-static freetype:x64-windows-static tiff:x64-windows-static openjpeg:x64-windows-static libjpeg-turbo:x64-windows-static lcms:x64-windows-static --clean-after-build
+          echo "VCPKG_ROOT=C:\vcpkg" >> $env:GITHUB_ENV
+          echo "VCPKG_DEFAULT_TRIPLET=x64-windows-static" >> $env:GITHUB_ENV
+          echo "VCPKG_FEATURE_FLAGS=manifests" >> $env:GITHUB_ENV
+
+          # List manually installed packages for debugging
+          echo "Installed vcpkg packages:"
+          C:\vcpkg\vcpkg.exe list
+          # dir C:\vcpkg\installed\x64-windows-static\bin
+          dir C:\vcpkg\installed\x64-windows-static\lib
+
+      - name: Tests
+        run: cargo test --workspace --all --verbose
+        env:
+          BOOST_ROOT: ${{ steps.install-boost.outputs.boost_root }}
+          Boost_DIR: ${{ steps.install-boost.outputs.boost_root }}
+          CI_RUNNER: "github"
+          RUST_BACKTRACE: "full"
