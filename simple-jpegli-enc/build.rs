@@ -9,7 +9,16 @@ fn main() {
     // Adjust path to point to third_party/libjxl from simple-jpegli-enc/
     let libjxl_src = manifest_dir.join("../third_party/libjxl");
 
+    let profile = env::var("PROFILE").unwrap_or_else(|_| "debug".to_string());
+    let cmake_build_type = if profile == "debug" {
+        "Debug"
+    } else {
+        "Release"
+    };
+
     let dst = cmake::Config::new(libjxl_src)
+        .profile(cmake_build_type)
+        .static_crt(false)
         .define("JPEGXL_ENABLE_JPEGLI", "ON")
         .define("JPEGXL_ENABLE_JPEGLI_LIBJPEG", "ON")
         .define("JPEGXL_ENABLE_TOOLS", "OFF")
@@ -27,22 +36,24 @@ fn main() {
         .build_target("jpegli-static")
         .build();
 
+    let build_root = dst.join("build");
+    let lib_dir = build_root.join("lib");
+    let hwy_dir = build_root.join("third_party/highway");
+
     println!("cargo:rustc-link-search=native={}/build/lib", dst.display());
     if cfg!(target_os = "linux") || cfg!(target_os = "macos") {
+        println!("cargo:rustc-link-search=native={}", lib_dir.display());
+        println!("cargo:rustc-link-search=native={}", hwy_dir.display());
+    } else {
+        // Windows, use nested path
         println!(
-            "cargo:rustc-link-search=native={}/build/third_party/highway",
-            dst.display()
+            "cargo:rustc-link-search=native={}",
+            lib_dir.join(cmake_build_type).display()
         );
+        // or fallback to the same mac/linux search path
+        println!("cargo:rustc-link-search=native={}", lib_dir.display());
     }
     emit_system_library_hints();
-
-    // print the data to show the content of the dest path
-    for entry in walkdir::WalkDir::new(format!("{}/build/lib", dst.display())) {
-        let entry = entry.expect("failed to read file in poppler source tree");
-        if entry.file_type().is_file() {
-            println!("cargo:warning=Found file: {}", entry.path().display());
-        }
-    }
 
     println!("cargo:rustc-link-lib=static=jpegli-static");
     println!("cargo:rustc-link-lib=static=hwy");
