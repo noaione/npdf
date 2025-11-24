@@ -107,7 +107,7 @@ fn main() {
 
     let mut cfg = cmake::Config::new(&libjxl_src);
     cfg.profile(cmake_build_type)
-        .static_crt(false)
+        .static_crt(true)
         .define("JPEGXL_ENABLE_JPEGLI", "ON")
         .define("JPEGXL_ENABLE_JPEGLI_LIBJPEG", "ON")
         .define("JPEGXL_ENABLE_TOOLS", "OFF")

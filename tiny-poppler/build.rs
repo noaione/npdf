@@ -209,7 +209,7 @@ fn configure_and_build_poppler(
     println!("Building with profile: {build_profile}");
 
     cfg.profile(build_profile)
-        .static_crt(false)
+        .static_crt(true)
         .define("CMAKE_POSITION_INDEPENDENT_CODE", "ON")
         .define("BUILD_SHARED_LIBS", "OFF")
         .define("ENABLE_UNSTABLE_API_ABI_HEADERS", "ON")
