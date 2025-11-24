@@ -13,8 +13,8 @@ pub use ffi::{
     ImageExportRequest, ImageExportSelector, ImageExportType, ImageInfo, ImageType, PageInfo,
     PdfCropMode, PdfImageColorSpace,
 };
-use jpeg_encoder::{ColorType as JpegColorType, Encoder as JpegEncoder};
 use png::{BitDepth, ColorType, Encoder};
+use simple_jpegli_enc::{ColorSpace as JpegColorType, JpegEncoder, JpegError};
 pub use sink::{
     EncodedExportedImage, ImageSinkError, ImageSinkOptions, PngCompression, TiffCompression,
     TiffDeflateLevel, sink_exported_image,
@@ -124,8 +124,8 @@ pub enum RenderError {
     Poppler(String),
     #[error("png encode: {0}")]
     Png(String),
-    #[error("jpeg encode: {0}")]
-    Jpeg(String),
+    #[error("jpeg encode: {0:?}")]
+    Jpeg(#[from] JpegError),
     #[error("image conversion: {0}")]
     Image(String),
     #[error("i/o: {0}")]
@@ -683,7 +683,7 @@ fn encode_cmyk_like(
         return Err(RenderError::UnsupportedLayout);
     };
 
-    let jpeg = encode_jpeg(payload, width, height, JpegColorType::Cmyk, quality)?;
+    let jpeg = encode_jpeg(payload, width, height, JpegColorType::CMYK, quality)?;
     Ok(EncodedImage {
         format: ImageFormat::Jpeg,
         bytes: jpeg,
@@ -707,23 +707,23 @@ fn encode_jpeg(
     colorspace: JpegColorType,
     quality: u8,
 ) -> Result<Vec<u8>, RenderError> {
-    let width_u16: u16 = width
+    let width_u32: u32 = width
         .try_into()
         .map_err(|_| RenderError::InvalidJpegDimension {
             side: "width",
             value: width,
         })?;
-    let height_u16: u16 = height
+    let height_u32: u32 = height
         .try_into()
         .map_err(|_| RenderError::InvalidJpegDimension {
             side: "height",
             value: height,
         })?;
 
-    let mut buffer = Vec::new();
-    let encoder = JpegEncoder::new(&mut buffer, quality);
-    encoder
-        .encode(pixels, width_u16, height_u16, colorspace)
-        .map_err(|err| RenderError::Jpeg(err.to_string()))?;
+    let encoder = JpegEncoder::new()
+        .quality(quality)
+        .progressive(true)
+        .optimize_coding(true);
+    let buffer = encoder.encode(pixels, width_u32, height_u32, colorspace)?;
     Ok(buffer)
 }

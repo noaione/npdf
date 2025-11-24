@@ -596,12 +596,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4a5f13b858c8d314ee3e8f639011f7ccefe71f97f96e50151fb991f267928e2c"
 
 [[package]]
-name = "jpeg-encoder"
-version = "0.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b454d911ac55068f53495488d8ccd0646eaa540c033a28ee15b07838afafb01f"
-
-[[package]]
 name = "kernel32-sys"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1058,6 +1052,7 @@ name = "simple-jpegli-enc"
 version = "0.1.0"
 dependencies = [
  "bindgen",
+ "cc",
  "cmake",
  "libc",
  "thiserror",
@@ -1144,8 +1139,8 @@ version = "0.0.1"
 dependencies = [
  "cc",
  "cmake",
- "jpeg-encoder",
  "png",
+ "simple-jpegli-enc",
  "thiserror",
  "tiff",
  "walkdir",

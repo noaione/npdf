@@ -18,7 +18,7 @@ exclude = [
 [dependencies]
 thiserror = "2.0.17"
 png = { version = "0.18.0" }
-jpeg-encoder = { version = "0.6.1", features = ["simd"] }
+simple-jpegli-enc = { path = "../simple-jpegli-enc" }
 tiff = { version = "0.10", default-features = false, features = ["deflate", "lzw"] }
 
 [features]
