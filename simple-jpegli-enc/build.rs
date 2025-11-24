@@ -132,18 +132,22 @@ fn main() {
         .define("JPEGXL_ENABLE_HWY_AVX3_SPR", "true")
         .define("JPEGXL_ENABLE_HWY_AVX3_ZEN4", "true")
         .define("JPEGXL_ENABLE_HWY_AVX3_SSSE3", "true")
-        .define(
-            "BUILD_SHARED_LIBS",
-            if cmake_build_type == "Debug" {
-                "ON"
-            } else {
-                "OFF"
-            },
-        )
+        // Always build static libs to avoid mixing CRT settings between shared and static.
+        .define("BUILD_SHARED_LIBS", "OFF")
         .define("BUILD_TESTING", "OFF")
         .define("JPEGLI_LIBJPEG_LIBRARY_SOVERSION", "8")
         .define("JPEGLI_LIBJPEG_LIBRARY_VERSION", "8.2.2")
         .build_target("jpegli-static");
+
+    // Explicitly select MSVC runtime to match Rust's choice to prevent LNK4098.
+    if target.contains("windows-msvc") && profile == "debug" {
+        let runtime = if wants_static_crt {
+            "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+        } else {
+            "MultiThreadedDLL$<$<CONFIG:Debug>:Debug>"
+        };
+        cfg.define("CMAKE_MSVC_RUNTIME_LIBRARY", runtime);
+    }
 
     if let Some(s) = sanitizer {
         apply_sanitizer_to_cmake(&mut cfg, s);
@@ -179,13 +183,9 @@ fn main() {
 
     emit_system_library_hints();
 
-    if cfg!(target_os = "windows") && profile == "debug" {
-        println!("cargo:rustc-link-lib=jpegli-static");
-        println!("cargo:rustc-link-lib=hwy");
-    } else {
-        println!("cargo:rustc-link-lib=static=jpegli-static");
-        println!("cargo:rustc-link-lib=static=hwy");
-    }
+    // Always link static form explicitly for consistency.
+    println!("cargo:rustc-link-lib=static=jpegli-static");
+    println!("cargo:rustc-link-lib=static=hwy");
 
     compile_bridge(&manifest_dir, &libjxl_src, &dst, sanitizer);
 }
@@ -216,6 +216,19 @@ fn compile_bridge(
         .flag_if_supported("/std:c++20")
         .flag_if_supported("-Wno-unused-parameter")
         .flag_if_supported("-Wno-unused-variable");
+
+    // Force consistent runtime flags for MSVC to match wants_static_crt.
+    if env::var("TARGET")
+        .map(|t| t.contains("windows-msvc"))
+        .unwrap_or(false)
+    {
+        let profile = env::var("PROFILE").unwrap_or_else(|_| "debug".to_string());
+        if wants_static_crt {
+            build.flag(if profile == "debug" { "/MTd" } else { "/MT" });
+        } else {
+            build.flag(if profile == "debug" { "/MDd" } else { "/MD" });
+        }
+    }
 
     if let Some(s) = sanitizer {
         apply_sanitizer_to_cc(&mut build, s);
