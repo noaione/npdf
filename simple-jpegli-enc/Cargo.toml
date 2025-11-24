@@ -13,6 +13,13 @@ readme = "README.md"
 [dependencies]
 thiserror = "2.0"
 
+[features]
+default = []
+asan = []
+lsan = []
+tsan = []
+ubsan = []
+
 [build-dependencies]
 cmake = "0.1"
 cc = "1.0"
