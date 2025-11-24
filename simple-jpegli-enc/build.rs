@@ -105,14 +105,9 @@ fn main() {
         "Release"
     };
 
-    // Detect whether Rust itself is requesting a static CRT (Windows MSVC only)
-    // by checking for the crt-static target feature. We should mirror this
-    // instead of forcing static CRT unconditionally, otherwise we can mix
-    // LIBCMT (static) with MSVCRTD/MSVCRT (dynamic) and get LNK4098 + unresolved __imp__*.
-    let wants_static_crt = env::var("CARGO_CFG_TARGET_FEATURE")
-        .unwrap_or_default()
-        .split(',')
-        .any(|f| f == "crt-static");
+    // On Windows MSVC, Rust defaults to dynamic CRT (/MD or /MDd).
+    // We must build CMake libraries with the same CRT to avoid LNK4098 and
+    // unresolved __imp__CrtDbgReport symbols. Always use dynamic CRT.
 
     let mut cfg = cmake::Config::new(&libjxl_src);
     cfg.profile(cmake_build_type)
@@ -138,14 +133,12 @@ fn main() {
         .define("JPEGLI_LIBJPEG_LIBRARY_VERSION", "8.2.2")
         .build_target("jpegli-static");
 
-    // Explicitly select MSVC runtime to match Rust's choice to prevent LNK4098.
-    // Use the plain string value matching the current build profile.
+    // Explicitly select MSVC runtime to match Rust's dynamic CRT default.
     if target.contains("windows-msvc") {
-        let runtime = match (wants_static_crt, cmake_build_type) {
-            (true, "Debug") => "MultiThreadedDebug",
-            (true, _) => "MultiThreaded",
-            (false, "Debug") => "MultiThreadedDebugDLL",
-            (false, _) => "MultiThreadedDLL",
+        let runtime = if cmake_build_type == "Debug" {
+            "MultiThreadedDebugDLL"
+        } else {
+            "MultiThreadedDLL"
         };
         cfg.define("CMAKE_MSVC_RUNTIME_LIBRARY", runtime);
     }
@@ -198,11 +191,6 @@ fn compile_bridge(
     sanitizer: Option<Sanitizer>,
 ) {
     let mut build = cc::Build::new();
-    // Mirror Rust's CRT linkage choice (see wants_static_crt logic above).
-    let wants_static_crt = env::var("CARGO_CFG_TARGET_FEATURE")
-        .unwrap_or_default()
-        .split(',')
-        .any(|f| f == "crt-static");
 
     build
         .cpp(true)
@@ -217,17 +205,14 @@ fn compile_bridge(
         .flag_if_supported("-Wno-unused-parameter")
         .flag_if_supported("-Wno-unused-variable");
 
-    // Force consistent runtime flags for MSVC to match wants_static_crt.
+    // Force dynamic CRT flags for MSVC to match Rust's default.
     if env::var("TARGET")
         .map(|t| t.contains("windows-msvc"))
         .unwrap_or(false)
     {
         let profile = env::var("PROFILE").unwrap_or_else(|_| "debug".to_string());
-        if wants_static_crt {
-            build.flag(if profile == "debug" { "/MTd" } else { "/MT" });
-        } else {
-            build.flag(if profile == "debug" { "/MDd" } else { "/MD" });
-        }
+        let flag = if profile == "debug" { "/MDd" } else { "/MD" };
+        build.flag(flag);
     }
 
     if let Some(s) = sanitizer {
