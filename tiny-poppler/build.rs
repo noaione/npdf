@@ -285,6 +285,7 @@ fn compile_bridge(
     let mut build = cc::Build::new();
     build
         .cpp(true)
+        .static_crt(false)
         .file(manifest_dir.join("ffi/splash_bridge.cc"))
         .file(manifest_dir.join("ffi/exporter_bridge.cc"))
         .file(manifest_dir.join("ffi/image_exporter.cc"))
