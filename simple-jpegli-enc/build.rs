@@ -1,5 +1,5 @@
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 fn main() {
     println!("cargo:rerun-if-changed=ffi/bridge.h");
@@ -61,7 +61,7 @@ fn main() {
     compile_bridge(&manifest_dir, &dst);
 }
 
-fn compile_bridge(manifest_dir: &PathBuf, libjxl_dst: &PathBuf) {
+fn compile_bridge(manifest_dir: &Path, libjxl_dst: &Path) {
     cc::Build::new()
         .cpp(true)
         .file(manifest_dir.join("ffi/bridge.cc"))
