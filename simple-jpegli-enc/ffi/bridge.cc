@@ -101,6 +101,13 @@ int sjpegli_get_input_comps(J_COLOR_SPACE colorspace, int width)
     }
 }
 
+// void sjpegli_set_subsampling_factors(j_compress_ptr cinfo, J_COLOR_SPACE colorspace, int quality)
+// {
+//     // no chroma subsampling
+//     cinfo->comp_info[0].h_samp_factor = 1;
+//     cinfo->comp_info[0].v_samp_factor = 1;
+// }
+
 simple_jpegli_enc_result sjpegli_encode_pixels(
     const unsigned char *pixels,
     int width,
@@ -189,6 +196,8 @@ simple_jpegli_enc_result sjpegli_encode_pixels(
     jpeg_set_defaults(&cinfo);
     jpeg_set_quality(&cinfo, quality, TRUE);
     jpeg_set_colorspace(&cinfo, colorspace_t);
+    jpeg_simple_progression(&cinfo);
+    // sjpegli_set_subsampling_factors(&cinfo, colorspace_t, quality);
     cinfo.write_Adobe_marker =
         (colorspace_t == JCS_CMYK ||
          colorspace_t == JCS_YCCK ||
@@ -200,6 +209,7 @@ simple_jpegli_enc_result sjpegli_encode_pixels(
     cinfo.density_unit = 1; // dots per inch
     cinfo.X_density = static_cast<UINT16>(x_dpi);
     cinfo.Y_density = static_cast<UINT16>(y_dpi);
+    cinfo.optimize_coding = TRUE;
 
     jpeg_start_compress(&cinfo, TRUE);
 
