@@ -1,5 +1,5 @@
 use std::ffi::CStr;
-use std::os::raw::{c_char, c_int, c_uchar, c_ulong};
+use std::os::raw::{c_char, c_int, c_uchar, c_uint, c_ulong};
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -78,6 +78,8 @@ unsafe extern "C" {
         height: c_int,
         quality: c_int,
         color_space: ColorSpace,
+        x_dpi: c_uint,
+        y_dpi: c_uint,
     ) -> SJpegliResult;
 
     fn sjpegli_free_result(result: SJpegliResult);
@@ -103,10 +105,19 @@ pub(crate) fn encode_jpegli_internal(
     height: i32,
     quality: u8,
     color_space: ColorSpace,
+    x_dpi: u16,
+    y_dpi: u16,
 ) -> Result<Vec<u8>, SJpegliError> {
     unsafe {
-        let result =
-            sjpegli_encode_pixels(pixels.as_ptr(), width, height, quality.into(), color_space);
+        let result = sjpegli_encode_pixels(
+            pixels.as_ptr(),
+            width,
+            height,
+            quality.into(),
+            color_space,
+            x_dpi.into(),
+            y_dpi.into(),
+        );
 
         if !result.is_success() {
             // Convert C string to Rust string

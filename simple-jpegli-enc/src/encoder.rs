@@ -37,6 +37,7 @@ impl JpegEncoder {
         width: u16,
         height: u16,
         colorspace: ColorSpace,
+        dpi: Option<(u16, u16)>,
     ) -> Result<Vec<u8>, JpegError> {
         // Basic validation
         let expected_len = (width as usize) * (height as usize) * colorspace.get_components();
@@ -46,7 +47,17 @@ impl JpegEncoder {
             return Err(JpegError::BufferMismatch(expected_len, pixels_len));
         }
 
-        match encode_jpegli_internal(data, width.into(), height.into(), self.quality, colorspace) {
+        let dpi = dpi.unwrap_or((72, 72));
+
+        match encode_jpegli_internal(
+            data,
+            width.into(),
+            height.into(),
+            self.quality,
+            colorspace,
+            dpi.0,
+            dpi.1,
+        ) {
             Ok(encoded) => Ok(encoded),
             Err(err) => Err(JpegError::JpegliError {
                 code: err.code,

@@ -47,7 +47,9 @@ simple_jpegli_enc_result sjpegli_encode_pixels(
     int width,
     int height,
     int quality,
-    simple_jpegli_colorspace_t colorspace
+    simple_jpegli_colorspace_t colorspace,
+    unsigned int x_dpi,
+    unsigned int y_dpi
 );
 
 // Frees the buffer allocated by libjpeg
