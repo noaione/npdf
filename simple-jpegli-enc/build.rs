@@ -105,9 +105,18 @@ fn main() {
         "Release"
     };
 
+    // Detect whether Rust itself is requesting a static CRT (Windows MSVC only)
+    // by checking for the crt-static target feature. We should mirror this
+    // instead of forcing static CRT unconditionally, otherwise we can mix
+    // LIBCMT (static) with MSVCRTD/MSVCRT (dynamic) and get LNK4098 + unresolved __imp__*.
+    let wants_static_crt = env::var("CARGO_CFG_TARGET_FEATURE")
+        .unwrap_or_default()
+        .split(',')
+        .any(|f| f == "crt-static");
+
     let mut cfg = cmake::Config::new(&libjxl_src);
     cfg.profile(cmake_build_type)
-        .static_crt(true)
+        .static_crt(wants_static_crt)
         .define("JPEGXL_ENABLE_JPEGLI", "ON")
         .define("JPEGXL_ENABLE_JPEGLI_LIBJPEG", "ON")
         .define("JPEGXL_ENABLE_TOOLS", "OFF")
@@ -123,7 +132,14 @@ fn main() {
         .define("JPEGXL_ENABLE_HWY_AVX3_SPR", "true")
         .define("JPEGXL_ENABLE_HWY_AVX3_ZEN4", "true")
         .define("JPEGXL_ENABLE_HWY_AVX3_SSSE3", "true")
-        .define("BUILD_SHARED_LIBS", "OFF")
+        .define(
+            "BUILD_SHARED_LIBS",
+            if cmake_build_type == "Debug" {
+                "ON"
+            } else {
+                "OFF"
+            },
+        )
         .define("BUILD_TESTING", "OFF")
         .define("JPEGLI_LIBJPEG_LIBRARY_SOVERSION", "8")
         .define("JPEGLI_LIBJPEG_LIBRARY_VERSION", "8.2.2")
@@ -163,8 +179,13 @@ fn main() {
 
     emit_system_library_hints();
 
-    println!("cargo:rustc-link-lib=static=jpegli-static");
-    println!("cargo:rustc-link-lib=static=hwy");
+    if cfg!(target_os = "windows") && profile == "debug" {
+        println!("cargo:rustc-link-lib=jpegli-static");
+        println!("cargo:rustc-link-lib=hwy");
+    } else {
+        println!("cargo:rustc-link-lib=static=jpegli-static");
+        println!("cargo:rustc-link-lib=static=hwy");
+    }
 
     compile_bridge(&manifest_dir, &libjxl_src, &dst, sanitizer);
 }
@@ -176,9 +197,15 @@ fn compile_bridge(
     sanitizer: Option<Sanitizer>,
 ) {
     let mut build = cc::Build::new();
+    // Mirror Rust's CRT linkage choice (see wants_static_crt logic above).
+    let wants_static_crt = env::var("CARGO_CFG_TARGET_FEATURE")
+        .unwrap_or_default()
+        .split(',')
+        .any(|f| f == "crt-static");
+
     build
         .cpp(true)
-        .static_crt(true)
+        .static_crt(wants_static_crt)
         .file(manifest_dir.join("ffi/bridge.cc"))
         .include(manifest_dir.join("ffi"))
         .include(libjxl_dst.join("build/lib/include/jpegli"))
