@@ -140,11 +140,13 @@ fn main() {
         .build_target("jpegli-static");
 
     // Explicitly select MSVC runtime to match Rust's choice to prevent LNK4098.
-    if target.contains("windows-msvc") && profile == "debug" {
-        let runtime = if wants_static_crt {
-            "MultiThreaded$<$<CONFIG:Debug>:Debug>"
-        } else {
-            "MultiThreadedDLL$<$<CONFIG:Debug>:Debug>"
+    // Use the plain string value matching the current build profile.
+    if target.contains("windows-msvc") {
+        let runtime = match (wants_static_crt, cmake_build_type) {
+            (true, "Debug") => "MultiThreadedDebug",
+            (true, _) => "MultiThreaded",
+            (false, "Debug") => "MultiThreadedDebugDLL",
+            (false, _) => "MultiThreadedDLL",
         };
         cfg.define("CMAKE_MSVC_RUNTIME_LIBRARY", runtime);
     }
