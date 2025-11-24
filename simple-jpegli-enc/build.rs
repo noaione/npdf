@@ -2,17 +2,12 @@ use std::env;
 use std::path::PathBuf;
 
 fn main() {
-    println!("cargo:rerun-if-changed=wrapper.h");
-    println!("cargo:rerun-if-changed=src/error_shim.c");
+    println!("cargo:rerun-if-changed=ffi/bridge.h");
+    println!("cargo:rerun-if-changed=ffi/bridge.cc");
 
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     // Adjust path to point to third_party/libjxl from simple-jpegli-enc/
     let libjxl_src = manifest_dir.join("../third_party/libjxl");
-
-    cc::Build::new()
-        .file("src/error_shim.c")
-        .include(&manifest_dir)
-        .compile("jpegli_error_shim");
 
     let dst = cmake::Config::new(libjxl_src)
         .define("JPEGXL_ENABLE_JPEGLI", "ON")
@@ -44,25 +39,21 @@ fn main() {
     println!("cargo:rustc-link-lib=static=jpegli-static");
     println!("cargo:rustc-link-lib=static=hwy");
 
-    // Generate bindings
-    let bindings = bindgen::Builder::default()
-        .header("wrapper.h")
-        .header(format!(
-            "{}/build/lib/include/jpegli/jpeglib.h",
-            dst.display()
-        ))
-        .clang_arg(format!("-I{}/build/lib/include/jpegli", dst.display()))
-        // We need to include the system headers or at least the standard types
-        .use_core()
-        .ctypes_prefix("libc")
-        .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
-        .generate()
-        .expect("Unable to generate bindings");
+    compile_bridge(&manifest_dir, &dst);
+}
 
-    let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
-    bindings
-        .write_to_file(out_path.join("bindings.rs"))
-        .expect("Couldn't write bindings!");
+fn compile_bridge(manifest_dir: &PathBuf, libjxl_dst: &PathBuf) {
+    cc::Build::new()
+        .cpp(true)
+        .file(manifest_dir.join("ffi/bridge.cc"))
+        .include(manifest_dir.join("ffi"))
+        .include(libjxl_dst.join("build/lib/include/jpegli"))
+        .define("WIN32_LEAN_AND_MEAN", None)
+        .flag_if_supported("-std=c++20")
+        .flag_if_supported("/std:c++20")
+        .flag_if_supported("-Wno-unused-parameter")
+        .flag_if_supported("-Wno-unused-variable")
+        .compile("simple_jpegli_enc_bridge");
 }
 
 fn emit_system_library_hints() {

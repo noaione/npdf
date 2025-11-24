@@ -1,0 +1,60 @@
+#ifndef SIMPLE_JPEGLI_ENC_BRIDGE_H
+#define SIMPLE_JPEGLI_ENC_BRIDGE_H
+
+#include <setjmp.h>
+#include <stddef.h>
+#include <stdio.h>
+#include <string.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#include <jpeglib.h>
+
+// A fixed-size buffer for error messages to avoid malloc complexity during crashes
+#define JPEGLI_ERR_MSG_LEN 256
+
+typedef enum simple_jpegli_colorspace {
+    GRAYSCALE = 0,
+    RGB = 1,
+    YCbCr = 2,
+    CMYK = 3,
+    YCCK = 4,
+    EXT_RGB = 5,
+    EXT_RGBX = 6,
+    EXT_BGR = 7,
+    EXT_BGRX = 8,
+    EXT_XBGR = 9,
+    EXT_XRGB = 10,
+    EXT_RGBA = 11,
+    EXT_BGRA = 12,
+    EXT_ABGR = 13,
+    EXT_ARGB = 14,
+    RGB565 = 15
+} simple_jpegli_colorspace_t;
+
+typedef struct {
+    unsigned char* data;      // Pointer to the JPEG bytes
+    size_t size;              // Size of the JPEG bytes
+    int success;              // 1 = true, 0 = false
+    int error_code;           // libjpeg error code
+    char error_message[JPEGLI_ERR_MSG_LEN];
+} simple_jpegli_enc_result;
+
+simple_jpegli_enc_result sjpegli_encode_pixels(
+    const unsigned char* pixels,
+    int width,
+    int height,
+    int quality,
+    simple_jpegli_colorspace_t colorspace
+);
+
+// Frees the buffer allocated by libjpeg
+void sjpegli_free_result(simple_jpegli_enc_result result);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif  // SIMPLE_JPEGLI_ENC_BRIDGE_H
