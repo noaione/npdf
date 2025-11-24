@@ -157,6 +157,7 @@ jobs:
           BOOST_ROOT: ${{ steps.install-boost.outputs.boost_root }}
           Boost_DIR: ${{ steps.install-boost.outputs.boost_root }}
           CI_RUNNER: "github"
+          RUST_BACKTRACE: "1"
 
       - name: Compress artifacts
         run:

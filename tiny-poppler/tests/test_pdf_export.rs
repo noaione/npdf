@@ -38,17 +38,17 @@ fn test_render_cmyk() {
     assert_eq!(page_count, 1);
 
     // export first page
-    let exported = document.render_page_image_bytes(
-        0,
-        &RenderOptions {
-            dpi: 150.0,
-            color_mode: tiny_poppler::ColorMode::Cmyk8,
-            ..Default::default()
-        },
-    );
-    assert!(exported.is_ok());
+    let exported = document
+        .render_page_image_bytes(
+            0,
+            &RenderOptions {
+                dpi: 150.0,
+                color_mode: tiny_poppler::ColorMode::Cmyk8,
+                ..Default::default()
+            },
+        )
+        .expect("Failed to encode in CMYK");
 
-    let exported = exported.expect("Failed to export page");
     assert!(!exported.bytes.is_empty());
 
     // check JPEG header
