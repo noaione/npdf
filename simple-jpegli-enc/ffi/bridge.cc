@@ -1,6 +1,7 @@
 #include "bridge.h"
 
 #include <cstdio>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <csetjmp>
@@ -137,7 +138,7 @@ simple_jpegli_enc_result sjpegli_encode_pixels(
     }
 
     // check if x_dpi and y_dpi is within uint16
-    if (x_dpi < 0 || x_dpi > UINT16_MAX || y_dpi < 0 || y_dpi > UINT16_MAX)
+    if (x_dpi > UINT16_MAX || y_dpi > UINT16_MAX)
     {
         result.success = SJPEGLI_ERROR;
         result.error_code = SJPEGLI_BAD_DPI;
