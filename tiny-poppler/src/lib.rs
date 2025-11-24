@@ -683,7 +683,7 @@ fn encode_cmyk_like(
         return Err(RenderError::UnsupportedLayout);
     };
 
-    let jpeg = encode_jpeg(payload, width, height, JpegColorType::CMYK, quality)?;
+    let jpeg = encode_jpeg(payload, width, height, JpegColorType::Cmyk, quality)?;
     Ok(EncodedImage {
         format: ImageFormat::Jpeg,
         bytes: jpeg,
@@ -707,23 +707,20 @@ fn encode_jpeg(
     colorspace: JpegColorType,
     quality: u8,
 ) -> Result<Vec<u8>, RenderError> {
-    let width_u32: u32 = width
+    let width_u16: u16 = width
         .try_into()
         .map_err(|_| RenderError::InvalidJpegDimension {
             side: "width",
             value: width,
         })?;
-    let height_u32: u32 = height
+    let height_u16: u16 = height
         .try_into()
         .map_err(|_| RenderError::InvalidJpegDimension {
             side: "height",
             value: height,
         })?;
 
-    let encoder = JpegEncoder::new()
-        .quality(quality)
-        .progressive(true)
-        .optimize_coding(true);
-    let buffer = encoder.encode(pixels, width_u32, height_u32, colorspace)?;
+    let encoder = JpegEncoder::new().quality(quality);
+    let buffer = encoder.encode(pixels, width_u16, height_u16, colorspace)?;
     Ok(buffer)
 }
