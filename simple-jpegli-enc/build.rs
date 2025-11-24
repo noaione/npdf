@@ -16,7 +16,7 @@ fn main() {
         "Release"
     };
 
-    let dst = cmake::Config::new(libjxl_src)
+    let dst = cmake::Config::new(&libjxl_src)
         .profile(cmake_build_type)
         .static_crt(false)
         .define("JPEGXL_ENABLE_JPEGLI", "ON")
@@ -58,15 +58,16 @@ fn main() {
     println!("cargo:rustc-link-lib=static=jpegli-static");
     println!("cargo:rustc-link-lib=static=hwy");
 
-    compile_bridge(&manifest_dir, &dst);
+    compile_bridge(&manifest_dir, &libjxl_src, &dst);
 }
 
-fn compile_bridge(manifest_dir: &Path, libjxl_dst: &Path) {
+fn compile_bridge(manifest_dir: &Path, libjxl_src: &Path, libjxl_dst: &Path) {
     cc::Build::new()
         .cpp(true)
         .file(manifest_dir.join("ffi/bridge.cc"))
         .include(manifest_dir.join("ffi"))
         .include(libjxl_dst.join("build/lib/include/jpegli"))
+        .include(libjxl_src)
         .define("WIN32_LEAN_AND_MEAN", None)
         .flag_if_supported("-std=c++20")
         .flag_if_supported("/std:c++20")

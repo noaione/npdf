@@ -51,15 +51,24 @@ typedef struct {
     char error_message[JPEGLI_ERR_MSG_LEN];
 } simple_jpegli_enc_result;
 
+typedef struct {
+    int width;
+    int height;
+    int quality;
+    unsigned int x_dpi;
+    unsigned int y_dpi;
+    simple_jpegli_colorspace_t colorspace;
+    simple_jpegli_subsampling_t subsampling;
+    bool progressive;
+    bool adaptive_quantize;
+    bool xyb_mode;
+    bool std_quant;
+    bool optimize_coding;
+} simple_jpegli_enc_config;
+
 simple_jpegli_enc_result sjpegli_encode_pixels(
     const unsigned char* pixels,
-    int width,
-    int height,
-    int quality,
-    unsigned int x_dpi,
-    unsigned int y_dpi,
-    simple_jpegli_colorspace_t colorspace,
-    simple_jpegli_subsampling_t subsampling
+    const simple_jpegli_enc_config* config
 );
 
 // Frees the buffer allocated by libjpeg
