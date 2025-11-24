@@ -208,8 +208,17 @@ fn configure_and_build_poppler(
 
     println!("Building with profile: {build_profile}");
 
+    // Detect whether Rust itself is requesting a static CRT (Windows MSVC only)
+    // by checking for the crt-static target feature. We should mirror this
+    // instead of forcing static CRT unconditionally, otherwise we can mix
+    // LIBCMT (static) with MSVCRTD/MSVCRT (dynamic) and get LNK4098 + unresolved __imp__*.
+    let wants_static_crt = std::env::var("CARGO_CFG_TARGET_FEATURE")
+        .unwrap_or_default()
+        .split(',')
+        .any(|f| f == "crt-static");
+
     cfg.profile(build_profile)
-        .static_crt(true)
+        .static_crt(wants_static_crt)
         .define("CMAKE_POSITION_INDEPENDENT_CODE", "ON")
         .define("BUILD_SHARED_LIBS", "OFF")
         .define("ENABLE_UNSTABLE_API_ABI_HEADERS", "ON")
@@ -282,10 +291,19 @@ fn compile_bridge(
     let include_dir = dst.join("include");
     let include_dir_poppler = include_dir.join("poppler");
 
+    // Detect whether Rust itself is requesting a static CRT (Windows MSVC only)
+    // by checking for the crt-static target feature. We should mirror this
+    // instead of forcing static CRT unconditionally, otherwise we can mix
+    // LIBCMT (static) with MSVCRTD/MSVCRT (dynamic) and get LNK4098 + unresolved __imp__*.
+    let wants_static_crt = std::env::var("CARGO_CFG_TARGET_FEATURE")
+        .unwrap_or_default()
+        .split(',')
+        .any(|f| f == "crt-static");
+
     let mut build = cc::Build::new();
     build
         .cpp(true)
-        .static_crt(true)
+        .static_crt(wants_static_crt)
         .file(manifest_dir.join("ffi/splash_bridge.cc"))
         .file(manifest_dir.join("ffi/exporter_bridge.cc"))
         .file(manifest_dir.join("ffi/image_exporter.cc"))
