@@ -169,6 +169,7 @@ fn compile_bridge(
         .include(libjxl_dst.join("build/lib/include/jpegli"))
         .include(libjxl_src)
         .define("WIN32_LEAN_AND_MEAN", None)
+        .define("NOMINMAX", None)
         .flag_if_supported("-std=c++20")
         .flag_if_supported("/std:c++20")
         .flag_if_supported("-Wno-unused-parameter")
