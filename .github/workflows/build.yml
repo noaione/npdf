@@ -152,12 +152,12 @@ jobs:
           CI_RUNNER: "github"
 
       - name: Tests
-        run: cargo test --profile release --workspace --all --verbose
+        run: cargo test --workspace --all --verbose
         env:
           BOOST_ROOT: ${{ steps.install-boost.outputs.boost_root }}
           Boost_DIR: ${{ steps.install-boost.outputs.boost_root }}
           CI_RUNNER: "github"
-          RUST_BACKTRACE: "1"
+          RUST_BACKTRACE: "full"
 
       - name: Compress artifacts
         run:

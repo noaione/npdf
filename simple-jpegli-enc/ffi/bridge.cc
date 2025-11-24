@@ -267,6 +267,11 @@ simple_jpegli_enc_result sjpegli_encode_pixels(const unsigned char *pixels, cons
     simple_jpegli_colorspace_t colorspace = config->colorspace;
     simple_jpegli_subsampling_t subsampling = config->subsampling;
 
+    if (quality < 1 || quality > 100)
+    {
+        quality = 90; // reset to default quality
+    }
+
     // convert to libjpeg colorspace
     J_COLOR_SPACE colorspace_t = sjpegli_convert_colorspace(colorspace);
     if (colorspace_t == JCS_UNKNOWN)
@@ -293,11 +298,6 @@ simple_jpegli_enc_result sjpegli_encode_pixels(const unsigned char *pixels, cons
         result.error_code = SJPEGLI_BAD_DPI;
         std::strncpy(result.error_message, "DPI values must be between 0 and 65535", JPEGLI_ERR_MSG_LEN - 1);
         return result;
-    }
-
-    if (quality < 1 || quality > 100)
-    {
-        quality = 90; // reset to default quality
     }
 
     struct jpeg_compress_struct cinfo;
@@ -368,6 +368,7 @@ simple_jpegli_enc_result sjpegli_encode_pixels(const unsigned char *pixels, cons
             ? TRUE
             : FALSE;
 
+    cinfo.arith_code = FALSE; // disable arithmetic coding
     cinfo.write_JFIF_header = TRUE;
     cinfo.density_unit = 1; // dots per inch
     cinfo.X_density = static_cast<UINT16>(x_dpi);
