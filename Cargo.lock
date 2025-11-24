@@ -935,6 +935,7 @@ dependencies = [
  "cc",
  "cmake",
  "thiserror",
+ "walkdir",
 ]
 
 [[package]]

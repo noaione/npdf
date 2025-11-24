@@ -37,10 +37,11 @@ fn main() {
     emit_system_library_hints();
 
     // print the data to show the content of the dest path
-    for entry in std::fs::read_dir(format!("{}/build/lib", dst.display())).unwrap() {
-        let entry = entry.unwrap();
-        let path = entry.path();
-        println!("cargo:warning=Found file in build/lib: {}", path.display());
+    for entry in walkdir::WalkDir::new(format!("{}/build/lib", dst.display())) {
+        let entry = entry.expect("failed to read file in poppler source tree");
+        if entry.file_type().is_file() {
+            println!("cargo:warning=Found file: {}", entry.path().display());
+        }
     }
 
     println!("cargo:rustc-link-lib=static=jpegli-static");
