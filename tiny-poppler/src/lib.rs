@@ -14,6 +14,7 @@ pub use ffi::{
     PdfCropMode, PdfImageColorSpace,
 };
 use png::{BitDepth, ColorType, Encoder};
+use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 use simple_jpegli_enc::{ColorSpace as JpegColorType, JpegEncoder, JpegError};
 pub use sink::{
     EncodedExportedImage, ImageSinkError, ImageSinkOptions, PngCompression, TiffCompression,
@@ -683,7 +684,20 @@ fn encode_cmyk_like(
         return Err(RenderError::UnsupportedLayout);
     };
 
-    let jpeg = encode_jpeg(payload, width, height, JpegColorType::Cmyk, quality)?;
+    // invert CMYK to match JPEGli expectations
+    let inverted_payload = {
+        let mut buf = payload.to_vec();
+        buf.par_iter_mut().for_each(|p| *p = 255 - *p);
+        buf
+    };
+
+    let jpeg = encode_jpeg(
+        &inverted_payload,
+        width,
+        height,
+        JpegColorType::Cmyk,
+        quality,
+    )?;
     Ok(EncodedImage {
         format: ImageFormat::Jpeg,
         bytes: jpeg,
