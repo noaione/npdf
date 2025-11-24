@@ -32,4 +32,4 @@ ubsan = ["simple-jpegli-enc/ubsan"]
 [build-dependencies]
 cc = "1.0"
 cmake = "0.1"
-walkdir = "1"
+walkdir = "2.5.0"
