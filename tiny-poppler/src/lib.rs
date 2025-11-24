@@ -137,6 +137,8 @@ pub enum RenderError {
     UnsupportedColorMode(ColorMode),
     #[error("invalid u32 size: {0}")]
     InvalidU32Size(usize),
+    #[error("invalid DPI value: {0}")]
+    InvalidDpiValue(f64),
     #[error("invalid jpeg dimension ({side}): {value}")]
     InvalidJpegDimension { side: &'static str, value: usize },
     #[error("image encoded as {actual:?} but {expected:?} was requested")]
@@ -597,8 +599,10 @@ fn encode_image(image: &ffi::Image, quality: u8, dpi: f64) -> Result<EncodedImag
                 bytes,
             })
         }
-        ColorMode::Cmyk8 => encode_cmyk_like(image, width, height, row_bytes, false, quality),
-        ColorMode::DeviceN8 => encode_cmyk_like(image, width, height, row_bytes, true, quality),
+        ColorMode::Cmyk8 => encode_cmyk_like(image, width, height, row_bytes, false, quality, dpi),
+        ColorMode::DeviceN8 => {
+            encode_cmyk_like(image, width, height, row_bytes, true, quality, dpi)
+        }
     }
 }
 
@@ -659,6 +663,7 @@ fn encode_cmyk_like(
     row_bytes: usize,
     drop_spot_channels: bool,
     quality: u8,
+    dpi: f64,
 ) -> Result<EncodedImage, RenderError> {
     if image.bits_per_component != 8 {
         return Err(RenderError::UnsupportedLayout);
@@ -691,12 +696,19 @@ fn encode_cmyk_like(
         buf
     };
 
+    // convert dpi f64 to u16
+    let dpi_usize: usize = dpi.round().clamp(72.0, u16::MAX as f64) as usize;
+    let dpi_u16: u16 = dpi_usize
+        .try_into()
+        .map_err(|_| RenderError::InvalidDpiValue(dpi))?;
+
     let jpeg = encode_jpeg(
         &inverted_payload,
         width,
         height,
         JpegColorType::Cmyk,
         quality,
+        dpi_u16,
     )?;
     Ok(EncodedImage {
         format: ImageFormat::Jpeg,
@@ -720,6 +732,7 @@ fn encode_jpeg(
     height: usize,
     colorspace: JpegColorType,
     quality: u8,
+    dpi: u16,
 ) -> Result<Vec<u8>, RenderError> {
     let width_u16: u16 = width
         .try_into()
@@ -735,6 +748,6 @@ fn encode_jpeg(
         })?;
 
     let encoder = JpegEncoder::new().quality(quality);
-    let buffer = encoder.encode(pixels, width_u16, height_u16, colorspace)?;
+    let buffer = encoder.encode(pixels, width_u16, height_u16, colorspace, Some((dpi, dpi)))?;
     Ok(buffer)
 }
