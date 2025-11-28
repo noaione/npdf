@@ -88,6 +88,8 @@ fn main() {
     // Adjust path to point to third_party/libjxl from simple-jpegli-enc/
     let libjxl_src = manifest_dir.join("../third_party/libjxl");
 
+    emit_git_sha_version(&libjxl_src);
+
     let sanitizer = Sanitizer::detect(&target)
         .unwrap_or_else(|err| panic!("sanitizer configuration error: {err}"));
 
@@ -313,5 +315,28 @@ fn apply_sanitizer_to_cmake(cfg: &mut cmake::Config, sanitizer: Sanitizer) {
 fn apply_sanitizer_to_cc(build: &mut cc::Build, sanitizer: Sanitizer) {
     for flag in sanitizer.compile_flags() {
         build.flag(flag);
+    }
+}
+
+fn emit_git_sha_version(jxl_src: &Path) {
+    let git_dir = jxl_src.join(".git");
+    if !git_dir.exists() {
+        return;
+    }
+
+    let output = std::process::Command::new("git")
+        .arg("--git-dir")
+        .arg(git_dir)
+        .arg("rev-parse")
+        .arg("HEAD")
+        .output();
+
+    if let Ok(output) = output {
+        if output.status.success() {
+            if let Ok(sha) = String::from_utf8(output.stdout) {
+                let sha = sha.trim();
+                println!("cargo:rustc-env=SJPEGLI_COMMIT_SHA={}", sha);
+            }
+        }
     }
 }
