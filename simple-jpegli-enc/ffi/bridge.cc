@@ -243,8 +243,8 @@ namespace
     void debug_error(const char* msg)
     {
 #ifdef SJPEGLI_DEBUG
-        std::fprintf(stderr, "JPEGli debug: %s\n", msg);
-        std::fflush(stderr);
+        std::fprintf(stdout, "JPEGli debug: %s\n", msg);
+        std::fflush(stdout);
 #endif
     }
 } // namespace
