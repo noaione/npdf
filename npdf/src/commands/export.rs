@@ -205,9 +205,8 @@ pub fn run(args: ExportArgs, passwords: Option<&PdfPasswords>) -> Result<(), Str
                     .map(|pre| pre.dpi)
                     .unwrap_or(dpi);
             }
-            let file_number = page + 1;
             let extension = extension_for_mode(per_page.color_mode);
-            let file_name = format!("page-{file_number:04}.{extension}");
+            let file_name = format!("page-{page:04}.{extension}");
             let output_path = output.join(file_name);
             PagePlan {
                 page_number: page,
