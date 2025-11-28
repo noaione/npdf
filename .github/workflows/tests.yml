@@ -109,17 +109,11 @@ jobs:
         with:
           prefix-key: "rustbuild-${{ matrix.sanitizer }}"
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v6
-        with:
-          python-version: "3.12"
-
       - name: Install boost
         uses: MarkusJx/install-boost@v2
         id: install-boost
         with:
           boost_version: "1.89.0"
-
 
       - name: Install system dependencies (Linux)
         if: runner.os == 'Linux'
@@ -213,11 +207,6 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           prefix-key: "rusttests-wintests"
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v6
-        with:
-          python-version: "3.12"
 
       - name: Install boost
         uses: MarkusJx/install-boost@v2
