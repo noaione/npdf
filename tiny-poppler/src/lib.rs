@@ -11,7 +11,7 @@ mod sink;
 pub use ffi::{
     CcittParams, ColorMode, ExportedImage, ImageExportExtension, ImageExportFormat,
     ImageExportRequest, ImageExportSelector, ImageExportType, ImageInfo, ImageType, PageInfo,
-    PdfCropMode, PdfImageColorSpace,
+    PdfCropMode, PdfImageColorSpace, get_poppler_version,
 };
 use png::{BitDepth, ColorType, Encoder};
 use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};

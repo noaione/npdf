@@ -11,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+#include "poppler-config.h"
 #include "ErrorCodes.h"
 #include "GfxState.h"
 #include "OutputDev.h"
@@ -22,6 +23,8 @@
 #include "splash/SplashBitmap.h"
 #include "splash/SplashTypes.h"
 #include "splash_renderer_internal.h"
+
+#define VERSION_MAJOR POPP
 
 namespace {
 constexpr int kBitmapRowPad = 4;
@@ -813,6 +816,37 @@ void splash_renderer_free_page_info(splash_page_info_t *pages)
 
     auto *header = reinterpret_cast<size_t *>(pages) - 1;
     std::free(header);
+}
+
+void splash_get_version(splash_version_t *out_version) {
+    if (!out_version) {
+        return;
+    }
+
+    // split POPPLER_VERSION into major, minor, patch
+    // POPPLER_VERSION is in string format: mm.nn.pp (e.g., 21.03.0)
+    uint32_t major = 0;
+    uint32_t minor = 0;
+    uint32_t patch = 0;
+
+    std::string version_str = POPPLER_VERSION;
+    size_t first_dot = version_str.find('.');
+    if (first_dot != std::string::npos) {
+        major = static_cast<uint32_t>(std::stoi(version_str.substr(0, first_dot)));
+        size_t second_dot = version_str.find('.', first_dot + 1);
+        if (second_dot != std::string::npos) {
+            minor = static_cast<uint32_t>(std::stoi(version_str.substr(first_dot + 1, second_dot - first_dot - 1)));
+            patch = static_cast<uint32_t>(std::stoi(version_str.substr(second_dot + 1)));
+        } else {
+            minor = static_cast<uint32_t>(std::stoi(version_str.substr(first_dot + 1)));
+        }
+    } else {
+        major = static_cast<uint32_t>(std::stoi(version_str));
+    }
+
+    out_version->major = major;
+    out_version->minor = minor;
+    out_version->patch = patch;
 }
 
 //! Colorspace related functions
