@@ -198,7 +198,6 @@ fn compile_bridge(
 
     build
         .cpp(true)
-        .static_crt(wants_static_crt)
         .file(manifest_dir.join("ffi/bridge.cc"))
         .include(manifest_dir.join("ffi"))
         .include(libjxl_dst.join("build/lib/include/jpegli"))
@@ -209,6 +208,14 @@ fn compile_bridge(
         .flag_if_supported("/std:c++20")
         .flag_if_supported("-Wno-unused-parameter")
         .flag_if_supported("-Wno-unused-variable");
+
+    // Force static or dynamic CRT linkage based on Rust's own settings
+    // Ignore any debug mode build
+    if wants_static_crt {
+        build.flag_if_supported("/MT");
+    } else {
+        build.flag_if_supported("/MD");
+    }
 
     if let Some(s) = sanitizer {
         apply_sanitizer_to_cc(&mut build, s);
