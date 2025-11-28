@@ -135,12 +135,12 @@ fn main() {
 
     // Explicitly select MSVC runtime to match Rust's dynamic CRT default.
     if target.contains("windows-msvc") {
-        let runtime = if cmake_build_type == "Debug" {
-            "MultiThreadedDebugDLL"
-        } else {
-            "MultiThreadedDLL"
-        };
-        cfg.define("CMAKE_MSVC_RUNTIME_LIBRARY", runtime);
+        // let runtime = if cmake_build_type == "Debug" {
+        //     "MultiThreadedDebugDLL"
+        // } else {
+        //     "MultiThreadedDLL"
+        // };
+        cfg.define("CMAKE_MSVC_RUNTIME_LIBRARY", "MultiThreadedDLL");
     }
 
     if let Some(s) = sanitizer {
@@ -210,9 +210,7 @@ fn compile_bridge(
         .map(|t| t.contains("windows-msvc"))
         .unwrap_or(false)
     {
-        let profile = env::var("PROFILE").unwrap_or_else(|_| "debug".to_string());
-        let flag = if profile == "debug" { "/MDd" } else { "/MD" };
-        build.flag(flag);
+        build.flag("/MD");
     }
 
     if let Some(s) = sanitizer {
