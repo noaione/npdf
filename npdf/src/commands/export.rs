@@ -191,8 +191,7 @@ pub fn run(args: ExportArgs, passwords: Option<&PdfPasswords>) -> Result<(), Str
 
     let jobs: Vec<PagePlan> = pages
         .into_iter()
-        .enumerate()
-        .map(|(idx, page)| {
+        .map(|page| {
             let mut per_page = base_options.clone();
             if color == ColorChoice::Auto {
                 per_page.color_mode = precalculated_settings
@@ -206,7 +205,7 @@ pub fn run(args: ExportArgs, passwords: Option<&PdfPasswords>) -> Result<(), Str
                     .map(|pre| pre.dpi)
                     .unwrap_or(dpi);
             }
-            let file_number = idx + 1;
+            let file_number = page + 1;
             let extension = extension_for_mode(per_page.color_mode);
             let file_name = format!("page-{file_number:04}.{extension}");
             let output_path = output.join(file_name);
