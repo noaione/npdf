@@ -239,6 +239,14 @@ namespace
             return;
         }
     }
+
+    void debug_error(const char* msg)
+    {
+#ifdef SJPEGLI_DEBUG
+        std::fprintf(stderr, "JPEGli debug: %s\n", msg);
+        std::fflush(stderr);
+#endif
+    }
 } // namespace
 
 simple_jpegli_enc_result sjpegli_encode_pixels(const unsigned char *pixels, const simple_jpegli_enc_config *config)
@@ -251,8 +259,10 @@ simple_jpegli_enc_result sjpegli_encode_pixels(const unsigned char *pixels, cons
     result.error_code = 0;
     std::memset(result.error_message, 0, JPEGLI_ERR_MSG_LEN);
 
+    debug_error("Entered sjpegli_encode_pixels, checking inputs");
     if (pixels == nullptr || config == nullptr)
     {
+        debug_error("Invalid input: nullptr detected");
         result.success = SJPEGLI_ERROR;
         result.error_code = SJPEGLI_BAD_INPUT;
         std::strncpy(result.error_message, "Invalid input, got nullptr", JPEGLI_ERR_MSG_LEN - 1);
@@ -269,22 +279,27 @@ simple_jpegli_enc_result sjpegli_encode_pixels(const unsigned char *pixels, cons
 
     if (quality < 1 || quality > 100)
     {
+        debug_error("Clamping quality to default 90");
         quality = 90; // reset to default quality
     }
 
     // convert to libjpeg colorspace
+    debug_error("Converting colorspace");
     J_COLOR_SPACE colorspace_t = sjpegli_convert_colorspace(colorspace);
     if (colorspace_t == JCS_UNKNOWN)
     {
+        debug_error("Unsupported colorspace detected");
         result.success = SJPEGLI_ERROR;
         result.error_code = SJPEGLI_BAD_COLORSPACE;
         std::strncpy(result.error_message, "Unsupported colorspace", JPEGLI_ERR_MSG_LEN - 1);
         return result;
     }
 
+    debug_error("Getting input components");
     int input_comps = sjpegli_get_input_comps(colorspace_t, width);
     if (input_comps == 0)
     {
+        debug_error("Unsupported colorspace detected");
         result.success = SJPEGLI_ERROR;
         result.error_code = SJPEGLI_BAD_COLORSPACE;
         std::strncpy(result.error_message, "Unsupported colorspace", JPEGLI_ERR_MSG_LEN - 1);
@@ -292,14 +307,17 @@ simple_jpegli_enc_result sjpegli_encode_pixels(const unsigned char *pixels, cons
     }
 
     // check if x_dpi and y_dpi is within uint16
+    debug_error("Checking DPI values");
     if (x_dpi > UINT16_MAX || y_dpi > UINT16_MAX)
     {
+        debug_error("DPI values out of range");
         result.success = SJPEGLI_ERROR;
         result.error_code = SJPEGLI_BAD_DPI;
         std::strncpy(result.error_message, "DPI values must be between 0 and 65535", JPEGLI_ERR_MSG_LEN - 1);
         return result;
     }
 
+    debug_error("Setting up JPEG compression structures");
     struct jpeg_compress_struct cinfo;
     struct JpegliErrorManager jerr;
 
@@ -308,11 +326,14 @@ simple_jpegli_enc_result sjpegli_encode_pixels(const unsigned char *pixels, cons
     unsigned long outsize = 0;
 
     // set up the error handler
+    debug_error("Setting up error handler with setjmp");
     cinfo.err = jpegli_std_error(&jerr.pub);
     jerr.pub.error_exit = sjpegli_error_exit;
 
+    debug_error("Setting up jump point for error handling");
     if (setjmp(jerr.jump_buffer))
     {
+        debug_error("Error occurred during JPEG compression");
         result.success = SJPEGLI_ERROR;
         result.error_code = jerr.pub.msg_code;
 
@@ -330,9 +351,11 @@ simple_jpegli_enc_result sjpegli_encode_pixels(const unsigned char *pixels, cons
         return result;
     }
 
+    debug_error("Creating JPEG compression object");
     jpegli_create_compress(&cinfo);
 
     // allocate memory destination
+    debug_error("Setting up memory destination for JPEG output");
     jpegli_mem_dest(&cinfo, &outbuffer, &outsize);
 
     cinfo.image_width = width;
@@ -342,21 +365,26 @@ simple_jpegli_enc_result sjpegli_encode_pixels(const unsigned char *pixels, cons
 
     if (config->xyb_mode)
     {
+        debug_error("Enabling XYB mode");
         jpegli_set_xyb_mode(&cinfo);
     }
     if (config->std_quant)
     {
+        debug_error("Using standard quantization tables");
         jpegli_use_standard_quant_tables(&cinfo);
     }
 
+    debug_error("Setting compression parameters");
     jpegli_set_defaults(&cinfo);
     jpegli_set_quality(&cinfo, quality, TRUE);
     if (config->progressive)
     {
+        debug_error("Enabling progressive encoding");
         jpegli_set_progressive_level(&cinfo, kDefaultProgressiveLevel);
     }
     else
     {
+        debug_error("Disabling progressive encoding");
         jpegli_set_progressive_level(&cinfo, kDisableProgressive);
     }
     jpegli_enable_adaptive_quantization(&cinfo, config->adaptive_quantize);
@@ -375,26 +403,38 @@ simple_jpegli_enc_result sjpegli_encode_pixels(const unsigned char *pixels, cons
     cinfo.Y_density = static_cast<UINT16>(y_dpi);
     cinfo.optimize_coding = config->optimize_coding ? TRUE : FALSE;
 
+    debug_error("Starting JPEG compression");
     jpegli_start_compress(&cinfo, TRUE);
 
     int row_stride = width * input_comps;
 
+    debug_error("Writing scanlines");
+    int counter = 0;
     while (cinfo.next_scanline < cinfo.image_height)
     {
         // const_cast is necessary because libjpeg legacy API expects non-const JSAMPROW
         JSAMPROW row_pointer[1] = {
             const_cast<JSAMPROW>(&pixels[cinfo.next_scanline * row_stride])};
         jpegli_write_scanlines(&cinfo, row_pointer, 1);
+        // log progress every rows
+        char progress_msg[100];
+        std::snprintf(progress_msg, sizeof(progress_msg), "Processed scanline %d", counter);
+        debug_error(progress_msg);
+        counter++;
     }
 
+    debug_error("Finishing compression and cleaning up");
     jpegli_finish_compress(&cinfo);
+    debug_error("Destroying compression object");
     jpegli_destroy_compress(&cinfo);
 
+    debug_error("JPEG compression successful, preparing result");
     result.success = SJPEGLI_SUCCESS;
     result.data = outbuffer;
     result.size = static_cast<size_t>(outsize);
     result.error_code = 0;
 
+    debug_error("Exiting sjpegli_encode_pixels successfully");
     return result;
 }
 
@@ -404,6 +444,7 @@ void sjpegli_free_result(simple_jpegli_enc_result result)
     // if all operations were successful, if not we cleaned up at the jump point
     if (result.data)
     {
+        debug_error("Freeing JPEG output buffer");
         std::free(result.data);
     }
 }

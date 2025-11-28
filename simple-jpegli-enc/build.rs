@@ -205,6 +205,12 @@ fn compile_bridge(
         .flag_if_supported("-Wno-unused-parameter")
         .flag_if_supported("-Wno-unused-variable");
 
+    if let Ok(debug) = std::env::var("DEBUG")
+        && debug == "1"
+    {
+        build.define("SJPEGLI_DEBUG", None);
+    }
+
     // Force dynamic CRT flags for MSVC to match Rust's default.
     if env::var("TARGET")
         .map(|t| t.contains("windows-msvc"))
