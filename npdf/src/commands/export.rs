@@ -44,10 +44,10 @@ pub struct ExportArgs {
     #[arg(long, default_value_t = 96, value_parser = clap::value_parser!(u8).range(1..=100))]
     pub quality: u8,
     /// First page to export (1-based).
-    #[arg(long)]
+    #[arg(short, long)]
     pub first: Option<u32>,
     /// Last page to export (1-based).
-    #[arg(long)]
+    #[arg(short, long)]
     pub last: Option<u32>,
     /// Reverse the page order during export.
     #[arg(long, default_value_t = false)]

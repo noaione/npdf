@@ -20,10 +20,10 @@ pub struct ExtractArgs {
     /// Directory where extracted images will be written.
     pub output: PathBuf,
     /// First 1-based page to inspect (defaults to the first page).
-    #[arg(long, value_name = "PAGE")]
+    #[arg(short, long, value_name = "PAGE")]
     pub first: Option<u32>,
     /// Last 1-based page to inspect (defaults to the final page).
-    #[arg(long, value_name = "PAGE")]
+    #[arg(short, long, value_name = "PAGE")]
     pub last: Option<u32>,
     /// Describe discovered images without writing any files.
     #[arg(long)]
