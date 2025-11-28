@@ -678,6 +678,7 @@ dependencies = [
  "lopdf",
  "num_cpus",
  "sha2",
+ "simple-jpegli-enc",
  "tiny-poppler",
 ]
 

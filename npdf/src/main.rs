@@ -8,11 +8,12 @@ use clap::{
         styling::{AnsiColor, Effects},
     },
 };
+use color_print::cprintln;
 use commands::{
     ExportArgs, ExtractArgs, ListArgs, RecropArgs, UnwatermarkArgs, export, extract, list, recrop,
     unwatermark,
 };
-use tiny_poppler::{PdfPasswords, get_jpegli_version, get_poppler_version};
+use tiny_poppler::PdfPasswords;
 
 fn main() {
     let cli = Cli::parse();
@@ -97,16 +98,35 @@ fn build_passwords(
 }
 
 fn cmd_show_version_info() -> Result<(), String> {
-    let (jxl_version, jpeglib_version) = get_jpegli_version();
-    let poppler_version = get_poppler_version();
-    println!("npdf version: {}", env!("CARGO_PKG_VERSION"));
-    println!(
-        "poppler version: {}.{}.{}",
-        poppler_version.0, poppler_version.1, poppler_version.2
-    );
-    println!(
-        "jxl version: {}.{}.{} (jpegli backend, compat {})",
-        jxl_version.0, jxl_version.1, jxl_version.2, jpeglib_version,
-    );
+    let poppler_version = tiny_poppler::get_version();
+    cprintln!("<s>npdf</s> version: {}", env!("CARGO_PKG_VERSION"));
+    if let Some(sha_commit) = poppler_version.git_sha() {
+        cprintln!(
+            "<s>poppler</s> version: {}+g{}",
+            poppler_version.version_string(),
+            sha_commit.chars().take(7).collect::<String>()
+        );
+    } else {
+        cprintln!(
+            "<s>poppler</s> version: {}",
+            poppler_version.version_string()
+        );
+    }
+
+    let jxl_version = simple_jpegli_enc::get_version();
+    if let Some(sha_commit) = jxl_version.git_sha() {
+        cprintln!(
+            "<s>libjxl</s> version: {}+g{} (jpegli backend, compat {})",
+            jxl_version.version_string(),
+            sha_commit.chars().take(7).collect::<String>(),
+            jxl_version.lib_version()
+        );
+    } else {
+        cprintln!(
+            "<s>libjxl</s> version: {} (jpegli backend, compat {})",
+            jxl_version.version_string(),
+            jxl_version.lib_version()
+        );
+    }
     Ok(())
 }
