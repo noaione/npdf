@@ -105,15 +105,8 @@ fn main() {
         "Release"
     };
 
-    // Detect whether Rust itself is requesting a static CRT (Windows MSVC only)
-    let wants_static_crt = std::env::var("CARGO_CFG_TARGET_FEATURE")
-        .unwrap_or_default()
-        .split(',')
-        .any(|f| f == "crt-static");
-
     let mut cfg = cmake::Config::new(&libjxl_src);
     cfg.profile(cmake_build_type)
-        .static_crt(wants_static_crt)
         .define("JPEGXL_ENABLE_JPEGLI", "ON")
         .define("JPEGXL_ENABLE_JPEGLI_LIBJPEG", "ON")
         .define("JPEGXL_ENABLE_TOOLS", "OFF")
