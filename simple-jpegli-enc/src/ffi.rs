@@ -204,21 +204,7 @@ pub(crate) fn encode_jpegli_internal(
     }
 }
 
-/// Retrieves the version of the underlying jpegli library.
-///
-/// Returns a tuple containing:
-/// - A tuple of (major, minor, patch) version numbers.
-/// - An additional jpeg-compatible library version number.
-///
-/// # Example
-/// ```rust
-/// use simple_jpegli_enc::get_jpegli_version;
-///
-/// let (version, lib_ver) = simple_jpegli_enc::get_jpegli_version();
-/// assert_eq!(version, (0, 12, 0));
-/// assert_eq!(lib_ver, 80);
-/// ```
-pub fn get_jpegli_version() -> ((u32, u32, u32), u32) {
+pub(crate) fn get_jpegli_version() -> ((u32, u32, u32), u32) {
     unsafe {
         let mut version_info = SJpegliVersionInfo {
             major: 0,

@@ -26,6 +26,14 @@ impl<'a> VersionInfo<'a> {
     }
 }
 
+/// Retrieves the version of the underlying jpegli library.
+///
+/// # Example
+/// ```rust
+/// let jxl_ver = simple_jpegli_enc::get_version();
+/// assert_eq!(jxl_ver.version_string(), "0.12.0");
+/// assert_eq!(jxl_ver.lib_version(), 80);
+/// ```
 pub fn get_version() -> VersionInfo<'static> {
     let (version, lib_version) = get_jpegli_version();
     let sha = option_env!("SJPEGLI_COMMIT_SHA");
