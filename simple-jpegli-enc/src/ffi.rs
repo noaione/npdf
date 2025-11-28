@@ -1,5 +1,5 @@
 use std::ffi::CStr;
-use std::os::raw::{c_char, c_int, c_uchar, c_uint, c_ulong};
+use std::os::raw::{c_char, c_int, c_uchar, c_uint};
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -59,7 +59,7 @@ const ERR_MSG_LEN: usize = 256;
 #[repr(C)]
 struct SJpegliResult {
     data: *mut c_uchar,
-    size: c_ulong,
+    size: usize,
     success: c_int,
     error_code: c_int,
     state: c_int,
