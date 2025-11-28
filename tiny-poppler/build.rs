@@ -33,9 +33,10 @@ impl Sanitizer {
         let sanitizer = enabled.into_iter().next();
 
         if let Some(choice) = sanitizer {
-            if target.contains("windows-msvc") {
+            // MSVC supports AddressSanitizer since VS 2019 16.4
+            if target.contains("windows-msvc") && !matches!(choice, Sanitizer::Address) {
                 return Err(format!(
-                    "{} sanitizer is not supported on MSVC targets",
+                    "{} sanitizer is not supported on MSVC targets (only AddressSanitizer is supported)",
                     choice.display_name()
                 ));
             }
@@ -66,6 +67,14 @@ impl Sanitizer {
             Sanitizer::Leak => &["-fsanitize=leak", "-fno-omit-frame-pointer"],
             Sanitizer::Thread => &["-fsanitize=thread"],
             Sanitizer::Undefined => &["-fsanitize=undefined"],
+        }
+    }
+
+    fn msvc_compile_flags(self) -> &'static [&'static str] {
+        match self {
+            Sanitizer::Address => &["/fsanitize=address"],
+            // Other sanitizers are not supported on MSVC
+            _ => &[],
         }
     }
 
@@ -191,7 +200,6 @@ fn configure_and_build_poppler(
     target: &str,
     sanitizer: Option<Sanitizer>,
 ) -> PathBuf {
-    let is_windows = target.contains("windows");
     let mut cfg = cmake::Config::new(poppler_src);
 
     // Check build profile
@@ -240,8 +248,9 @@ fn configure_and_build_poppler(
         cfg.define("CMAKE_VERBOSE_MAKEFILE", "ON");
     }
 
-    if !is_windows && let Some(s) = sanitizer {
-        apply_sanitizer_to_cmake(&mut cfg, s);
+    let is_msvc = target.contains("windows-msvc");
+    if let Some(s) = sanitizer {
+        apply_sanitizer_to_cmake(&mut cfg, s, is_msvc);
     }
 
     if target.contains("windows") {
@@ -275,9 +284,8 @@ fn compile_bridge(
     dst: &Path,
     sanitizer: Option<Sanitizer>,
 ) {
-    let is_windows = env::var("TARGET")
-        .map(|t| t.contains("windows"))
-        .unwrap_or(false);
+    let target = env::var("TARGET").unwrap_or_default();
+    let is_msvc = target.contains("windows-msvc");
     let include_dir = dst.join("include");
     let include_dir_poppler = include_dir.join("poppler");
 
@@ -302,8 +310,8 @@ fn compile_bridge(
         .flag_if_supported("-Wno-unused-parameter")
         .flag_if_supported("-Wno-unused-variable");
 
-    if !is_windows && let Some(s) = sanitizer {
-        apply_sanitizer_to_cc(&mut build, s);
+    if let Some(s) = sanitizer {
+        apply_sanitizer_to_cc(&mut build, s, is_msvc);
     }
 
     build.compile("tiny_poppler_splash_bridge");
@@ -345,7 +353,7 @@ fn emit_linker_flags(target: &str, sanitizer: Option<Sanitizer>) {
     let is_windows = target.contains("windows");
     let is_apple = target.contains("apple");
 
-    if !is_windows && let Some(s) = sanitizer {
+    if let Some(s) = sanitizer {
         emit_sanitizer_link_args(target, s);
     }
 
@@ -437,37 +445,50 @@ fn emit_linker_flags(target: &str, sanitizer: Option<Sanitizer>) {
     }
 }
 
-fn apply_sanitizer_to_cmake(cfg: &mut cmake::Config, sanitizer: Sanitizer) {
-    let compile_flags = sanitizer.compile_flags();
-    for flag in compile_flags {
-        cfg.cflag(flag);
-        cfg.cxxflag(flag);
-    }
+fn apply_sanitizer_to_cmake(cfg: &mut cmake::Config, sanitizer: Sanitizer, is_msvc: bool) {
+    if is_msvc {
+        let compile_flags = sanitizer.msvc_compile_flags();
+        for flag in compile_flags {
+            cfg.cflag(flag);
+            cfg.cxxflag(flag);
+        }
+        // MSVC doesn't require special linker flags for ASan
+    } else {
+        let compile_flags = sanitizer.compile_flags();
+        for flag in compile_flags {
+            cfg.cflag(flag);
+            cfg.cxxflag(flag);
+        }
 
-    let link_flags = sanitizer.link_args();
-    if !link_flags.is_empty() {
-        let joined = link_flags.join(" ");
-        cfg.define("CMAKE_EXE_LINKER_FLAGS", &joined);
-        cfg.define("CMAKE_SHARED_LINKER_FLAGS", &joined);
-        cfg.define("CMAKE_MODULE_LINKER_FLAGS", &joined);
+        let link_flags = sanitizer.link_args();
+        if !link_flags.is_empty() {
+            let joined = link_flags.join(" ");
+            cfg.define("CMAKE_EXE_LINKER_FLAGS", &joined);
+            cfg.define("CMAKE_SHARED_LINKER_FLAGS", &joined);
+            cfg.define("CMAKE_MODULE_LINKER_FLAGS", &joined);
+        }
     }
 }
 
-fn apply_sanitizer_to_cc(build: &mut cc::Build, sanitizer: Sanitizer) {
-    for flag in sanitizer.compile_flags() {
-        build.flag(flag);
+fn apply_sanitizer_to_cc(build: &mut cc::Build, sanitizer: Sanitizer, is_msvc: bool) {
+    if is_msvc {
+        for flag in sanitizer.msvc_compile_flags() {
+            build.flag(flag);
+        }
+    } else {
+        for flag in sanitizer.compile_flags() {
+            build.flag(flag);
+        }
     }
 }
 
 fn emit_sanitizer_link_args(target: &str, sanitizer: Sanitizer) {
     let is_apple = target.contains("apple");
-    let is_windows = target.contains("windows");
+    let is_msvc = target.contains("windows-msvc");
 
-    if is_windows {
-        println!(
-            "cargo:warning={} sanitizer is not supported on Windows targets",
-            sanitizer.display_name()
-        );
+    if is_msvc {
+        // MSVC AddressSanitizer is handled by the compiler automatically
+        // No additional link args needed for MSVC ASan
         return;
     }
 

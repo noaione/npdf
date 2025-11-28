@@ -89,6 +89,16 @@ jobs:
             target_env: ""
             target_rustflags: ""
 
+          - runner: ubuntu-24.04
+            os_label: x86_64-pc-windows-msvc
+            sanitizer: asan
+            rust_toolchain: nightly
+            rustflags: "-Z sanitizer=address"
+            cargo_command: cargo test -p tiny-poppler --verbose --features asan
+            target: ""
+            target_env: ""
+            target_rustflags: ""
+
     env:
       CARGO_TERM_COLOR: always
     
@@ -119,7 +129,6 @@ jobs:
         id: install-boost
         with:
           boost_version: "1.89.0"
-
 
       - name: Install system dependencies (Linux)
         if: runner.os == 'Linux'
@@ -167,71 +176,15 @@ jobs:
             nss \
             nspr
 
-      - name: Configure target sanitizer flags
-        if: ${{ matrix.target != '' }}
-        shell: bash
-        run: |
-          echo "CARGO_TARGET_${{ matrix.target_env }}_RUSTFLAGS=${{ matrix.target_rustflags }}" >> "$GITHUB_ENV"
-          echo "CARGO_TARGET_${{ matrix.target_env }}_RUSTDOCFLAGS=${{ matrix.target_rustflags }}" >> "$GITHUB_ENV"
-          echo "RUSTFLAGS=${{ matrix.rustflags }}" >> "$GITHUB_ENV"
-          echo "RUSTDOCFLAGS=${{ matrix.rustflags }}" >> "$GITHUB_ENV"
-      
-      - name: Build and run tests
-        run: ${{ matrix.cargo_command }}
-        shell: bash
-        env:
-          BOOST_ROOT: ${{ steps.install-boost.outputs.boost_root }}
-          Boost_DIR: ${{ steps.install-boost.outputs.boost_root }}
-          CI_RUNNER: "github"
-          RUSTFLAGS: ${{ matrix.rustflags }}
-          RUSTDOCFLAGS: ${{ matrix.rustflags }}
-          # TSAN_OPTIONS: "suppressions=${{ github.workspace }}/.tsan.supp"
-          # LSAN_OPTIONS: "suppressions=${{ github.workspace }}/.lsan.supp"
-          # UBSAN_OPTIONS: "suppressions=${{ github.workspace }}/sanitize.supp"
-          # ASAN_OPTIONS: "suppressions=${{ github.workspace }}/sanitize.supp"
-
-  tests-win:
-    name: standard tests (windows-2025)
-    runs-on: windows-2025
-
-    env:
-      CARGO_TERM_COLOR: always
-    
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: stable
-          components: rust-src
-
-      - name: Setup rust cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          prefix-key: "rusttests-wintests"
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v6
-        with:
-          python-version: "3.12"
-
-      - name: Install boost
-        uses: MarkusJx/install-boost@v2
-        id: install-boost
-        with:
-          boost_version: "1.89.0"
-
       - name: Cache vcpkg dependencies
         uses: actions/cache@v4
+        if: runner.os == 'Windows'
         with:
           path: C:\vcpkg\installed
           key: vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
 
-      - name: Install system dependencies
+      - name: Install system dependencies (Windows)
+        if: runner.os == 'Windows'
         run: |
           choco install ninja cmake pkgconfiglite -y --no-progress
 
@@ -253,11 +206,25 @@ jobs:
           # dir C:\vcpkg\installed\x64-windows-static\bin
           dir C:\vcpkg\installed\x64-windows-static\lib
 
-      - name: Tests
-        run: cargo test -p simple-jpegli-enc -vv -- --nocapture
+      - name: Configure target sanitizer flags
+        if: ${{ matrix.target != '' }}
+        shell: bash
+        run: |
+          echo "CARGO_TARGET_${{ matrix.target_env }}_RUSTFLAGS=${{ matrix.target_rustflags }}" >> "$GITHUB_ENV"
+          echo "CARGO_TARGET_${{ matrix.target_env }}_RUSTDOCFLAGS=${{ matrix.target_rustflags }}" >> "$GITHUB_ENV"
+          echo "RUSTFLAGS=${{ matrix.rustflags }}" >> "$GITHUB_ENV"
+          echo "RUSTDOCFLAGS=${{ matrix.rustflags }}" >> "$GITHUB_ENV"
+
+      - name: Build and run tests
+        run: ${{ matrix.cargo_command }}
+        shell: bash
         env:
           BOOST_ROOT: ${{ steps.install-boost.outputs.boost_root }}
           Boost_DIR: ${{ steps.install-boost.outputs.boost_root }}
           CI_RUNNER: "github"
-          RUST_BACKTRACE: "full"
-          DEBUG: "1"
+          RUSTFLAGS: ${{ matrix.rustflags }}
+          RUSTDOCFLAGS: ${{ matrix.rustflags }}
+          # TSAN_OPTIONS: "suppressions=${{ github.workspace }}/.tsan.supp"
+          # LSAN_OPTIONS: "suppressions=${{ github.workspace }}/.lsan.supp"
+          # UBSAN_OPTIONS: "suppressions=${{ github.workspace }}/sanitize.supp"
+          # ASAN_OPTIONS: "suppressions=${{ github.workspace }}/sanitize.supp"

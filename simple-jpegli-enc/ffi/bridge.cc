@@ -379,14 +379,12 @@ simple_jpegli_enc_result sjpegli_encode_pixels(const unsigned char *pixels, cons
 
     int row_stride = width * input_comps;
 
-    int counter = 0;
     while (cinfo.next_scanline < cinfo.image_height)
     {
         // const_cast is necessary because libjpeg legacy API expects non-const JSAMPROW
         JSAMPROW row_pointer[1] = {
             const_cast<JSAMPROW>(&pixels[cinfo.next_scanline * row_stride])};
         jpegli_write_scanlines(&cinfo, row_pointer, 1);
-        counter++;
     }
 
     jpegli_finish_compress(&cinfo);
