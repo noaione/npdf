@@ -12,7 +12,7 @@ use commands::{
     ExportArgs, ExtractArgs, ListArgs, RecropArgs, UnwatermarkArgs, export, extract, list, recrop,
     unwatermark,
 };
-use tiny_poppler::PdfPasswords;
+use tiny_poppler::{PdfPasswords, get_jpegli_version, get_poppler_version};
 
 fn main() {
     let cli = Cli::parse();
@@ -37,6 +37,7 @@ fn execute(cli: Cli) -> Result<(), String> {
         Commands::Extract(args) => extract::run(args, passwords.as_ref()),
         Commands::Unwatermark(args) => unwatermark::run(args, passwords.as_ref()),
         Commands::Recrop(args) => recrop::run(args, passwords.as_ref()),
+        Commands::Version => cmd_show_version_info(),
     }
 }
 
@@ -72,6 +73,8 @@ enum Commands {
     Unwatermark(UnwatermarkArgs),
     /// Recrop pages in the PDF based on specified box.
     Recrop(RecropArgs),
+    /// Get version information.
+    Version,
 }
 
 fn cli_styles() -> Styles {
@@ -91,4 +94,19 @@ fn build_passwords(
     } else {
         Some(PdfPasswords::new(owner_password, user_password))
     }
+}
+
+fn cmd_show_version_info() -> Result<(), String> {
+    let (jxl_version, jpeglib_version) = get_jpegli_version();
+    let poppler_version = get_poppler_version();
+    println!("npdf version: {}", env!("CARGO_PKG_VERSION"));
+    println!(
+        "poppler version: {}.{}.{}",
+        poppler_version.0, poppler_version.1, poppler_version.2
+    );
+    println!(
+        "jxl version: {}.{}.{} (jpegli backend, compat {})",
+        jxl_version.0, jxl_version.1, jxl_version.2, jpeglib_version,
+    );
+    Ok(())
 }

@@ -15,6 +15,7 @@ pub use ffi::{
 };
 use png::{BitDepth, ColorType, Encoder};
 use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
+pub use simple_jpegli_enc::get_jpegli_version;
 use simple_jpegli_enc::{ColorSpace as JpegColorType, JpegEncoder, JpegError};
 pub use sink::{
     EncodedExportedImage, ImageSinkError, ImageSinkOptions, PngCompression, TiffCompression,
