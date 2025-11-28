@@ -173,7 +173,12 @@ pub(crate) fn encode_jpegli_internal(
     config: &SJpegliConfig,
 ) -> Result<Vec<u8>, SJpegliError> {
     unsafe {
+        println!("Calling sjpegli_encode_pixels with config: {:?}", config);
         let result = sjpegli_encode_pixels(pixels.as_ptr(), config);
+        println!(
+            "Received SJpegliResult: size={}, success={}, error_code={}",
+            result.size, result.success, result.error_code
+        );
 
         if !result.is_success() {
             // Convert C string to Rust string

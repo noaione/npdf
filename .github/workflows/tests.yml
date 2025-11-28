@@ -254,7 +254,7 @@ jobs:
           dir C:\vcpkg\installed\x64-windows-static\lib
 
       - name: Tests
-        run: cargo test -p simple-jpegli-enc -vv
+        run: cargo test -p simple-jpegli-enc -vv -- --nocapture
         env:
           BOOST_ROOT: ${{ steps.install-boost.outputs.boost_root }}
           Boost_DIR: ${{ steps.install-boost.outputs.boost_root }}
