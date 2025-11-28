@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "npdf",
     "tiny-poppler",
+    "simple-jpegli-enc",
 ]
 
 [workspace.package]

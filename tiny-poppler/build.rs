@@ -154,6 +154,8 @@ fn main() {
         );
     }
 
+    emit_git_sha_version(&poppler_src);
+
     println!(
         "cargo:rerun-if-changed={}",
         poppler_src.join("CMakeLists.txt").display()
@@ -206,8 +208,13 @@ fn configure_and_build_poppler(
         Err(_) => panic!("Unknown build profile"),
     };
 
-    println!("Building with profile: {build_profile}");
+    // Detect whether Rust itself is requesting a static CRT (Windows MSVC only)
+    let wants_static_crt = std::env::var("CARGO_CFG_TARGET_FEATURE")
+        .unwrap_or_default()
+        .split(',')
+        .any(|f| f == "crt-static");
 
+    println!("Building with profile: {build_profile}");
     cfg.profile(build_profile)
         .define("CMAKE_POSITION_INDEPENDENT_CODE", "ON")
         .define("BUILD_SHARED_LIBS", "OFF")
@@ -234,6 +241,17 @@ fn configure_and_build_poppler(
         .define("BUILD_CPP_TESTS", "OFF")
         .define("BUILD_MANUAL_TESTS", "OFF")
         .define("RUN_GPERF_IF_PRESENT", "OFF");
+
+    if cfg!(target_os = "windows") {
+        // On Windows builds, ensure we link against the release runtime to avoid
+        // issues with mixing debug/release CRTs.
+        let rt_lib = if wants_static_crt {
+            "MultiThreaded"
+        } else {
+            "MultiThreadedDLL"
+        };
+        cfg.define("CMAKE_MSVC_RUNTIME_LIBRARY", rt_lib);
+    }
 
     if let Ok(ci_build) = std::env::var("CI_RUNNER") {
         println!("Running on CI: {ci_build}");
@@ -281,9 +299,16 @@ fn compile_bridge(
     let include_dir = dst.join("include");
     let include_dir_poppler = include_dir.join("poppler");
 
+    // Detect whether Rust itself is requesting a static CRT (Windows MSVC only)
+    let wants_static_crt = std::env::var("CARGO_CFG_TARGET_FEATURE")
+        .unwrap_or_default()
+        .split(',')
+        .any(|f| f == "crt-static");
+
     let mut build = cc::Build::new();
     build
         .cpp(true)
+        .debug(false)
         .file(manifest_dir.join("ffi/splash_bridge.cc"))
         .file(manifest_dir.join("ffi/exporter_bridge.cc"))
         .file(manifest_dir.join("ffi/image_exporter.cc"))
@@ -300,6 +325,14 @@ fn compile_bridge(
         .flag_if_supported("/std:c++latest") // For MSVC (should be C++23 preview, requires VS 2022 17.14)
         .flag_if_supported("-Wno-unused-parameter")
         .flag_if_supported("-Wno-unused-variable");
+
+    // Force static or dynamic CRT linkage based on Rust's own settings
+    // Ignore any debug mode build
+    if wants_static_crt {
+        build.flag_if_supported("/MT");
+    } else {
+        build.flag_if_supported("/MD");
+    }
 
     if !is_windows && let Some(s) = sanitizer {
         apply_sanitizer_to_cc(&mut build, s);
@@ -543,6 +576,29 @@ fn emit_homebrew_search_hint(formula: &str) {
         if candidate.exists() {
             println!("cargo:rustc-link-search=native={}", candidate.display());
             break;
+        }
+    }
+}
+
+fn emit_git_sha_version(poppler_src: &Path) {
+    let git_dir = poppler_src.join(".git");
+    if !git_dir.exists() {
+        return;
+    }
+
+    let output = std::process::Command::new("git")
+        .arg("--git-dir")
+        .arg(git_dir)
+        .arg("rev-parse")
+        .arg("HEAD")
+        .output();
+
+    if let Ok(output) = output {
+        if output.status.success() {
+            if let Ok(sha) = String::from_utf8(output.stdout) {
+                let sha = sha.trim();
+                println!("cargo:rustc-env=POPPLER_COMMIT_SHA={}", sha);
+            }
         }
     }
 }

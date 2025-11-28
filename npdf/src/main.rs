@@ -8,6 +8,7 @@ use clap::{
         styling::{AnsiColor, Effects},
     },
 };
+use color_print::cprintln;
 use commands::{
     ExportArgs, ExtractArgs, ListArgs, RecropArgs, UnwatermarkArgs, export, extract, list, recrop,
     unwatermark,
@@ -37,6 +38,7 @@ fn execute(cli: Cli) -> Result<(), String> {
         Commands::Extract(args) => extract::run(args, passwords.as_ref()),
         Commands::Unwatermark(args) => unwatermark::run(args, passwords.as_ref()),
         Commands::Recrop(args) => recrop::run(args, passwords.as_ref()),
+        Commands::Version => cmd_show_version_info(),
     }
 }
 
@@ -72,6 +74,8 @@ enum Commands {
     Unwatermark(UnwatermarkArgs),
     /// Recrop pages in the PDF based on specified box.
     Recrop(RecropArgs),
+    /// Get version information.
+    Version,
 }
 
 fn cli_styles() -> Styles {
@@ -91,4 +95,38 @@ fn build_passwords(
     } else {
         Some(PdfPasswords::new(owner_password, user_password))
     }
+}
+
+fn cmd_show_version_info() -> Result<(), String> {
+    let poppler_version = tiny_poppler::get_version();
+    cprintln!("<s>npdf</s> version: {}", env!("CARGO_PKG_VERSION"));
+    if let Some(sha_commit) = poppler_version.git_sha() {
+        cprintln!(
+            "<s>poppler</s> version: {}+g{}",
+            poppler_version.version_string(),
+            sha_commit.chars().take(7).collect::<String>()
+        );
+    } else {
+        cprintln!(
+            "<s>poppler</s> version: {}",
+            poppler_version.version_string()
+        );
+    }
+
+    let jxl_version = simple_jpegli_enc::get_version();
+    if let Some(sha_commit) = jxl_version.git_sha() {
+        cprintln!(
+            "<s>libjxl</s> version: {}+g{} (jpegli backend, compat {})",
+            jxl_version.version_string(),
+            sha_commit.chars().take(7).collect::<String>(),
+            jxl_version.lib_version()
+        );
+    } else {
+        cprintln!(
+            "<s>libjxl</s> version: {} (jpegli backend, compat {})",
+            jxl_version.version_string(),
+            jxl_version.lib_version()
+        );
+    }
+    Ok(())
 }

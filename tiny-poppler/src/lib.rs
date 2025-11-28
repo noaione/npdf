@@ -5,15 +5,18 @@
 //! Poppler (with Splash) as part of the Cargo build.
 
 mod ffi;
+mod helpers;
 mod sink;
 
+use ffi::get_poppler_version;
 pub use ffi::{
     CcittParams, ColorMode, ExportedImage, ImageExportExtension, ImageExportFormat,
     ImageExportRequest, ImageExportSelector, ImageExportType, ImageInfo, ImageType, PageInfo,
     PdfCropMode, PdfImageColorSpace,
 };
-use jpeg_encoder::{ColorType as JpegColorType, Encoder as JpegEncoder};
-use png::{BitDepth, ColorType, Compression, Encoder};
+use png::{BitDepth, ColorType, Encoder};
+use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
+use simple_jpegli_enc::{ColorSpace as JpegColorType, JpegEncoder, JpegError};
 pub use sink::{
     EncodedExportedImage, ImageSinkError, ImageSinkOptions, PngCompression, TiffCompression,
     TiffDeflateLevel, sink_exported_image,
@@ -123,8 +126,8 @@ pub enum RenderError {
     Poppler(String),
     #[error("png encode: {0}")]
     Png(String),
-    #[error("jpeg encode: {0}")]
-    Jpeg(String),
+    #[error("jpeg encode: {0:?}")]
+    Jpeg(#[from] JpegError),
     #[error("image conversion: {0}")]
     Image(String),
     #[error("i/o: {0}")]
@@ -135,6 +138,8 @@ pub enum RenderError {
     UnsupportedColorMode(ColorMode),
     #[error("invalid u32 size: {0}")]
     InvalidU32Size(usize),
+    #[error("invalid DPI value: {0}")]
+    InvalidDpiValue(f64),
     #[error("invalid jpeg dimension ({side}): {value}")]
     InvalidJpegDimension { side: &'static str, value: usize },
     #[error("image encoded as {actual:?} but {expected:?} was requested")]
@@ -210,7 +215,11 @@ impl Document {
         options: &RenderOptions,
     ) -> Result<EncodedImage, RenderError> {
         let image = self.render_page_image(page_index, options)?;
-        encode_image(&image, options.jpeg_quality.unwrap_or(DEFAULT_JPEG_QUALITY))
+        encode_image(
+            &image,
+            options.jpeg_quality.unwrap_or(DEFAULT_JPEG_QUALITY),
+            options.dpi,
+        )
     }
 
     /// Render a page to PNG bytes using the configured color mode.
@@ -461,7 +470,7 @@ pub fn get_images_single(pdf_path: &Path) -> Result<Vec<ImageInfo>, RenderError>
     document.images()
 }
 
-fn encode_image(image: &ffi::Image, quality: u8) -> Result<EncodedImage, RenderError> {
+fn encode_image(image: &ffi::Image, quality: u8, dpi: f64) -> Result<EncodedImage, RenderError> {
     if image.width == 0 || image.height == 0 {
         return Err(RenderError::UnsupportedLayout);
     }
@@ -507,6 +516,7 @@ fn encode_image(image: &ffi::Image, quality: u8) -> Result<EncodedImage, RenderE
                 &pixels,
                 width,
                 height,
+                dpi,
                 ColorType::Indexed,
                 BitDepth::One,
                 Some(&PALETTE),
@@ -522,6 +532,7 @@ fn encode_image(image: &ffi::Image, quality: u8) -> Result<EncodedImage, RenderE
                 &pixels,
                 width,
                 height,
+                dpi,
                 ColorType::Grayscale,
                 BitDepth::Eight,
                 None,
@@ -537,6 +548,7 @@ fn encode_image(image: &ffi::Image, quality: u8) -> Result<EncodedImage, RenderE
                 &pixels,
                 width,
                 height,
+                dpi,
                 ColorType::Rgb,
                 BitDepth::Eight,
                 None,
@@ -555,6 +567,7 @@ fn encode_image(image: &ffi::Image, quality: u8) -> Result<EncodedImage, RenderE
                 &pixels,
                 width,
                 height,
+                dpi,
                 ColorType::Rgb,
                 BitDepth::Eight,
                 None,
@@ -573,14 +586,24 @@ fn encode_image(image: &ffi::Image, quality: u8) -> Result<EncodedImage, RenderE
                 rgba.push(chunk[1]);
                 rgba.push(255);
             }
-            let bytes = encode_png(&rgba, width, height, ColorType::Rgba, BitDepth::Eight, None)?;
+            let bytes = encode_png(
+                &rgba,
+                width,
+                height,
+                dpi,
+                ColorType::Rgba,
+                BitDepth::Eight,
+                None,
+            )?;
             Ok(EncodedImage {
                 format: ImageFormat::Png,
                 bytes,
             })
         }
-        ColorMode::Cmyk8 => encode_cmyk_like(image, width, height, row_bytes, false, quality),
-        ColorMode::DeviceN8 => encode_cmyk_like(image, width, height, row_bytes, true, quality),
+        ColorMode::Cmyk8 => encode_cmyk_like(image, width, height, row_bytes, false, quality, dpi),
+        ColorMode::DeviceN8 => {
+            encode_cmyk_like(image, width, height, row_bytes, true, quality, dpi)
+        }
     }
 }
 
@@ -603,6 +626,7 @@ fn encode_png(
     pixels: &[u8],
     width: usize,
     height: usize,
+    dpi: f64,
     colorspace: ColorType,
     depth: BitDepth,
     palette: Option<&[u8]>,
@@ -617,11 +641,14 @@ fn encode_png(
     let mut buffer = Vec::new();
     {
         let mut encoder = Encoder::new(&mut buffer, width_u32, height_u32);
-        encoder.set_compression(Compression::Balanced);
+        encoder.set_compression(PngCompression::Balanced);
         encoder.set_color(colorspace);
         encoder.set_depth(depth);
         if let Some(palette_bytes) = palette {
             encoder.set_palette(palette_bytes.to_vec());
+        }
+        if let Some(pixel_dims) = helpers::build_pixel_dims_png(dpi, dpi) {
+            encoder.set_pixel_dims(Some(pixel_dims));
         }
         let mut writer = encoder.write_header().unwrap();
         writer.write_image_data(pixels).unwrap();
@@ -637,6 +664,7 @@ fn encode_cmyk_like(
     row_bytes: usize,
     drop_spot_channels: bool,
     quality: u8,
+    dpi: f64,
 ) -> Result<EncodedImage, RenderError> {
     if image.bits_per_component != 8 {
         return Err(RenderError::UnsupportedLayout);
@@ -662,7 +690,27 @@ fn encode_cmyk_like(
         return Err(RenderError::UnsupportedLayout);
     };
 
-    let jpeg = encode_jpeg(payload, width, height, JpegColorType::Cmyk, quality)?;
+    // invert CMYK to match JPEGli expectations
+    let inverted_payload = {
+        let mut buf = payload.to_vec();
+        buf.par_iter_mut().for_each(|p| *p = 255 - *p);
+        buf
+    };
+
+    // convert dpi f64 to u16
+    let dpi_usize: usize = dpi.round().clamp(72.0, u16::MAX as f64) as usize;
+    let dpi_u16: u16 = dpi_usize
+        .try_into()
+        .map_err(|_| RenderError::InvalidDpiValue(dpi))?;
+
+    let jpeg = encode_jpeg(
+        &inverted_payload,
+        width,
+        height,
+        JpegColorType::Cmyk,
+        quality,
+        dpi_u16,
+    )?;
     Ok(EncodedImage {
         format: ImageFormat::Jpeg,
         bytes: jpeg,
@@ -685,6 +733,7 @@ fn encode_jpeg(
     height: usize,
     colorspace: JpegColorType,
     quality: u8,
+    dpi: u16,
 ) -> Result<Vec<u8>, RenderError> {
     let width_u16: u16 = width
         .try_into()
@@ -699,10 +748,37 @@ fn encode_jpeg(
             value: height,
         })?;
 
-    let mut buffer = Vec::new();
-    let encoder = JpegEncoder::new(&mut buffer, quality);
-    encoder
-        .encode(pixels, width_u16, height_u16, colorspace)
-        .map_err(|err| RenderError::Jpeg(err.to_string()))?;
+    let encoder = JpegEncoder::new().quality(quality);
+    let buffer = encoder.encode(pixels, width_u16, height_u16, colorspace, Some((dpi, dpi)))?;
     Ok(buffer)
+}
+
+#[derive(Debug, Clone)]
+pub struct VersionInfo<'a> {
+    version: (u32, u32, u32),
+    sha: Option<&'a str>,
+}
+
+impl<'a> VersionInfo<'a> {
+    pub fn version_string(&self) -> String {
+        format!("{}.{}.{}", self.version.0, self.version.1, self.version.2)
+    }
+
+    pub fn git_sha(&self) -> Option<&'a str> {
+        self.sha
+    }
+}
+
+/// Get the Poppler library version as (major, minor, patch).
+///
+/// # Example
+/// ```rust
+/// let version = tiny_poppler::get_version();
+///
+/// assert_eq!(version.version_string(), "25.11.90"); // Example version
+/// ```
+pub fn get_version() -> VersionInfo<'static> {
+    let version = get_poppler_version();
+    let sha = option_env!("POPPLER_COMMIT_SHA");
+    VersionInfo { version, sha }
 }

@@ -86,6 +86,12 @@ typedef struct splash_page_info {
     uint64_t object_count;
 } splash_page_info_t;
 
+typedef struct splash_version {
+    uint32_t major;
+    uint32_t minor;
+    uint32_t patch;
+} splash_version_t;
+
 int splash_renderer_create(const char *path,
                            const char *owner_password,
                            const char *user_password,
@@ -116,6 +122,8 @@ void splash_renderer_free_image(splash_image_t *image);
 void splash_renderer_free_cstr(char *message);
 void splash_renderer_free_image_info(splash_image_info_t *images);
 void splash_renderer_free_page_info(splash_page_info_t *pages);
+
+void splash_get_version(splash_version_t *out_version);
 
 //! Colorspace related functions
 splash_image_colorspace_t gfxcs_get_color_mode(const void *cs_ptr);

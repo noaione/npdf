@@ -18,17 +18,18 @@ exclude = [
 [dependencies]
 thiserror = "2.0.17"
 png = { version = "0.18.0" }
-jpeg-encoder = { version = "0.6.1", features = ["simd"] }
+simple-jpegli-enc = { path = "../simple-jpegli-enc" }
 tiff = { version = "0.10", default-features = false, features = ["deflate", "lzw"] }
+rayon = "1.11.0"
 
 [features]
 default = []
-asan = []
-lsan = []
-tsan = []
-ubsan = []
+asan = ["simple-jpegli-enc/asan"]
+lsan = ["simple-jpegli-enc/lsan"]
+tsan = ["simple-jpegli-enc/tsan"]
+ubsan = ["simple-jpegli-enc/ubsan"]
 
 [build-dependencies]
 cc = "1.0"
 cmake = "0.1"
-walkdir = "1"
+walkdir = "2.5.0"

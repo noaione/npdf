@@ -28,3 +28,35 @@ fn test_render_cid_one() {
     let expected_header = [137, 80, 78, 71, 13, 10, 26, 10];
     assert_eq!(png_header, expected_header);
 }
+
+#[test]
+fn test_render_cmyk() {
+    let pdf_path = Path::new("tests/pdf/image_cmyk_jpg.pdf");
+
+    let mut document = tiny_poppler::Document::open(pdf_path).expect("Failed to open PDF");
+    let page_count = document.page_count().expect("Failed to get page count");
+    assert_eq!(page_count, 1);
+
+    // export first page
+    let exported = document
+        .render_page_image_bytes(
+            0,
+            &RenderOptions {
+                dpi: 150.0,
+                color_mode: tiny_poppler::ColorMode::Cmyk8,
+                ..Default::default()
+            },
+        )
+        .expect("Failed to encode in CMYK");
+
+    assert!(!exported.bytes.is_empty());
+
+    // check JPEG header
+    let jpg_header = &exported.bytes[0..2];
+    let expected_header = [0xFF, 0xD8];
+    assert_eq!(jpg_header, expected_header);
+
+    // check if CMYK markers are present
+    let cmyk_marker = [0xFF, 0xC4];
+    assert!(exported.bytes.windows(2).any(|w| w == cmyk_marker));
+}

@@ -222,6 +222,14 @@ struct ImageExportImage {
     ccitt: ImageCcittParams,
 }
 
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+struct VersionInfo {
+    major: u32,
+    minor: u32,
+    patch: u32,
+}
+
 unsafe extern "C" {
     fn splash_renderer_create(
         path: *const c_char,
@@ -259,6 +267,7 @@ unsafe extern "C" {
     ) -> i32;
     fn splash_renderer_free_image_info(images: *mut SplashImageInfo);
     fn splash_renderer_free_page_info(pages: *mut SplashPageInfo);
+    fn splash_get_version(out_version: *mut VersionInfo);
 
     /// Colorspace related
     fn gfxcs_get_color_mode(ptr: *const c_void) -> ImageColorSpace;
@@ -897,5 +906,14 @@ fn convert_colorspace(cs: *const c_void) -> PdfImageColorSpace {
         }
 
         _ => PdfImageColorSpace::Unknown,
+    }
+}
+
+pub(crate) fn get_poppler_version() -> (u32, u32, u32) {
+    let mut version = MaybeUninit::<VersionInfo>::uninit();
+    unsafe {
+        splash_get_version(version.as_mut_ptr());
+        let version = version.assume_init();
+        (version.major, version.minor, version.patch)
     }
 }

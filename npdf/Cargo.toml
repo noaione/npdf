@@ -18,6 +18,7 @@ num_cpus = "1.17.0"
 color-print = "0.3.7"
 
 tiny-poppler = { path = "../tiny-poppler" }
+simple-jpegli-enc = { path = "../simple-jpegli-enc" }
 lopdf = { version = "0.38.0", default-features = false, features = ["rayon"] }
 sha2 = "0.10.9"  # for hashing purposes
 
