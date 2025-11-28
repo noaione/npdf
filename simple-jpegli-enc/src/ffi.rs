@@ -62,6 +62,7 @@ struct SJpegliResult {
     size: c_ulong,
     success: c_int,
     error_code: c_int,
+    state: c_int,
     error_message: [c_char; ERR_MSG_LEN],
 }
 
@@ -176,8 +177,8 @@ pub(crate) fn encode_jpegli_internal(
         println!("Calling sjpegli_encode_pixels with config: {:?}", config);
         let result = sjpegli_encode_pixels(pixels.as_ptr(), config);
         println!(
-            "Received SJpegliResult: size={}, success={}, error_code={}",
-            result.size, result.success, result.error_code
+            "Received SJpegliResult: size={}, success={}, error_code={}, state={}",
+            result.size, result.success, result.error_code, result.state
         );
 
         if !result.is_success() {

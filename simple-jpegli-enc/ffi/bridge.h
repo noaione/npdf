@@ -48,6 +48,7 @@ typedef struct {
     size_t size;              // Size of the JPEG bytes
     int success;              // 1 = true, 0 = false
     int error_code;           // libjpeg error code
+    int state;                // Last state code for additional info
     char error_message[JPEGLI_ERR_MSG_LEN];
 } simple_jpegli_enc_result;
 

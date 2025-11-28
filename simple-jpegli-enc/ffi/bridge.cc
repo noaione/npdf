@@ -257,6 +257,7 @@ simple_jpegli_enc_result sjpegli_encode_pixels(const unsigned char *pixels, cons
     result.size = 0;
     result.success = 0;
     result.error_code = 0;
+    result.state = 0;
     std::memset(result.error_message, 0, JPEGLI_ERR_MSG_LEN);
 
     debug_error("Entered sjpegli_encode_pixels, checking inputs");
@@ -285,6 +286,7 @@ simple_jpegli_enc_result sjpegli_encode_pixels(const unsigned char *pixels, cons
 
     // convert to libjpeg colorspace
     debug_error("Converting colorspace");
+    result.state = 1;
     J_COLOR_SPACE colorspace_t = sjpegli_convert_colorspace(colorspace);
     if (colorspace_t == JCS_UNKNOWN)
     {
@@ -296,6 +298,7 @@ simple_jpegli_enc_result sjpegli_encode_pixels(const unsigned char *pixels, cons
     }
 
     debug_error("Getting input components");
+    result.state = 2;
     int input_comps = sjpegli_get_input_comps(colorspace_t, width);
     if (input_comps == 0)
     {
@@ -308,6 +311,7 @@ simple_jpegli_enc_result sjpegli_encode_pixels(const unsigned char *pixels, cons
 
     // check if x_dpi and y_dpi is within uint16
     debug_error("Checking DPI values");
+    result.state = 3;
     if (x_dpi > UINT16_MAX || y_dpi > UINT16_MAX)
     {
         debug_error("DPI values out of range");
@@ -318,6 +322,7 @@ simple_jpegli_enc_result sjpegli_encode_pixels(const unsigned char *pixels, cons
     }
 
     debug_error("Setting up JPEG compression structures");
+    result.state = 4;
     struct jpeg_compress_struct cinfo;
     struct JpegliErrorManager jerr;
 
@@ -327,10 +332,12 @@ simple_jpegli_enc_result sjpegli_encode_pixels(const unsigned char *pixels, cons
 
     // set up the error handler
     debug_error("Setting up error handler with setjmp");
+    result.state = 5;
     cinfo.err = jpegli_std_error(&jerr.pub);
     jerr.pub.error_exit = sjpegli_error_exit;
 
     debug_error("Setting up jump point for error handling");
+    result.state = 6;
     if (setjmp(jerr.jump_buffer))
     {
         debug_error("Error occurred during JPEG compression");
@@ -352,10 +359,12 @@ simple_jpegli_enc_result sjpegli_encode_pixels(const unsigned char *pixels, cons
     }
 
     debug_error("Creating JPEG compression object");
+    result.state = 7;
     jpegli_create_compress(&cinfo);
 
     // allocate memory destination
     debug_error("Setting up memory destination for JPEG output");
+    result.state = 8;
     jpegli_mem_dest(&cinfo, &outbuffer, &outsize);
 
     cinfo.image_width = width;
@@ -363,20 +372,25 @@ simple_jpegli_enc_result sjpegli_encode_pixels(const unsigned char *pixels, cons
     cinfo.input_components = input_comps;
     cinfo.in_color_space = colorspace_t;
 
+    result.state = 8;
     if (config->xyb_mode)
     {
         debug_error("Enabling XYB mode");
         jpegli_set_xyb_mode(&cinfo);
     }
+    result.state = 9;
     if (config->std_quant)
     {
         debug_error("Using standard quantization tables");
         jpegli_use_standard_quant_tables(&cinfo);
     }
 
+    result.state = 10;
     debug_error("Setting compression parameters");
     jpegli_set_defaults(&cinfo);
+    result.state = 11;
     jpegli_set_quality(&cinfo, quality, TRUE);
+    result.state = 12;
     if (config->progressive)
     {
         debug_error("Enabling progressive encoding");
@@ -387,8 +401,11 @@ simple_jpegli_enc_result sjpegli_encode_pixels(const unsigned char *pixels, cons
         debug_error("Disabling progressive encoding");
         jpegli_set_progressive_level(&cinfo, kDisableProgressive);
     }
+    result.state = 13;
     jpegli_enable_adaptive_quantization(&cinfo, config->adaptive_quantize);
+    result.state = 14;
     sjpegli_set_subsampling_factors(&cinfo, colorspace_t, subsampling, quality);
+    result.state = 15;
     cinfo.write_Adobe_marker =
         (colorspace_t == JCS_CMYK ||
          colorspace_t == JCS_YCCK ||
@@ -404,11 +421,13 @@ simple_jpegli_enc_result sjpegli_encode_pixels(const unsigned char *pixels, cons
     cinfo.optimize_coding = config->optimize_coding ? TRUE : FALSE;
 
     debug_error("Starting JPEG compression");
+    result.state = 16;
     jpegli_start_compress(&cinfo, TRUE);
 
     int row_stride = width * input_comps;
 
     debug_error("Writing scanlines");
+    result.state = 17;
     int counter = 0;
     while (cinfo.next_scanline < cinfo.image_height)
     {
@@ -424,11 +443,14 @@ simple_jpegli_enc_result sjpegli_encode_pixels(const unsigned char *pixels, cons
     }
 
     debug_error("Finishing compression and cleaning up");
+    result.state = 18;
     jpegli_finish_compress(&cinfo);
     debug_error("Destroying compression object");
+    result.state = 19;
     jpegli_destroy_compress(&cinfo);
 
     debug_error("JPEG compression successful, preparing result");
+    result.state = 20;
     result.success = SJPEGLI_SUCCESS;
     result.data = outbuffer;
     result.size = static_cast<size_t>(outsize);
