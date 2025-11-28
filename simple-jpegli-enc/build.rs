@@ -205,6 +205,7 @@ fn compile_bridge(
         .file(manifest_dir.join("ffi/bridge.cc"))
         .include(manifest_dir.join("ffi"))
         .include(libjxl_dst.join("build/lib/include/jpegli"))
+        .include(libjxl_dst.join("build/lib/include/jxl"))
         .include(libjxl_src)
         .define("WIN32_LEAN_AND_MEAN", None)
         .define("NOMINMAX", None)

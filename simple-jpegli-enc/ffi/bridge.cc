@@ -7,6 +7,7 @@
 #include <csetjmp>
 
 #include <jpeglib.h>
+#include <version.h>
 #include <lib/jpegli/encode.h>
 
 #define SJPEGLI_BAD_COLORSPACE 10 // Based on libjpeg error codes
@@ -406,4 +407,17 @@ void sjpegli_free_result(simple_jpegli_enc_result result)
     {
         std::free(result.data);
     }
+}
+
+void sjpegli_get_version(simple_jpegli_version_t *out_version)
+{
+    if (out_version == nullptr)
+    {
+        return;
+    }
+
+    out_version->major = JPEGXL_MAJOR_VERSION;
+    out_version->minor = JPEGXL_MINOR_VERSION;
+    out_version->patch = JPEGXL_PATCH_VERSION;
+    out_version->lib_ver = JPEG_LIB_VERSION;
 }

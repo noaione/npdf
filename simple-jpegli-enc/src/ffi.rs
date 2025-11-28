@@ -147,11 +147,20 @@ impl SJpegliResult {
     }
 }
 
+#[repr(C)]
+struct SJpegliVersionInfo {
+    major: u32,
+    minor: u32,
+    patch: u32,
+    lib_ver: u32,
+}
+
 unsafe extern "C" {
     fn sjpegli_encode_pixels(pixels: *const c_uchar, config: *const SJpegliConfig)
     -> SJpegliResult;
-
     fn sjpegli_free_result(result: SJpegliResult);
+
+    fn sjpegli_get_version(out_version: *mut SJpegliVersionInfo);
 }
 
 // 2. High-Level Rust Error
@@ -192,5 +201,35 @@ pub(crate) fn encode_jpegli_internal(
         let owned_vec = output_slice.to_vec();
         sjpegli_free_result(result); // No memory leak
         Ok(owned_vec)
+    }
+}
+
+/// Retrieves the version of the underlying jpegli library.
+///
+/// Returns a tuple containing:
+/// - A tuple of (major, minor, patch) version numbers.
+/// - An additional jpeg-compatible library version number.
+///
+/// # Example
+/// ```rust
+/// use simple_jpegli_enc::get_jpegli_version;
+///
+/// let (version, lib_ver) = simple_jpegli_enc::get_jpegli_version();
+/// assert_eq!(version, (0, 12, 0));
+/// assert_eq!(lib_ver, 80);
+/// ```
+pub fn get_jpegli_version() -> ((u32, u32, u32), u32) {
+    unsafe {
+        let mut version_info = SJpegliVersionInfo {
+            major: 0,
+            minor: 0,
+            patch: 0,
+            lib_ver: 0,
+        };
+        sjpegli_get_version(&mut version_info as *mut SJpegliVersionInfo);
+        (
+            (version_info.major, version_info.minor, version_info.patch),
+            version_info.lib_ver,
+        )
     }
 }

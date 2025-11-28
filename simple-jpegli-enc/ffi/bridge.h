@@ -5,6 +5,7 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -73,6 +74,15 @@ simple_jpegli_enc_result sjpegli_encode_pixels(
 
 // Frees the buffer allocated by libjpeg
 void sjpegli_free_result(simple_jpegli_enc_result result);
+
+typedef struct simple_jpegli_version {
+    uint32_t major;
+    uint32_t minor;
+    uint32_t patch;
+    uint32_t lib_ver;
+} simple_jpegli_version_t;
+
+void sjpegli_get_version(simple_jpegli_version_t *out_version);
 
 #ifdef __cplusplus
 }

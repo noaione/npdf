@@ -1,4 +1,5 @@
 pub mod encoder;
-pub mod ffi;
+mod ffi;
 
 pub use encoder::*;
+pub use ffi::{ColorSpace, Subsampling, get_jpegli_version};
