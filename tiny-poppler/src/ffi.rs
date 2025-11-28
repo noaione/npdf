@@ -909,14 +909,6 @@ fn convert_colorspace(cs: *const c_void) -> PdfImageColorSpace {
     }
 }
 
-/// Get the Poppler library version as (major, minor, patch).
-///
-/// # Example
-/// ```rust
-/// let version = tiny_poppler::get_poppler_version();
-///
-/// assert_eq!(version, (25, 11, 90)); // Example version
-/// ```
 pub(crate) fn get_poppler_version() -> (u32, u32, u32) {
     let mut version = MaybeUninit::<VersionInfo>::uninit();
     unsafe {

@@ -769,6 +769,14 @@ impl<'a> VersionInfo<'a> {
     }
 }
 
+/// Get the Poppler library version as (major, minor, patch).
+///
+/// # Example
+/// ```rust
+/// let version = tiny_poppler::get_version();
+///
+/// assert_eq!(version.version_string(), "25.11.90"); // Example version
+/// ```
 pub fn get_version() -> VersionInfo<'static> {
     let version = get_poppler_version();
     let sha = option_env!("POPPLER_COMMIT_SHA");
