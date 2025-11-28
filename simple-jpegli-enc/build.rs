@@ -105,6 +105,12 @@ fn main() {
         "Release"
     };
 
+    // Detect whether Rust itself is requesting a static CRT (Windows MSVC only)
+    let wants_static_crt = std::env::var("CARGO_CFG_TARGET_FEATURE")
+        .unwrap_or_default()
+        .split(',')
+        .any(|f| f == "crt-static");
+
     let mut cfg = cmake::Config::new(&libjxl_src);
     cfg.profile(cmake_build_type)
         .define("JPEGXL_ENABLE_JPEGLI", "ON")
@@ -128,10 +134,15 @@ fn main() {
         .define("JPEGLI_LIBJPEG_LIBRARY_VERSION", "8.2.2")
         .build_target("jpegli-static");
 
-    if cmake_build_type == "Debug" && cfg!(target_os = "windows") {
-        // On Windows debug builds, ensure we link against the release runtime to avoid
+    if cfg!(target_os = "windows") {
+        // On Windows builds, ensure we link against the release runtime to avoid
         // issues with mixing debug/release CRTs.
-        cfg.define("CMAKE_MSVC_RUNTIME_LIBRARY", "MultiThreadedDLL");
+        let rt_lib = if wants_static_crt {
+            "MultiThreaded"
+        } else {
+            "MultiThreadedDLL"
+        };
+        cfg.define("CMAKE_MSVC_RUNTIME_LIBRARY", rt_lib);
     }
 
     if let Some(s) = sanitizer {

@@ -214,7 +214,6 @@ fn configure_and_build_poppler(
 
     println!("Building with profile: {build_profile}");
     cfg.profile(build_profile)
-        .static_crt(wants_static_crt)
         .define("CMAKE_POSITION_INDEPENDENT_CODE", "ON")
         .define("BUILD_SHARED_LIBS", "OFF")
         .define("ENABLE_UNSTABLE_API_ABI_HEADERS", "ON")
@@ -240,6 +239,17 @@ fn configure_and_build_poppler(
         .define("BUILD_CPP_TESTS", "OFF")
         .define("BUILD_MANUAL_TESTS", "OFF")
         .define("RUN_GPERF_IF_PRESENT", "OFF");
+
+    if cfg!(target_os = "windows") {
+        // On Windows builds, ensure we link against the release runtime to avoid
+        // issues with mixing debug/release CRTs.
+        let rt_lib = if wants_static_crt {
+            "MultiThreaded"
+        } else {
+            "MultiThreadedDLL"
+        };
+        cfg.define("CMAKE_MSVC_RUNTIME_LIBRARY", rt_lib);
+    }
 
     if let Ok(ci_build) = std::env::var("CI_RUNNER") {
         println!("Running on CI: {ci_build}");
@@ -296,7 +306,7 @@ fn compile_bridge(
     let mut build = cc::Build::new();
     build
         .cpp(true)
-        .static_crt(wants_static_crt)
+        .debug(false)
         .file(manifest_dir.join("ffi/splash_bridge.cc"))
         .file(manifest_dir.join("ffi/exporter_bridge.cc"))
         .file(manifest_dir.join("ffi/image_exporter.cc"))
@@ -313,6 +323,14 @@ fn compile_bridge(
         .flag_if_supported("/std:c++latest") // For MSVC (should be C++23 preview, requires VS 2022 17.14)
         .flag_if_supported("-Wno-unused-parameter")
         .flag_if_supported("-Wno-unused-variable");
+
+    // Force static or dynamic CRT linkage based on Rust's own settings
+    // Ignore any debug mode build
+    if wants_static_crt {
+        build.flag_if_supported("/MT");
+    } else {
+        build.flag_if_supported("/MD");
+    }
 
     if !is_windows && let Some(s) = sanitizer {
         apply_sanitizer_to_cc(&mut build, s);
