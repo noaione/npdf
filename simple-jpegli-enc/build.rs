@@ -105,12 +105,9 @@ fn main() {
         "Release"
     };
 
-    // On Windows MSVC, Rust defaults to dynamic CRT (/MD or /MDd).
-    // We must build CMake libraries with the same CRT to avoid LNK4098 and
-    // unresolved __imp__CrtDbgReport symbols. Always use dynamic CRT.
-
     let mut cfg = cmake::Config::new(&libjxl_src);
     cfg.profile(cmake_build_type)
+        .static_crt(false)
         .define("JPEGXL_ENABLE_JPEGLI", "ON")
         .define("JPEGXL_ENABLE_JPEGLI_LIBJPEG", "ON")
         .define("JPEGXL_ENABLE_TOOLS", "OFF")
@@ -126,22 +123,11 @@ fn main() {
         .define("JPEGXL_ENABLE_HWY_AVX3_SPR", "true")
         .define("JPEGXL_ENABLE_HWY_AVX3_ZEN4", "true")
         .define("JPEGXL_ENABLE_HWY_AVX3_SSSE3", "true")
-        // Always build static libs to avoid mixing CRT settings between shared and static.
         .define("BUILD_SHARED_LIBS", "OFF")
         .define("BUILD_TESTING", "OFF")
         .define("JPEGLI_LIBJPEG_LIBRARY_SOVERSION", "8")
         .define("JPEGLI_LIBJPEG_LIBRARY_VERSION", "8.2.2")
         .build_target("jpegli-static");
-
-    // Explicitly select MSVC runtime to match Rust's dynamic CRT default.
-    if target.contains("windows-msvc") {
-        // let runtime = if cmake_build_type == "Debug" {
-        //     "MultiThreadedDebugDLL"
-        // } else {
-        //     "MultiThreadedDLL"
-        // };
-        cfg.define("CMAKE_MSVC_RUNTIME_LIBRARY", "MultiThreadedDLL");
-    }
 
     if let Some(s) = sanitizer {
         apply_sanitizer_to_cmake(&mut cfg, s);
@@ -194,6 +180,7 @@ fn compile_bridge(
 
     build
         .cpp(true)
+        .static_crt(false)
         .file(manifest_dir.join("ffi/bridge.cc"))
         .include(manifest_dir.join("ffi"))
         .include(libjxl_dst.join("build/lib/include/jpegli"))
@@ -204,20 +191,6 @@ fn compile_bridge(
         .flag_if_supported("/std:c++20")
         .flag_if_supported("-Wno-unused-parameter")
         .flag_if_supported("-Wno-unused-variable");
-
-    if let Ok(debug) = std::env::var("DEBUG")
-        && debug == "1"
-    {
-        build.define("SJPEGLI_DEBUG", None);
-    }
-
-    // Force dynamic CRT flags for MSVC to match Rust's default.
-    if env::var("TARGET")
-        .map(|t| t.contains("windows-msvc"))
-        .unwrap_or(false)
-    {
-        build.flag("/MD");
-    }
 
     if let Some(s) = sanitizer {
         apply_sanitizer_to_cc(&mut build, s);
