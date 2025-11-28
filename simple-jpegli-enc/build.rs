@@ -105,9 +105,15 @@ fn main() {
         "Release"
     };
 
+    // Detect whether Rust itself is requesting a static CRT (Windows MSVC only)
+    let wants_static_crt = std::env::var("CARGO_CFG_TARGET_FEATURE")
+        .unwrap_or_default()
+        .split(',')
+        .any(|f| f == "crt-static");
+
     let mut cfg = cmake::Config::new(&libjxl_src);
     cfg.profile(cmake_build_type)
-        .static_crt(false)
+        .static_crt(wants_static_crt)
         .define("JPEGXL_ENABLE_JPEGLI", "ON")
         .define("JPEGXL_ENABLE_JPEGLI_LIBJPEG", "ON")
         .define("JPEGXL_ENABLE_TOOLS", "OFF")
@@ -182,11 +188,17 @@ fn compile_bridge(
     libjxl_dst: &Path,
     sanitizer: Option<Sanitizer>,
 ) {
+    // Detect whether Rust itself is requesting a static CRT (Windows MSVC only)
+    let wants_static_crt = std::env::var("CARGO_CFG_TARGET_FEATURE")
+        .unwrap_or_default()
+        .split(',')
+        .any(|f| f == "crt-static");
+
     let mut build = cc::Build::new();
 
     build
         .cpp(true)
-        .static_crt(false)
+        .static_crt(wants_static_crt)
         .file(manifest_dir.join("ffi/bridge.cc"))
         .include(manifest_dir.join("ffi"))
         .include(libjxl_dst.join("build/lib/include/jpegli"))

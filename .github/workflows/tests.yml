@@ -260,4 +260,3 @@ jobs:
           Boost_DIR: ${{ steps.install-boost.outputs.boost_root }}
           CI_RUNNER: "github"
           RUST_BACKTRACE: "full"
-          DEBUG: "1"
