@@ -33,10 +33,9 @@ impl Sanitizer {
         let sanitizer = enabled.into_iter().next();
 
         if let Some(choice) = sanitizer {
-            // MSVC supports AddressSanitizer since VS 2019 16.4
-            if target.contains("windows-msvc") && !matches!(choice, Sanitizer::Address) {
+            if target.contains("windows-msvc") {
                 return Err(format!(
-                    "{} sanitizer is not supported on MSVC targets (only AddressSanitizer is supported)",
+                    "{} sanitizer is not supported on MSVC targets",
                     choice.display_name()
                 ));
             }
@@ -67,14 +66,6 @@ impl Sanitizer {
             Sanitizer::Leak => &["-fsanitize=leak", "-fno-omit-frame-pointer"],
             Sanitizer::Thread => &["-fsanitize=thread"],
             Sanitizer::Undefined => &["-fsanitize=undefined"],
-        }
-    }
-
-    fn msvc_compile_flags(self) -> &'static [&'static str] {
-        match self {
-            Sanitizer::Address => &["/fsanitize=address"],
-            // Other sanitizers are not supported on MSVC
-            _ => &[],
         }
     }
 
@@ -138,9 +129,8 @@ fn main() {
         .define("JPEGLI_LIBJPEG_LIBRARY_VERSION", "8.2.2")
         .build_target("jpegli-static");
 
-    let is_msvc = target.contains("windows-msvc");
     if let Some(s) = sanitizer {
-        apply_sanitizer_to_cmake(&mut cfg, s, is_msvc);
+        apply_sanitizer_to_cmake(&mut cfg, s);
     }
 
     let dst = cfg.build();
@@ -186,8 +176,6 @@ fn compile_bridge(
     libjxl_dst: &Path,
     sanitizer: Option<Sanitizer>,
 ) {
-    let target = env::var("TARGET").unwrap_or_default();
-    let is_msvc = target.contains("windows-msvc");
     let mut build = cc::Build::new();
 
     build
@@ -205,7 +193,7 @@ fn compile_bridge(
         .flag_if_supported("-Wno-unused-variable");
 
     if let Some(s) = sanitizer {
-        apply_sanitizer_to_cc(&mut build, s, is_msvc);
+        apply_sanitizer_to_cc(&mut build, s);
     }
 
     build.compile("simple_jpegli_enc_bridge");
@@ -276,39 +264,24 @@ fn emit_homebrew_search_hint(formula: &str) {
     }
 }
 
-fn apply_sanitizer_to_cmake(cfg: &mut cmake::Config, sanitizer: Sanitizer, is_msvc: bool) {
-    if is_msvc {
-        let compile_flags = sanitizer.msvc_compile_flags();
-        for flag in compile_flags {
-            cfg.cflag(flag);
-            cfg.cxxflag(flag);
-        }
-        // MSVC doesn't require special linker flags for ASan
-    } else {
-        let compile_flags = sanitizer.compile_flags();
-        for flag in compile_flags {
-            cfg.cflag(flag);
-            cfg.cxxflag(flag);
-        }
+fn apply_sanitizer_to_cmake(cfg: &mut cmake::Config, sanitizer: Sanitizer) {
+    let compile_flags = sanitizer.compile_flags();
+    for flag in compile_flags {
+        cfg.cflag(flag);
+        cfg.cxxflag(flag);
+    }
 
-        let link_flags = sanitizer.link_args();
-        if !link_flags.is_empty() {
-            let joined = link_flags.join(" ");
-            cfg.define("CMAKE_EXE_LINKER_FLAGS", &joined);
-            cfg.define("CMAKE_SHARED_LINKER_FLAGS", &joined);
-            cfg.define("CMAKE_MODULE_LINKER_FLAGS", &joined);
-        }
+    let link_flags = sanitizer.link_args();
+    if !link_flags.is_empty() {
+        let joined = link_flags.join(" ");
+        cfg.define("CMAKE_EXE_LINKER_FLAGS", &joined);
+        cfg.define("CMAKE_SHARED_LINKER_FLAGS", &joined);
+        cfg.define("CMAKE_MODULE_LINKER_FLAGS", &joined);
     }
 }
 
-fn apply_sanitizer_to_cc(build: &mut cc::Build, sanitizer: Sanitizer, is_msvc: bool) {
-    if is_msvc {
-        for flag in sanitizer.msvc_compile_flags() {
-            build.flag(flag);
-        }
-    } else {
-        for flag in sanitizer.compile_flags() {
-            build.flag(flag);
-        }
+fn apply_sanitizer_to_cc(build: &mut cc::Build, sanitizer: Sanitizer) {
+    for flag in sanitizer.compile_flags() {
+        build.flag(flag);
     }
 }
