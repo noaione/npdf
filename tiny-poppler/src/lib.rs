@@ -8,14 +8,14 @@ mod ffi;
 mod helpers;
 mod sink;
 
+use ffi::get_poppler_version;
 pub use ffi::{
     CcittParams, ColorMode, ExportedImage, ImageExportExtension, ImageExportFormat,
     ImageExportRequest, ImageExportSelector, ImageExportType, ImageInfo, ImageType, PageInfo,
-    PdfCropMode, PdfImageColorSpace, get_poppler_version,
+    PdfCropMode, PdfImageColorSpace,
 };
 use png::{BitDepth, ColorType, Encoder};
 use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
-pub use simple_jpegli_enc::get_jpegli_version;
 use simple_jpegli_enc::{ColorSpace as JpegColorType, JpegEncoder, JpegError};
 pub use sink::{
     EncodedExportedImage, ImageSinkError, ImageSinkOptions, PngCompression, TiffCompression,
@@ -751,4 +751,26 @@ fn encode_jpeg(
     let encoder = JpegEncoder::new().quality(quality);
     let buffer = encoder.encode(pixels, width_u16, height_u16, colorspace, Some((dpi, dpi)))?;
     Ok(buffer)
+}
+
+#[derive(Debug, Clone)]
+pub struct VersionInfo<'a> {
+    version: (u32, u32, u32),
+    sha: Option<&'a str>,
+}
+
+impl<'a> VersionInfo<'a> {
+    pub fn version_string(&self) -> String {
+        format!("{}.{}.{}", self.version.0, self.version.1, self.version.2)
+    }
+
+    pub fn git_sha(&self) -> Option<&'a str> {
+        self.sha
+    }
+}
+
+pub fn get_version() -> VersionInfo<'static> {
+    let version = get_poppler_version();
+    let sha = option_env!("POPPLER_COMMIT_SHA");
+    VersionInfo { version, sha }
 }

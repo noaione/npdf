@@ -917,7 +917,7 @@ fn convert_colorspace(cs: *const c_void) -> PdfImageColorSpace {
 ///
 /// assert_eq!(version, (25, 11, 90)); // Example version
 /// ```
-pub fn get_poppler_version() -> (u32, u32, u32) {
+pub(crate) fn get_poppler_version() -> (u32, u32, u32) {
     let mut version = MaybeUninit::<VersionInfo>::uninit();
     unsafe {
         splash_get_version(version.as_mut_ptr());

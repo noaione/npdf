@@ -154,6 +154,8 @@ fn main() {
         );
     }
 
+    emit_git_sha_version(&poppler_src);
+
     println!(
         "cargo:rerun-if-changed={}",
         poppler_src.join("CMakeLists.txt").display()
@@ -574,6 +576,29 @@ fn emit_homebrew_search_hint(formula: &str) {
         if candidate.exists() {
             println!("cargo:rustc-link-search=native={}", candidate.display());
             break;
+        }
+    }
+}
+
+fn emit_git_sha_version(poppler_src: &Path) {
+    let git_dir = poppler_src.join(".git");
+    if !git_dir.exists() {
+        return;
+    }
+
+    let output = std::process::Command::new("git")
+        .arg("--git-dir")
+        .arg(git_dir)
+        .arg("rev-parse")
+        .arg("HEAD")
+        .output();
+
+    if let Ok(output) = output {
+        if output.status.success() {
+            if let Ok(sha) = String::from_utf8(output.stdout) {
+                let sha = sha.trim();
+                println!("cargo:rustc-env=POPPLER_COMMIT_SHA={}", sha);
+            }
         }
     }
 }
