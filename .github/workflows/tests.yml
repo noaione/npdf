@@ -89,7 +89,7 @@ jobs:
             target_env: ""
             target_rustflags: ""
 
-          - runner: ubuntu-24.04
+          - runner: windows-2025
             os_label: x86_64-pc-windows-msvc
             sanitizer: asan
             rust_toolchain: nightly
