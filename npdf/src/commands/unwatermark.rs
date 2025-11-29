@@ -15,6 +15,7 @@ pub struct UnwatermarkArgs {
     /// Path to the PDF file to unwatermark.
     pub pdf: PathBuf,
     /// Output file path to save the unwatermarked PDF.
+    #[arg(short = 'o', long)]
     pub output: PathBuf,
 }
 

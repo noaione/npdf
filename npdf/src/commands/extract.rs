@@ -18,7 +18,8 @@ pub struct ExtractArgs {
     /// Path to the PDF file containing embedded images.
     pub pdf: PathBuf,
     /// Directory where extracted images will be written.
-    pub output: PathBuf,
+    #[arg(short = 'o', long)]
+    pub output: Option<PathBuf>,
     /// First 1-based page to inspect (defaults to the first page).
     #[arg(short, long, value_name = "PAGE")]
     pub first: Option<u32>,
@@ -43,13 +44,19 @@ pub fn run(args: ExtractArgs, passwords: Option<&PdfPasswords>) -> Result<(), St
 
     let ExtractArgs {
         pdf,
-        output,
+        output: output_opt,
         first,
         last,
         describe,
         threads,
         reverse,
     } = args;
+
+    let output = match (output_opt, describe) {
+        (Some(path), _) => Some(path),
+        (None, true) => None,
+        (None, false) => return Err("--output is required when not using --describe".into()),
+    };
 
     let factory = DocumentFactory::with_images_with_passwords(&pdf, passwords.cloned())
         .map_err(|err| err.to_string())?;
@@ -99,8 +106,8 @@ pub fn run(args: ExtractArgs, passwords: Option<&PdfPasswords>) -> Result<(), St
         grouped.entry(info.page).or_default().push(info);
     }
 
-    if !describe {
-        fs::create_dir_all(&output)
+    if let Some(ref output_path) = output {
+        fs::create_dir_all(output_path)
             .map_err(|err| format!("failed to create output directory: {err}"))?;
     }
 
@@ -157,7 +164,7 @@ pub fn run(args: ExtractArgs, passwords: Option<&PdfPasswords>) -> Result<(), St
 
     let total_components = jobs.len();
     let thread_count = threads.map(NonZeroUsize::get);
-    let output_root = if describe { None } else { Some(output.clone()) };
+    let output_root = output;
 
     run_extract_jobs(factory, jobs, describe, thread_count, output_root)?;
 

@@ -11,7 +11,8 @@ pub struct RecropArgs {
     /// Path to the PDF file to unwatermark.
     pub pdf: PathBuf,
     /// Output file path to save the unwatermarked PDF.
-    pub output: PathBuf,
+    #[arg(short = 'o', long)]
+    pub output: Option<PathBuf>,
     #[clap(long, value_enum)]
     /// Choose which box to use for recropping pages.
     pub cropbox: CropChoice,
@@ -24,7 +25,14 @@ pub fn run(args: RecropArgs, passwords: Option<&PdfPasswords>) -> Result<(), Str
         return Err(format!("PDF file does not exist: {}", args.pdf.display()));
     }
 
-    ensure_pdf_output(&args.output)?;
+    let output = match (args.output, args.describe) {
+        (Some(path), _) => {
+            ensure_pdf_output(&path)?;
+            Some(path)
+        }
+        (None, true) => None,
+        (None, false) => return Err("--output is required when not using --describe".into()),
+    };
 
     cprintln!("<magenta,bold>Loading PDF</>: {}", args.pdf.display());
     let mut doc = Document::load(args.pdf).map_err(|err| err.to_string())?;
@@ -90,11 +98,15 @@ pub fn run(args: RecropArgs, passwords: Option<&PdfPasswords>) -> Result<(), Str
         return Ok(());
     }
 
+    let output_path = output
+        .as_ref()
+        .ok_or_else(|| "output path not set for non-describe mode".to_string())?;
+
     cprintln!(
         "<magenta,bold>Saving output PDF</>: {}",
-        args.output.display()
+        output_path.display()
     );
-    doc.save(&args.output)
+    doc.save(output_path)
         .map_err(|err| format!("Failed to save output PDF: {}", err))?;
 
     cprintln!("<green,bold>Done!</>");

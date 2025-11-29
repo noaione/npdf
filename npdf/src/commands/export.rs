@@ -16,7 +16,8 @@ pub struct ExportArgs {
     /// Path to the PDF file to export.
     pub pdf: PathBuf,
     /// Directory where rendered pages will be written.
-    pub output: PathBuf,
+    #[arg(short = 'o', long)]
+    pub output: Option<PathBuf>,
     /// Colorspace to request from Poppler. Auto keeps the library default.
     #[arg(long, value_enum, default_value_t = ColorChoice::Auto)]
     pub color: ColorChoice,
@@ -97,7 +98,7 @@ pub fn run(args: ExportArgs, passwords: Option<&PdfPasswords>) -> Result<(), Str
 
     let ExportArgs {
         pdf,
-        output,
+        output: output_opt,
         color,
         dpi,
         first,
@@ -111,6 +112,12 @@ pub fn run(args: ExportArgs, passwords: Option<&PdfPasswords>) -> Result<(), Str
         threads,
         auto_dpi_ratio,
     } = args;
+
+    let output = match (output_opt, describe) {
+        (Some(path), _) => Some(path),
+        (None, true) => None,
+        (None, false) => return Err("--output is required when not using --describe".into()),
+    };
 
     cprintln!("Loading PDF: <m,s>{:#?}</m,s>", &pdf);
     let factory = DocumentFactory::with_images_with_passwords(&pdf, passwords.cloned())
@@ -130,8 +137,10 @@ pub fn run(args: ExportArgs, passwords: Option<&PdfPasswords>) -> Result<(), Str
         return Err("last page must be greater than or equal to first page".into());
     }
 
-    if !describe && let Err(err) = fs::create_dir_all(&output) {
-        return Err(format!("failed to create output directory: {err}"));
+    if let Some(ref output_path) = output {
+        if let Err(err) = fs::create_dir_all(output_path) {
+            return Err(format!("failed to create output directory: {err}"));
+        }
     }
 
     println!("Preloading images...");
@@ -208,7 +217,7 @@ pub fn run(args: ExportArgs, passwords: Option<&PdfPasswords>) -> Result<(), Str
             }
             let extension = extension_for_mode(per_page.color_mode);
             let file_name = format!("page-{page:04}.{extension}");
-            let output_path = output.join(file_name);
+            let output_path = output.as_ref().map(|o| o.join(&file_name));
             PagePlan {
                 page_number: page,
                 zero_index_page: page - 1,
@@ -221,10 +230,15 @@ pub fn run(args: ExportArgs, passwords: Option<&PdfPasswords>) -> Result<(), Str
 
     if describe {
         for job in &jobs {
+            let path_display = job
+                .output_path
+                .as_ref()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|| "<none>".to_string());
             cprintln!(
                 "Will export page <m,s>{}</m,s> -> <m,s>{}</m,s> (colorspace: {:?}, crop: {:?}, dpi: {})",
                 job.page_number,
-                job.output_path.display(),
+                path_display,
                 job.options.color_mode,
                 job.options.crop_mode,
                 job.options.dpi,
@@ -265,7 +279,7 @@ struct PagePlan {
     page_number: u32,
     zero_index_page: u32,
     total_pages: u32,
-    output_path: PathBuf,
+    output_path: Option<PathBuf>,
     options: RenderOptions,
 }
 
@@ -330,11 +344,16 @@ fn run_export_jobs(
 }
 
 fn process_job(document: &mut Document, job: PagePlan) -> Result<(), String> {
+    let output_path = job
+        .output_path
+        .as_ref()
+        .ok_or_else(|| "output path not set for non-describe mode".to_string())?;
+
     let encoded = document
         .render_page_image_bytes(job.zero_index_page, &job.options)
         .map_err(|err| format!("failed to export page {}: {err}", job.page_number))?;
-    fs::write(&job.output_path, &encoded.bytes)
-        .map_err(|err| format!("failed to write {}: {err}", job.output_path.display()))?;
+    fs::write(output_path, &encoded.bytes)
+        .map_err(|err| format!("failed to write {}: {err}", output_path.display()))?;
 
     // pad page number depending on total pages
     let total_page = job.total_pages.to_string().len();
@@ -342,7 +361,7 @@ fn process_job(document: &mut Document, job: PagePlan) -> Result<(), String> {
     cprintln!(
         "Exported <m,s>page {}</m,s> -> <m,s>{}</m,s> ({:?}, {:?}, {} dpi)",
         pad_page,
-        job.output_path.display(),
+        output_path.display(),
         encoded.format,
         job.options.color_mode,
         job.options.dpi,
