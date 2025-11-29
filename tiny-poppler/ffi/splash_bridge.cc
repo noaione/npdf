@@ -205,6 +205,7 @@ struct CollectedImage {
     double_t dpi_y = 0;
     splash_image_type_t image_type = SPLASH_IMAGE_TYPE_UNKNOWN;
     splash_image_colorspace_t colorspace = SPLASH_IMAGE_COLORSPACE_UNKNOWN;
+    double ctm[6] = {1.0, 0.0, 0.0, 1.0, 0.0, 0.0}; // Default is identity matrix
     const void *color_space_handle = nullptr;
 };
 
@@ -212,6 +213,10 @@ struct CollectedPage {
     uint32_t page_number = 0;
     uint32_t image_count = 0;
     uint64_t object_count = 0;
+
+    // If all 0's, then not set
+    double cropbox[4] = {0.0, 0.0, 0.0, 0.0};
+    double mediabox[4] = {0.0, 0.0, 0.0, 0.0};
 };
 
 const void *copy_color_space(const GfxColorSpace *space)
@@ -422,6 +427,11 @@ private:
             std::pair<double, double> dpi = calculate_image_dpi(state->getCTM(), width, height);
             info.dpi_x = static_cast<double_t>(dpi.first);
             info.dpi_y = static_cast<double_t>(dpi.second);
+
+            const double *ctm = state->getCTM();
+            if (ctm) {
+                std::memcpy(info.ctm, ctm, 6 * sizeof(double));
+            }
         }
 
         images_->push_back(info);
@@ -455,6 +465,10 @@ private:
             std::pair<double, double> dpi = calculate_image_dpi(state->getCTM(), width, height);
             info.dpi_x = static_cast<double_t>(dpi.first);
             info.dpi_y = static_cast<double_t>(dpi.second);
+            const double *ctm = state->getCTM();
+            if (ctm) {
+                std::memcpy(info.ctm, ctm, 6 * sizeof(double));
+            }
         }
         images_->push_back(info);
     }
@@ -675,13 +689,30 @@ int splash_renderer_collect_images(splash_renderer_t *renderer,
     for (uint32_t page_number = start_page; page_number <= end_page; ++page_number) {
         collector.reset_for_page(page_number);
         const size_t before = collected.size();
-        renderer->doc->displayPage(&collector, static_cast<int>(page_number), 72.0, 72.0, 0, true, true, false);
+        Page *page = renderer->doc->getPage(static_cast<int>(page_number));
+        page->display(&collector, 72.0, 72.0, 0, true, true, false);
         const size_t after = collected.size();
+
+        const PDFRectangle *cropbox = page->getCropBox();
+        const PDFRectangle *mediabox = page->getMediaBox();
 
         CollectedPage summary;
         summary.page_number = page_number;
         summary.image_count = static_cast<uint32_t>(after - before);
         summary.object_count = collector.get_total_objects();
+
+        if (cropbox) {
+            summary.cropbox[0] = cropbox->x1;
+            summary.cropbox[1] = cropbox->y1;
+            summary.cropbox[2] = cropbox->x2;
+            summary.cropbox[3] = cropbox->y2;
+        }
+        if (mediabox) {
+            summary.mediabox[0] = mediabox->x1;
+            summary.mediabox[1] = mediabox->y1;
+            summary.mediabox[2] = mediabox->x2;
+            summary.mediabox[3] = mediabox->y2;
+        }
         page_summaries.push_back(summary);
     }
 
@@ -719,6 +750,9 @@ int splash_renderer_collect_images(splash_renderer_t *renderer,
             image_buffer[i].colorspace = collected[i].colorspace;
             image_buffer[i].color_space_handle = collected[i].color_space_handle;
             image_buffer[i].page_number = collected[i].page_number;
+            for (int j = 0; j < 6; ++j) {
+                image_buffer[i].ctm[j] = collected[i].ctm[j];
+            }
         }
     }
 
@@ -753,6 +787,11 @@ int splash_renderer_collect_images(splash_renderer_t *renderer,
             page_buffer[i].page_number = page_summaries[i].page_number;
             page_buffer[i].image_count = page_summaries[i].image_count;
             page_buffer[i].object_count = page_summaries[i].object_count;
+
+            for (int j = 0; j < 4; ++j) {
+                page_buffer[i].cropbox[j] = page_summaries[i].cropbox[j];
+                page_buffer[i].mediabox[j] = page_summaries[i].mediabox[j];
+            }
         }
     }
 

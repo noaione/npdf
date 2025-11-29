@@ -72,9 +72,13 @@ typedef struct splash_image_info {
     uint32_t page_number;
     double_t dpi_x;
     double_t dpi_y;
-    // uint64_t total_objects;
+
     splash_image_type_t image_type;
     splash_image_colorspace_t colorspace;
+
+    // Matrix Info
+    // [a, b, c, d, e, f] - The Affine Transform
+    double ctm[6];
 
     // Not exposed through FFI; only used internally inside the C++ wrapper
     const void *color_space_handle;
@@ -84,6 +88,11 @@ typedef struct splash_page_info {
     uint32_t page_number;
     uint32_t image_count;
     uint64_t object_count;
+
+    // Cropbox and mediabox in user space units
+    // If all 0's, then not set
+    double cropbox[4];
+    double mediabox[4];
 } splash_page_info_t;
 
 typedef struct splash_version {

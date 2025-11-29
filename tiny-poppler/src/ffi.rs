@@ -88,6 +88,7 @@ struct SplashImageInfo {
     dpi_y: f64,
     image_type: ImageType,
     colorspace: ImageColorSpace,
+    ctm: [f64; 6],
     color_space_handle: *const c_void,
 }
 
@@ -97,6 +98,8 @@ struct SplashPageInfo {
     page_number: u32,
     image_count: u32,
     object_count: u64,
+    cropbox: [f64; 4],
+    mediabox: [f64; 4],
 }
 
 /// Colorspace related
@@ -699,6 +702,8 @@ pub struct PageInfo {
     pub page: u32,
     pub image_count: u32,
     pub object_count: u64,
+    pub mediabox: Option<PdfRect>,
+    pub cropbox: Option<PdfRect>,
 }
 
 #[derive(Debug, Clone)]
@@ -752,6 +757,74 @@ pub enum PdfImageColorSpace {
     },
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct PdfMatrix {
+    /// Scale X
+    pub a: f64,
+    /// Shear Y
+    pub b: f64,
+    /// Shear X
+    pub c: f64,
+    /// Scale Y
+    pub d: f64,
+    /// Translate X
+    pub e: f64,
+    /// Translate Y
+    pub f: f64,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct PdfPoint {
+    pub x: f64,
+    pub y: f64,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct PdfRect {
+    pub x1: f64, // min_x
+    pub y1: f64, // min_y
+    pub x2: f64, // max_x
+    pub y2: f64, // max_y
+}
+
+impl PdfMatrix {
+    pub fn transform(&self, x: f64, y: f64) -> PdfPoint {
+        PdfPoint {
+            x: self.a * x + self.c * y + self.e,
+            y: self.b * x + self.d * y + self.f,
+        }
+    }
+
+    /// Calculates the Axis-Aligned Bounding Box (AABB) of the transformed image.
+    pub fn get_image_aabb(&self) -> PdfRect {
+        // An image in PDF is always a unit square (0,0) to (1,1) before transform
+        let p0 = self.transform(0.0, 0.0);
+        let p1 = self.transform(1.0, 0.0);
+        let p2 = self.transform(1.0, 1.0);
+        let p3 = self.transform(0.0, 1.0);
+
+        let corners = [p0, p1, p2, p3];
+
+        let min_x = corners.iter().map(|p| p.x).fold(f64::INFINITY, f64::min);
+        let max_x = corners
+            .iter()
+            .map(|p| p.x)
+            .fold(f64::NEG_INFINITY, f64::max);
+        let min_y = corners.iter().map(|p| p.y).fold(f64::INFINITY, f64::min);
+        let max_y = corners
+            .iter()
+            .map(|p| p.y)
+            .fold(f64::NEG_INFINITY, f64::max);
+
+        PdfRect {
+            x1: min_x,
+            y1: min_y,
+            x2: max_x,
+            y2: max_y,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ImageInfo {
     pub width: u32,
@@ -762,6 +835,7 @@ pub struct ImageInfo {
     pub image_type: ImageType,
     pub page: u32,
     pub dpi: (f64, f64),
+    pub matrix: PdfMatrix,
     pub xref: Option<(i32, i32)>,
 }
 
@@ -781,6 +855,14 @@ impl From<SplashImageInfo> for ImageInfo {
             image_type: value.image_type,
             page: value.page_number,
             dpi: (value.dpi_x, value.dpi_y),
+            matrix: PdfMatrix {
+                a: value.ctm[0],
+                b: value.ctm[1],
+                c: value.ctm[2],
+                d: value.ctm[3],
+                e: value.ctm[4],
+                f: value.ctm[5],
+            },
             xref,
         }
     }
@@ -788,10 +870,33 @@ impl From<SplashImageInfo> for ImageInfo {
 
 impl From<SplashPageInfo> for PageInfo {
     fn from(value: SplashPageInfo) -> Self {
+        let mediabox = if value.mediabox != [0.0; 4] {
+            Some(PdfRect {
+                x1: value.mediabox[0],
+                y1: value.mediabox[1],
+                x2: value.mediabox[2],
+                y2: value.mediabox[3],
+            })
+        } else {
+            None
+        };
+        let cropbox = if value.cropbox != [0.0; 4] {
+            Some(PdfRect {
+                x1: value.cropbox[0],
+                y1: value.cropbox[1],
+                x2: value.cropbox[2],
+                y2: value.cropbox[3],
+            })
+        } else {
+            None
+        };
+
         Self {
             page: value.page_number,
             image_count: value.image_count,
             object_count: value.object_count,
+            mediabox,
+            cropbox,
         }
     }
 }
