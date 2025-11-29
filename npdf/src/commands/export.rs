@@ -414,6 +414,7 @@ fn determine_export_dpi(
             .iter()
             .filter(|&img| matches!(img.image_type, ImageType::Stencil | ImageType::Image))
             .filter(|&img| image_intersecting_with_page(page_info, crop_mode, img.matrix))
+            .filter(|&img| img.dpi.1 >= 72.0) // Filter out images with DPI smaller than 72 for some reason
             .filter(|&img| u_t_f(img.height) >= u_t_f(img.width) * dpi_ratio)
             .map(|f| f.dpi.1)
             .collect()
@@ -422,6 +423,7 @@ fn determine_export_dpi(
             .iter()
             .filter(|&img| matches!(img.image_type, ImageType::Stencil | ImageType::Image))
             .filter(|&img| image_intersecting_with_page(page_info, crop_mode, img.matrix))
+            .filter(|&img| img.dpi.0 >= 72.0) // Filter out images with DPI smaller than 72 for some reason
             .filter(|&img| u_t_f(img.height) * dpi_ratio <= u_t_f(img.width))
             .map(|f| f.dpi.0)
             .collect()
