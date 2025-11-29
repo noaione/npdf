@@ -137,10 +137,10 @@ pub fn run(args: ExportArgs, passwords: Option<&PdfPasswords>) -> Result<(), Str
         return Err("last page must be greater than or equal to first page".into());
     }
 
-    if let Some(ref output_path) = output {
-        if let Err(err) = fs::create_dir_all(output_path) {
-            return Err(format!("failed to create output directory: {err}"));
-        }
+    if let Some(ref output_path) = output
+        && let Err(err) = fs::create_dir_all(output_path)
+    {
+        return Err(format!("failed to create output directory: {err}"));
     }
 
     println!("Preloading images...");
@@ -555,9 +555,11 @@ pub fn image_is_intersecting(matrix: PdfMatrix, bbox: PdfRect) -> bool {
 
     // Separating Axis Theorem (Simplified for AABB)
     // If one is to the left/right/top/bottom of the other, they do not intersect.
-    if img_aabb.x2 < bbox.x1 || img_aabb.x1 > bbox.x2 {
-        false
-    } else if img_aabb.y2 < bbox.y1 || img_aabb.y1 > bbox.y2 {
+    if img_aabb.x2 < bbox.x1
+        || img_aabb.x1 > bbox.x2
+        || img_aabb.y2 < bbox.y1
+        || img_aabb.y1 > bbox.y2
+    {
         false
     } else {
         // Overlap detected

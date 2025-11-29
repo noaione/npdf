@@ -331,12 +331,11 @@ fn emit_git_sha_version(jxl_src: &Path) {
         .arg("HEAD")
         .output();
 
-    if let Ok(output) = output {
-        if output.status.success() {
-            if let Ok(sha) = String::from_utf8(output.stdout) {
-                let sha = sha.trim();
-                println!("cargo:rustc-env=SJPEGLI_COMMIT_SHA={}", sha);
-            }
-        }
+    if let Ok(output) = output
+        && output.status.success()
+        && let Ok(sha) = String::from_utf8(output.stdout)
+    {
+        let sha = sha.trim();
+        println!("cargo:rustc-env=SJPEGLI_COMMIT_SHA={}", sha);
     }
 }
