@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::thread;
 use tiny_poppler::{
     ColorMode, Document, DocumentFactory, ImageInfo, ImageType, PageInfo, PdfCropMode,
-    PdfImageColorSpace, PdfPasswords, RenderOptions,
+    PdfImageColorSpace, PdfMatrix, PdfPasswords, PdfRect, RenderOptions,
 };
 
 #[derive(Args)]
@@ -173,6 +173,7 @@ pub fn run(args: ExportArgs, passwords: Option<&PdfPasswords>) -> Result<(), Str
         let guessed = precalculate_auto_export_config(
             images_slice,
             page_info,
+            crop,
             with_cmyk,
             dpi,
             auto_dpi,
@@ -357,6 +358,7 @@ struct GuessedImage {
 fn precalculate_auto_export_config(
     images: &[ImageInfo],
     page_info: Option<PageInfo>,
+    crop_mode: CropChoice,
     with_cmyk: bool,
     target_dpi: f64,
     direction: Option<AutoDPIDirection>,
@@ -364,7 +366,9 @@ fn precalculate_auto_export_config(
 ) -> GuessedImage {
     let color = determine_page_colorspace(images, page_info, with_cmyk);
     let dpi = if let Some(direction) = direction {
-        determine_export_dpi(images, target_dpi, direction, dpi_ratio)
+        determine_export_dpi(
+            images, page_info, crop_mode, target_dpi, direction, dpi_ratio,
+        )
     } else {
         target_dpi
     };
@@ -395,6 +399,8 @@ fn determine_page_colorspace(
 
 fn determine_export_dpi(
     images: &[ImageInfo],
+    page_info: Option<PageInfo>,
+    crop_mode: CropChoice,
     target_dpi: f64,
     direction: AutoDPIDirection,
     dpi_ratio: f64,
@@ -407,6 +413,7 @@ fn determine_export_dpi(
         images
             .iter()
             .filter(|&img| matches!(img.image_type, ImageType::Stencil | ImageType::Image))
+            .filter(|&img| image_intersecting_with_page(page_info, crop_mode, img.matrix))
             .filter(|&img| u_t_f(img.height) >= u_t_f(img.width) * dpi_ratio)
             .map(|f| f.dpi.1)
             .collect()
@@ -414,6 +421,7 @@ fn determine_export_dpi(
         images
             .iter()
             .filter(|&img| matches!(img.image_type, ImageType::Stencil | ImageType::Image))
+            .filter(|&img| image_intersecting_with_page(page_info, crop_mode, img.matrix))
             .filter(|&img| u_t_f(img.height) * dpi_ratio <= u_t_f(img.width))
             .map(|f| f.dpi.0)
             .collect()
@@ -498,6 +506,41 @@ fn colorspace_contains_color(space: &PdfImageColorSpace, components: u32) -> boo
         PdfImageColorSpace::DeviceN { alternate, .. } => {
             colorspace_contains_color(alternate, components)
         }
+    }
+}
+
+fn image_intersecting_with_page(
+    page_info: Option<PageInfo>,
+    crop_mode: CropChoice,
+    matrix: PdfMatrix,
+) -> bool {
+    if let Some(info) = page_info {
+        let bbox = match crop_mode {
+            CropChoice::Crop => info.cropbox,
+            CropChoice::Media => info.mediabox,
+        };
+        match bbox {
+            Some(b) => image_is_intersecting(matrix, b),
+            None => false,
+        }
+    } else {
+        false
+    }
+}
+
+/// Checks if the Image (defined by matrix) intersects the Page CropBox
+pub fn image_is_intersecting(matrix: PdfMatrix, bbox: PdfRect) -> bool {
+    let img_aabb = matrix.get_image_aabb();
+
+    // Separating Axis Theorem (Simplified for AABB)
+    // If one is to the left/right/top/bottom of the other, they do not intersect.
+    if img_aabb.x2 < bbox.x1 || img_aabb.x1 > bbox.x2 {
+        false
+    } else if img_aabb.y2 < bbox.y1 || img_aabb.y1 > bbox.y2 {
+        false
+    } else {
+        // Overlap detected
+        true
     }
 }
 
