@@ -13,10 +13,10 @@ pub struct RecropArgs {
     /// Output file path to save the unwatermarked PDF.
     #[arg(short = 'o', long)]
     pub output: Option<PathBuf>,
-    #[clap(long, value_enum)]
+    #[clap(short = 'b', long, value_enum)]
     /// Choose which box to use for recropping pages.
-    pub cropbox: CropChoice,
-    #[arg(long, default_value_t = false)]
+    pub bounding: CropChoice,
+    #[arg(short = 'i', long, default_value_t = false)]
     pub describe: bool,
 }
 
@@ -77,7 +77,7 @@ pub fn run(args: RecropArgs, passwords: Option<&PdfPasswords>) -> Result<(), Str
             continue;
         }
 
-        match page_box.get_box(args.cropbox) {
+        match page_box.get_box(args.bounding) {
             Some(new_box) => {
                 set_new_crop_box(&mut doc, object_id, new_box).map_err(|err| {
                     format!("Failed to set new crop box for page {}: {}", page_num, err)
@@ -88,7 +88,7 @@ pub fn run(args: RecropArgs, passwords: Option<&PdfPasswords>) -> Result<(), Str
                 cprintln!(
                     "<yellow>Warning:</> Page {} does not have the specified box {:?}. Skipping.",
                     page_num,
-                    args.cropbox
+                    args.bounding
                 );
             }
         }

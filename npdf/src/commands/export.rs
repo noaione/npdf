@@ -19,12 +19,12 @@ pub struct ExportArgs {
     #[arg(short = 'o', long)]
     pub output: Option<PathBuf>,
     /// Colorspace to request from Poppler. Auto keeps the library default.
-    #[arg(long, value_enum, default_value_t = ColorChoice::Auto)]
+    #[arg(short = 'c', long, value_enum, default_value_t = ColorChoice::Auto)]
     pub color: ColorChoice,
-    #[arg(long, value_enum, default_value_t = CropChoice::Crop)]
-    pub crop: CropChoice,
+    #[arg(short = 'b', long, value_enum, default_value_t = CropChoice::Crop)]
+    pub bounding: CropChoice,
     /// DPI used when rendering the page raster.
-    #[arg(long, default_value_t = 150.0)]
+    #[arg(short = 'r', long, default_value_t = 150.0)]
     pub dpi: f64,
     /// Auto-DPI based on image characteristics.
     ///
@@ -42,7 +42,7 @@ pub struct ExportArgs {
     #[arg(long, default_value_t = false)]
     pub with_cmyk: bool,
     /// JPEG quality (1-100) when exporting to JPEG files.
-    #[arg(long, default_value_t = 96, value_parser = clap::value_parser!(u8).range(1..=100))]
+    #[arg(short = 'q', long, default_value_t = 96, value_parser = clap::value_parser!(u8).range(1..=100))]
     pub quality: u8,
     /// First page to export (1-based).
     #[arg(short, long)]
@@ -53,10 +53,10 @@ pub struct ExportArgs {
     /// Reverse the page order during export.
     #[arg(long, default_value_t = false)]
     pub reverse: bool,
-    #[arg(long, default_value_t = false)]
+    #[arg(short = 'i', long, default_value_t = false)]
     pub describe: bool,
     /// Worker threads to use during export (omit for auto).
-    #[arg(long, value_parser = clap::value_parser!(NonZeroUsize))]
+    #[arg(short = 't', long, value_parser = clap::value_parser!(NonZeroUsize))]
     pub threads: Option<NonZeroUsize>,
 }
 
@@ -103,7 +103,7 @@ pub fn run(args: ExportArgs, passwords: Option<&PdfPasswords>) -> Result<(), Str
         dpi,
         first,
         last,
-        crop,
+        bounding,
         describe,
         auto_dpi,
         with_cmyk,
@@ -158,7 +158,7 @@ pub fn run(args: ExportArgs, passwords: Option<&PdfPasswords>) -> Result<(), Str
 
     let base_options = RenderOptions {
         dpi,
-        crop_mode: crop.to_crop_mode(),
+        crop_mode: bounding.to_crop_mode(),
         color_mode: color.to_color_mode().unwrap_or(ColorMode::Rgb8),
         jpeg_quality: Some(quality),
     };
@@ -182,7 +182,7 @@ pub fn run(args: ExportArgs, passwords: Option<&PdfPasswords>) -> Result<(), Str
         let guessed = precalculate_auto_export_config(
             images_slice,
             page_info,
-            crop,
+            bounding,
             with_cmyk,
             dpi,
             auto_dpi,

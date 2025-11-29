@@ -27,10 +27,10 @@ pub struct ExtractArgs {
     #[arg(short, long, value_name = "PAGE")]
     pub last: Option<u32>,
     /// Describe discovered images without writing any files.
-    #[arg(long)]
+    #[arg(short = 'i', long)]
     pub describe: bool,
     /// Worker threads to use during extraction (omit for auto).
-    #[arg(long, value_parser = clap::value_parser!(NonZeroUsize))]
+    #[arg(short = 't', long, value_parser = clap::value_parser!(NonZeroUsize))]
     pub threads: Option<NonZeroUsize>,
     /// Reverse the page order during extraction.
     #[arg(long, default_value_t = false)]
