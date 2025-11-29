@@ -8,6 +8,7 @@ poppler/pdftoppm itself is already solid CLI tools but lacks some features that 
 - automatic color mode selection based on images (`--color auto`)
 - automatically chose DPI based on the possible page size (`--auto-dpi vertical`)
 - "native" multi-threaded exporting (see info below)
+- no need to install poppler/pdftoppm separately, it's already bundled in the binary
 
 this version of exporter is custom-made for people that want to export their comic and manga PDF bought from
 somewhere into a collection of PNGs.
@@ -70,6 +71,9 @@ pass `--threads 1` to run single-threaded or `--threads N` to clamp the worker c
 currently, the way this is implemented is that the main thread will parse the PDF once and then spawn worker threads that each open their own isolated `Document` instance from a shared `DocumentFactory`.<br />
 since i don't think poppler's `PDFDoc` is thread-safe *yet* to allow sharing between threads.
 
+when using `--force-cmyk` option, the exported file would use JPEG format instead as PNG does not support CMYK color mode.<br />
+this is powered with [`jpegli`/`libjxl`](https://github.com/libjxl/libjxl) via [`simple-jpegli-enc`](https://github.com/noaione/npdf/tree/master/simple-jpegli-enc) crate.
+
 ### extract
 ```
 npdf extract <pdf_file> <output_dir>
@@ -116,3 +120,9 @@ i also haven't ran `miri` yet on this since i need some example PDFs first that 
 ## license
 
 GPL-3.0-or-later as the poppler/xpdf library is licensed in GPL
+
+## acknowledgements
+
+- thanks to the poppler/xpdf project for their great rendering library for PDF files.
+- the libjxl project for the great JPEG compression library (especially the jpegli bridge).
+- the lopdf project for their PDF manipulation library.
