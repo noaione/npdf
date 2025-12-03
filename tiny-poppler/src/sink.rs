@@ -4,7 +4,7 @@ use crate::ffi::{
 use crate::helpers::build_pixel_dims_png;
 use png::{BitDepth, ColorType, Encoder};
 use std::fmt::Write as FmtWrite;
-use std::io::Cursor;
+use std::io::{Cursor, Write};
 use thiserror::Error;
 use tiff::encoder::Rational;
 use tiff::encoder::{self, TiffEncoder, colortype};
@@ -23,6 +23,8 @@ pub enum ImageSinkError {
     },
     #[error("unsupported raster layout")]
     UnsupportedLayout,
+    #[error("I/O error: {0}")]
+    IoError(#[from] std::io::Error),
     #[error("png encode: {0}")]
     Png(String),
     #[error("tiff encode: {0}")]
@@ -67,6 +69,7 @@ impl std::fmt::Debug for EncodedExportedImage {
 pub struct ImageSinkOptions {
     pub tiff_compression: TiffCompression,
     pub png_compression: PngCompression,
+    pub ccitt_as_tiff: bool,
 }
 
 impl std::fmt::Debug for ImageSinkOptions {
@@ -89,6 +92,7 @@ impl Default for ImageSinkOptions {
         Self {
             tiff_compression: TiffCompression::Deflate(TiffDeflateLevel::Balanced),
             png_compression: PngCompression::Balanced,
+            ccitt_as_tiff: false,
         }
     }
 }
@@ -120,6 +124,15 @@ pub fn sink_exported_image(
         ImageExportExtension::Png => encode_png_image(image, options),
         ImageExportExtension::Tiff => encode_tiff_image(image, options),
         ImageExportExtension::Pnm => encode_pnm_image(image),
+        ImageExportExtension::Ccitt => {
+            if options.ccitt_as_tiff
+                && let Some(params) = &image.ccitt_params
+            {
+                encode_ccitt_as_tiff_image(&image, params)
+            } else {
+                Ok(EncodedExportedImage::from_exported(image))
+            }
+        }
         _ => Ok(EncodedExportedImage::from_exported(image)),
     }
 }
@@ -352,6 +365,151 @@ fn encode_pnm_image(image: ExportedImage) -> Result<EncodedExportedImage, ImageS
         format,
         image_type,
         extension,
+        jbig2_globals: None,
+        ccitt_params: None,
+    })
+}
+
+fn encode_ccitt_as_tiff_image(
+    image: &ExportedImage,
+    params: &CcittParams,
+) -> Result<EncodedExportedImage, ImageSinkError> {
+    let ExportedImage {
+        data,
+        width_dpi,
+        height_dpi,
+        ..
+    } = image;
+    let width_dpi_rational = dpi_to_rational(*width_dpi).unwrap_or(Rational { n: 300, d: 1 });
+    let height_dpi_rational = dpi_to_rational(*height_dpi).unwrap_or(Rational { n: 300, d: 1 });
+
+    let mut buffer = Cursor::new(Vec::with_capacity(data.len() + 200));
+
+    // --- 1. Write TIFF Header (8 bytes) ---
+    // Byte Order: "II" (Little Endian)
+    buffer.write_all(b"II")?;
+    // Version: 42
+    buffer.write_all(&42u16.to_le_bytes())?;
+    // Offset to first IFD (We put it immediately after header, so offset 8)
+    buffer.write_all(&8u32.to_le_bytes())?;
+
+    // --- 2. Prepare Tags ---
+
+    // Calculate Compression & Photometric Interpretation
+    let compression: u16 = if params.encoding < 0 { 4 } else { 3 }; // 4=G4, 3=G3
+    let photometric: u16 = if params.black_is_one { 1 } else { 0 }; // 0=WhiteIsZero, 1=BlackIsZero
+
+    // Define standard resolution (300 DPI)
+    let x_res_val = [width_dpi_rational.n, width_dpi_rational.d];
+    let y_res_val = [height_dpi_rational.n, height_dpi_rational.d];
+
+    // Helper to structure a TIFF Tag: (Tag ID, Type, Count, Value/Offset)
+    // Types: 3=SHORT(2b), 4=LONG(4b), 5=RATIONAL(8b)
+    let mut tags = Vec::new();
+
+    // 256: ImageWidth
+    tags.push((256u16, 4u16, 1u32, params.columns as u32));
+    // 257: ImageLength
+    tags.push((257u16, 4u16, 1u32, params.rows as u32));
+    // 258: BitsPerSample (1)
+    tags.push((258u16, 3u16, 1u32, 1u32)); // Value 1 fits in offset
+    // 259: Compression
+    tags.push((259u16, 3u16, 1u32, compression as u32));
+    // 262: PhotometricInterpretation
+    tags.push((262u16, 3u16, 1u32, photometric as u32));
+    // 273: StripOffsets (Placeholder, calculated later)
+    tags.push((273u16, 4u16, 1u32, 0u32));
+    // 277: SamplesPerPixel (1)
+    tags.push((277u16, 3u16, 1u32, 1u32));
+    // 278: RowsPerStrip (All rows in one strip)
+    tags.push((278u16, 4u16, 1u32, params.rows as u32));
+    // 279: StripByteCounts (Size of raw data)
+    tags.push((279u16, 4u16, 1u32, data.len() as u32));
+    // 282: XResolution (RATIONAL - Offset calculated later)
+    tags.push((282u16, 5u16, 1u32, 0u32));
+    // 283: YResolution (RATIONAL - Offset calculated later)
+    tags.push((283u16, 5u16, 1u32, 0u32));
+    // 296: ResolutionUnit (2 = Inch)
+    tags.push((296u16, 3u16, 1u32, 2u32));
+
+    // Handle Group 3 Options (T4Options)
+    if compression == 3 {
+        let mut t4_opts = 0u32;
+        if params.encoding > 0 {
+            t4_opts |= 1;
+        } // 2D Coding
+        if params.byte_align {
+            t4_opts |= 4;
+        } // Byte Align
+        // 292: T4Options
+        tags.push((292u16, 4u16, 1u32, t4_opts));
+    }
+
+    // Handle Group 4 Options (T6Options) - Usually 0
+    if compression == 4 {
+        tags.push((293u16, 4u16, 1u32, 0u32));
+    }
+
+    // Sort tags by ID (Required by TIFF spec)
+    tags.sort_by_key(|t| t.0);
+
+    // --- 3. Calculate Offsets ---
+
+    // Header (8) + IFD Count (2) + Tags (12 * N) + NextIFD (4)
+    let ifd_size = 2 + (tags.len() as u32 * 12) + 4;
+    let next_available_offset = 8 + ifd_size;
+
+    // We need to store: XRes (8 bytes), YRes (8 bytes), then Image Data
+    let x_res_offset = next_available_offset;
+    let y_res_offset = x_res_offset + 8;
+    let data_offset = y_res_offset + 8;
+
+    // --- 4. Write IFD ---
+
+    // Write Number of Entries
+    buffer.write_all(&(tags.len() as u16).to_le_bytes())?;
+
+    for (tag, type_, count, mut value) in tags {
+        // Fixup offsets for things that don't fit in 4 bytes
+        if tag == 273 {
+            value = data_offset;
+        } // StripOffsets
+        if tag == 282 {
+            value = x_res_offset;
+        } // XResolution
+        if tag == 283 {
+            value = y_res_offset;
+        } // YResolution
+
+        buffer.write_all(&tag.to_le_bytes())?;
+        buffer.write_all(&type_.to_le_bytes())?;
+        buffer.write_all(&count.to_le_bytes())?;
+        buffer.write_all(&value.to_le_bytes())?; // Write Value or Offset
+    }
+
+    // Next IFD Offset (0 = None)
+    buffer.write_all(&0u32.to_le_bytes())?;
+
+    // --- 5. Write Extra Values (Resolution) ---
+    // XResolution (Numerator, Denominator)
+    buffer.write_all(&x_res_val[0].to_le_bytes())?;
+    buffer.write_all(&x_res_val[1].to_le_bytes())?;
+    // YResolution
+    buffer.write_all(&y_res_val[0].to_le_bytes())?;
+    buffer.write_all(&y_res_val[1].to_le_bytes())?;
+
+    // --- 6. Write Image Data ---
+    buffer.write_all(&data)?;
+
+    Ok(EncodedExportedImage {
+        bytes: buffer.into_inner(),
+        width: params.columns as u32,
+        height: params.rows as u32,
+        width_dpi: *width_dpi,
+        height_dpi: *height_dpi,
+        format: ImageExportFormat::Monochrome,
+        image_type: image.image_type,
+        extension: ImageExportExtension::Tiff,
         jbig2_globals: None,
         ccitt_params: None,
     })

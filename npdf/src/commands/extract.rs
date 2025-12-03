@@ -26,6 +26,9 @@ pub struct ExtractArgs {
     /// Last 1-based page to inspect (defaults to the final page).
     #[arg(short, long, value_name = "PAGE")]
     pub last: Option<u32>,
+    /// Export CCITT as TIFF images where applicable.
+    #[arg(long, default_value_t = false)]
+    pub ccitt_as_tiff: bool,
     /// Describe discovered images without writing any files.
     #[arg(short = 'i', long)]
     pub describe: bool,
@@ -50,6 +53,7 @@ pub fn run(args: ExtractArgs, passwords: Option<&PdfPasswords>) -> Result<(), St
         describe,
         threads,
         reverse,
+        ccitt_as_tiff,
     } = args;
 
     let output = match (output_opt, describe) {
@@ -148,6 +152,7 @@ pub fn run(args: ExtractArgs, passwords: Option<&PdfPasswords>) -> Result<(), St
                     slot_suffix: slot_suffix.clone(),
                     component_suffix,
                     entry,
+                    ccitt_as_tiff,
                 });
             }
         }
@@ -255,6 +260,7 @@ struct ExtractionJob {
     slot_suffix: String,
     component_suffix: &'static str,
     entry: ImageEntry,
+    ccitt_as_tiff: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -595,8 +601,14 @@ fn process_extract_job(
     }
 
     let root = output_root.ok_or_else(|| "missing output directory for extraction".to_string())?;
-    let encoded = sink_exported_image(exported, ImageSinkOptions::default())
-        .map_err(|err| format!("failed to encode image: {err}"))?;
+    let encoded = sink_exported_image(
+        exported,
+        ImageSinkOptions {
+            ccitt_as_tiff: job.ccitt_as_tiff,
+            ..Default::default()
+        },
+    )
+    .map_err(|err| format!("failed to encode image: {err}"))?;
     let extension = encoded.file_extension();
     let path = build_output_path(
         root,
