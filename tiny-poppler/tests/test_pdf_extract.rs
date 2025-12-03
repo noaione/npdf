@@ -563,3 +563,105 @@ fn test_extract_from_inline_ccitt() {
     assert!(!params.byte_align);
     assert!(!params.black_is_one);
 }
+
+#[test]
+fn test_extract_from_ccitt_group1() {
+    let mut document = open_document("image_ccit_1.pdf");
+    let images = document
+        .image_metadata()
+        .expect("Failed to get image metadata");
+    assert_eq!(images.images.len(), 1);
+
+    let info = &images.images[0];
+    assert_eq!(info.width, 415);
+    assert_eq!(info.height, 314);
+    assert_eq!(info.components, 1);
+    assert_eq!(info.bits_per_component, 1);
+
+    let exported = document
+        .export_image(ImageExportRequest {
+            page_index: 0,
+            target_type: tiny_poppler::ImageExportType::Image,
+            selector: tiny_poppler::ImageExportSelector::Reference {
+                object: 8,
+                generation: 0,
+            },
+        })
+        .expect("Failed to export CCITT Group 1 image");
+
+    assert_eq!(exported.width, 415);
+    assert_eq!(exported.height, 314);
+    assert_eq!(exported.components, 1);
+    assert_eq!(exported.bits_per_component, 1);
+    assert_eq!(exported.stride, 0);
+    assert_eq!(exported.format, tiny_poppler::ImageExportFormat::Unknown);
+    assert_eq!(
+        exported.extension,
+        tiny_poppler::ImageExportExtension::Ccitt
+    );
+    assert_eq!(exported.data.len(), 911);
+
+    let params = exported
+        .ccitt_params
+        .as_ref()
+        .expect("Expected CCITT parameters to be present");
+    assert_eq!(params.encoding, -1); // Group 1
+    assert_eq!(params.columns, 415);
+    assert_eq!(params.rows, 314);
+    assert_eq!(params.damaged_rows_before_error, 0);
+    assert!(!params.end_of_line);
+    assert!(!params.byte_align);
+    assert!(params.end_of_block);
+    assert!(!params.black_is_one);
+}
+
+#[test]
+fn test_extract_from_ccitt_group4() {
+    let mut document = open_document("image_ccit_4.pdf");
+    let images = document
+        .image_metadata()
+        .expect("Failed to get image metadata");
+    assert_eq!(images.images.len(), 1);
+
+    let info = &images.images[0];
+    assert_eq!(info.width, 2336);
+    assert_eq!(info.height, 2857);
+    assert_eq!(info.components, 1);
+    assert_eq!(info.bits_per_component, 1);
+
+    let exported = document
+        .export_image(ImageExportRequest {
+            page_index: 0,
+            target_type: tiny_poppler::ImageExportType::Image,
+            selector: tiny_poppler::ImageExportSelector::Reference {
+                object: 8,
+                generation: 0,
+            },
+        })
+        .expect("Failed to export CCITT Group 4 image");
+
+    assert_eq!(exported.width, 2336);
+    assert_eq!(exported.height, 2857);
+    assert_eq!(exported.components, 1);
+    assert_eq!(exported.bits_per_component, 1);
+    assert_eq!(exported.stride, 0);
+    assert_eq!(exported.format, tiny_poppler::ImageExportFormat::Unknown);
+    assert_eq!(
+        exported.extension,
+        tiny_poppler::ImageExportExtension::Ccitt
+    );
+    assert_eq!(exported.data.len(), 31_187);
+
+    let params = exported
+        .ccitt_params
+        .as_ref()
+        .expect("Expected CCITT parameters to be present");
+    assert_eq!(params.encoding, -1); // Group 4
+    assert_eq!(params.columns, 2336);
+    assert_eq!(params.rows, 2857);
+    assert_eq!(params.damaged_rows_before_error, 0);
+    assert!(!params.end_of_line);
+    assert!(!params.byte_align);
+    assert!(params.end_of_block);
+    assert!(!params.black_is_one);
+}

@@ -5,6 +5,14 @@
 *.png
 *.jpg
 *.pdf
+*.tiff
+*.tif
+*.ccitt
+*.ccitt.params
+*.jp2
+*.jb2
+*.jb2g
+*.p[bgpn]m
 !tiny-poppler/tests/**/*.pdf
 
 build/
