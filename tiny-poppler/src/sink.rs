@@ -385,26 +385,17 @@ fn encode_ccitt_as_tiff_image(
 
     let mut buffer = Cursor::new(Vec::with_capacity(data.len() + 200));
 
-    // --- 1. Write TIFF Header (8 bytes) ---
-    // Byte Order: "II" (Little Endian)
+    // Little endian mode
     buffer.write_all(b"II")?;
-    // Version: 42
     buffer.write_all(&42u16.to_le_bytes())?;
-    // Offset to first IFD (We put it immediately after header, so offset 8)
     buffer.write_all(&8u32.to_le_bytes())?;
 
-    // --- 2. Prepare Tags ---
-
-    // Calculate Compression & Photometric Interpretation
     let compression: u16 = if params.encoding < 0 { 4 } else { 3 }; // 4=G4, 3=G3
     let photometric: u16 = if params.black_is_one { 1 } else { 0 }; // 0=WhiteIsZero, 1=BlackIsZero
 
-    // Define standard resolution (300 DPI)
     let x_res_val = [width_dpi_rational.n, width_dpi_rational.d];
     let y_res_val = [height_dpi_rational.n, height_dpi_rational.d];
 
-    // Helper to structure a TIFF Tag: (Tag ID, Type, Count, Value/Offset)
-    // Types: 3=SHORT(2b), 4=LONG(4b), 5=RATIONAL(8b)
     let mut tags = Vec::new();
 
     // 256: ImageWidth
@@ -432,7 +423,7 @@ fn encode_ccitt_as_tiff_image(
     // 296: ResolutionUnit (2 = Inch)
     tags.push((296u16, 3u16, 1u32, 2u32));
 
-    // Handle Group 3 Options (T4Options)
+    // Group 3
     if compression == 3 {
         let mut t4_opts = 0u32;
         if params.encoding > 0 {
@@ -445,60 +436,49 @@ fn encode_ccitt_as_tiff_image(
         tags.push((292u16, 4u16, 1u32, t4_opts));
     }
 
-    // Handle Group 4 Options (T6Options) - Usually 0
+    // Group 4
     if compression == 4 {
         tags.push((293u16, 4u16, 1u32, 0u32));
     }
 
-    // Sort tags by ID (Required by TIFF spec)
     tags.sort_by_key(|t| t.0);
 
-    // --- 3. Calculate Offsets ---
-
-    // Header (8) + IFD Count (2) + Tags (12 * N) + NextIFD (4)
     let ifd_size = 2 + (tags.len() as u32 * 12) + 4;
     let next_available_offset = 8 + ifd_size;
 
-    // We need to store: XRes (8 bytes), YRes (8 bytes), then Image Data
     let x_res_offset = next_available_offset;
     let y_res_offset = x_res_offset + 8;
     let data_offset = y_res_offset + 8;
 
-    // --- 4. Write IFD ---
-
-    // Write Number of Entries
     buffer.write_all(&(tags.len() as u16).to_le_bytes())?;
 
     for (tag, type_, count, mut value) in tags {
         // Fixup offsets for things that don't fit in 4 bytes
         if tag == 273 {
             value = data_offset;
-        } // StripOffsets
+        }
         if tag == 282 {
             value = x_res_offset;
-        } // XResolution
+        }
         if tag == 283 {
             value = y_res_offset;
-        } // YResolution
+        }
 
         buffer.write_all(&tag.to_le_bytes())?;
         buffer.write_all(&type_.to_le_bytes())?;
         buffer.write_all(&count.to_le_bytes())?;
-        buffer.write_all(&value.to_le_bytes())?; // Write Value or Offset
+        buffer.write_all(&value.to_le_bytes())?;
     }
 
-    // Next IFD Offset (0 = None)
     buffer.write_all(&0u32.to_le_bytes())?;
 
-    // --- 5. Write Extra Values (Resolution) ---
-    // XResolution (Numerator, Denominator)
+    // resolutions
     buffer.write_all(&x_res_val[0].to_le_bytes())?;
     buffer.write_all(&x_res_val[1].to_le_bytes())?;
-    // YResolution
     buffer.write_all(&y_res_val[0].to_le_bytes())?;
     buffer.write_all(&y_res_val[1].to_le_bytes())?;
 
-    // --- 6. Write Image Data ---
+    // data
     buffer.write_all(&data)?;
 
     Ok(EncodedExportedImage {
