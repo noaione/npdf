@@ -905,6 +905,46 @@ pub fn rgb2gray(pixels: &[u8]) -> Result<Vec<u8>, RenderError> {
     Ok(result)
 }
 
+/// Do a fast CMYK -> Gray conversion without using RGB as an intermediate.
+///
+/// Note: This is a really rough approximation and may not yield visually accurate results.
+///
+/// # Errors
+/// Returns `RenderError::UnsupportedLayout` if the input pixel buffer length is not
+/// a multiple of 4.
+///
+/// # Example
+/// ```rust
+/// let cmyk_pixels = vec![0u8, 255, 255, 0, 255, 0, 255, 0]; // Two CMYK pixels
+/// let gray_pixels = tiny_poppler::cmyk2gray(&cmyk_pixels).unwrap();
+/// assert_eq!(gray_pixels, vec![178, 104]); // Corresponding grayscale values
+/// ```
+pub fn cmyk2gray(pixels: &[u8]) -> Result<Vec<u8>, RenderError> {
+    // Check dimension that each row has multiple of 4 bytes
+    if pixels.len() % 4 != 0 {
+        return Err(RenderError::UnsupportedLayout);
+    }
+
+    let result: Vec<u8> = pixels
+        .par_chunks_exact(4)
+        .map(|chunk| {
+            let c = chunk[0] as u16;
+            let m = chunk[1] as u16;
+            let y = chunk[2] as u16;
+            let k = chunk[3];
+
+            // Fast approx of CMYK to Gray
+            // >> gray = K + int(0.3 * C) + int(0.59 * M) + int(0.11 * Y)
+            // >> gray = max(0, min(255, gray))
+            let cmy_part = (c * 77 + m * 151 + y * 28) >> 8;
+            let gray = k.saturating_add(cmy_part as u8);
+            gray
+        })
+        .collect();
+
+    Ok(result)
+}
+
 #[derive(Debug, Clone)]
 pub struct VersionInfo<'a> {
     version: (u32, u32, u32),
