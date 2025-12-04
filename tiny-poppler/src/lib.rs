@@ -829,7 +829,21 @@ fn cmyk2rgb_pix_fast(c: u8, m: u8, y: u8, k: u8) -> (u8, u8, u8) {
     (r, g, b)
 }
 
-fn cmyk2rgb(pixels: &[u8]) -> Result<Vec<u8>, RenderError> {
+/// A parallel CMYK -> RGB conversion function based on Python Pillow's implementation.
+///
+/// Some stuff are "guaranteed" by the caller (e.g., input length is multiple of 4, etc).
+///
+/// # Errors
+/// Returns `RenderError::UnsupportedLayout` if the input pixel buffer length is not
+/// a multiple of 4.
+///
+/// # Example
+/// ```rust
+/// let cmyk_pixels = vec![0u8, 255, 255, 0, 255, 0, 255, 0]; // Two CMYK pixels
+/// let rgb_pixels = tiny_poppler::cmyk2rgb(&cmyk_pixels).unwrap();
+/// assert_eq!(rgb_pixels, vec![255, 0, 0, 0, 255, 0]); // Corresponding RGB pixels
+/// ```
+pub fn cmyk2rgb(pixels: &[u8]) -> Result<Vec<u8>, RenderError> {
     // check dimension that each row has multiple of 4 bytes
     if pixels.len() % 4 != 0 {
         return Err(RenderError::UnsupportedLayout);
@@ -854,6 +868,41 @@ fn cmyk2rgb(pixels: &[u8]) -> Result<Vec<u8>, RenderError> {
         });
 
     Ok(results)
+}
+
+/// Do a fast RGB -> Gray conversion using ITU-R BT.709 luminance approximation.
+///
+/// # Errors
+/// Returns `RenderError::UnsupportedLayout` if the input pixel buffer length is not
+/// a multiple of 3.
+///
+/// # Example
+/// ```rust
+/// let rgb_pixels = vec![255u8, 0, 0, 0, 255, 0]; // Two RGB pixels (red, green)
+/// let gray_pixels = tiny_poppler::rgb2gray(&rgb_pixels).unwrap();
+/// assert_eq!(gray_pixels, vec![53, 182]); // Corresponding grayscale values
+/// ```
+pub fn rgb2gray(pixels: &[u8]) -> Result<Vec<u8>, RenderError> {
+    // Check dimension that each row has multiple of 3 bytes
+    if pixels.len() % 3 != 0 {
+        return Err(RenderError::UnsupportedLayout);
+    }
+
+    let result: Vec<u8> = pixels
+        .par_chunks_exact(3)
+        .map(|chunk| {
+            let r = chunk[0] as u16;
+            let g = chunk[1] as u16;
+            let b = chunk[2] as u16;
+
+            // Fast approx of ITU-R BT.709 luminance
+            // 0.2126 * R + 0.7152 * G + 0.0722 * B
+            // Using fast approximation with integer math:
+            ((r * 54 + g * 183 + b * 19) >> 8) as u8
+        })
+        .collect();
+
+    Ok(result)
 }
 
 #[derive(Debug, Clone)]
