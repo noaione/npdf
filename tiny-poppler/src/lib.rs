@@ -15,7 +15,8 @@ pub use ffi::{
     PdfCropMode, PdfImageColorSpace, PdfMatrix, PdfPoint, PdfRect,
 };
 use png::{BitDepth, ColorType, Encoder};
-use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
+use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
+use rayon::slice::{ParallelSlice, ParallelSliceMut};
 use simple_jpegli_enc::{ColorSpace as JpegColorType, JpegEncoder, JpegError};
 pub use sink::{
     EncodedExportedImage, ImageSinkError, ImageSinkOptions, PngCompression, TiffCompression,
@@ -36,6 +37,7 @@ pub struct RenderOptions {
     pub color_mode: ColorMode,
     pub crop_mode: PdfCropMode,
     pub jpeg_quality: Option<u8>,
+    pub cmyk_to_rgb: bool,
 }
 
 impl Default for RenderOptions {
@@ -45,6 +47,7 @@ impl Default for RenderOptions {
             color_mode: ColorMode::Rgb8,
             crop_mode: PdfCropMode::CropBox,
             jpeg_quality: Some(95),
+            cmyk_to_rgb: false,
         }
     }
 }
@@ -219,6 +222,7 @@ impl Document {
             &image,
             options.jpeg_quality.unwrap_or(DEFAULT_JPEG_QUALITY),
             options.dpi,
+            options.cmyk_to_rgb,
         )
     }
 
@@ -470,7 +474,12 @@ pub fn get_images_single(pdf_path: &Path) -> Result<Vec<ImageInfo>, RenderError>
     document.images()
 }
 
-fn encode_image(image: &ffi::Image, quality: u8, dpi: f64) -> Result<EncodedImage, RenderError> {
+fn encode_image(
+    image: &ffi::Image,
+    quality: u8,
+    dpi: f64,
+    cmyk_to_rgb: bool,
+) -> Result<EncodedImage, RenderError> {
     if image.width == 0 || image.height == 0 {
         return Err(RenderError::UnsupportedLayout);
     }
@@ -600,10 +609,26 @@ fn encode_image(image: &ffi::Image, quality: u8, dpi: f64) -> Result<EncodedImag
                 bytes,
             })
         }
-        ColorMode::Cmyk8 => encode_cmyk_like(image, width, height, row_bytes, false, quality, dpi),
-        ColorMode::DeviceN8 => {
-            encode_cmyk_like(image, width, height, row_bytes, true, quality, dpi)
-        }
+        ColorMode::Cmyk8 => encode_cmyk_like(
+            image,
+            width,
+            height,
+            row_bytes,
+            false,
+            quality,
+            dpi,
+            cmyk_to_rgb,
+        ),
+        ColorMode::DeviceN8 => encode_cmyk_like(
+            image,
+            width,
+            height,
+            row_bytes,
+            true,
+            quality,
+            dpi,
+            cmyk_to_rgb,
+        ),
     }
 }
 
@@ -665,6 +690,7 @@ fn encode_cmyk_like(
     drop_spot_channels: bool,
     quality: u8,
     dpi: f64,
+    cmyk_to_rgb: bool,
 ) -> Result<EncodedImage, RenderError> {
     if image.bits_per_component != 8 {
         return Err(RenderError::UnsupportedLayout);
@@ -690,31 +716,48 @@ fn encode_cmyk_like(
         return Err(RenderError::UnsupportedLayout);
     };
 
-    // invert CMYK to match JPEGli expectations
-    let inverted_payload = {
-        let mut buf = payload.to_vec();
-        buf.par_iter_mut().for_each(|p| *p = 255 - *p);
-        buf
-    };
+    if cmyk_to_rgb {
+        let rgb_pixels = cmyk2rgb(payload)?;
+        let png = encode_png(
+            &rgb_pixels,
+            width,
+            height,
+            dpi,
+            ColorType::Rgb,
+            BitDepth::Eight,
+            None,
+        )?;
+        Ok(EncodedImage {
+            format: ImageFormat::Png,
+            bytes: png,
+        })
+    } else {
+        // invert CMYK to match JPEGli expectations
+        let inverted_payload = {
+            let mut buf = payload.to_vec();
+            buf.par_iter_mut().for_each(|p| *p = 255 - *p);
+            buf
+        };
 
-    // convert dpi f64 to u16
-    let dpi_usize: usize = dpi.round().clamp(72.0, u16::MAX as f64) as usize;
-    let dpi_u16: u16 = dpi_usize
-        .try_into()
-        .map_err(|_| RenderError::InvalidDpiValue(dpi))?;
+        // convert dpi f64 to u16
+        let dpi_usize: usize = dpi.round().clamp(72.0, u16::MAX as f64) as usize;
+        let dpi_u16: u16 = dpi_usize
+            .try_into()
+            .map_err(|_| RenderError::InvalidDpiValue(dpi))?;
 
-    let jpeg = encode_jpeg(
-        &inverted_payload,
-        width,
-        height,
-        JpegColorType::Cmyk,
-        quality,
-        dpi_u16,
-    )?;
-    Ok(EncodedImage {
-        format: ImageFormat::Jpeg,
-        bytes: jpeg,
-    })
+        let jpeg = encode_jpeg(
+            &inverted_payload,
+            width,
+            height,
+            JpegColorType::Cmyk,
+            quality,
+            dpi_u16,
+        )?;
+        Ok(EncodedImage {
+            format: ImageFormat::Jpeg,
+            bytes: jpeg,
+        })
+    }
 }
 
 fn strip_spot_channels(pixels: &[u8], components: usize) -> Vec<u8> {
@@ -751,6 +794,66 @@ fn encode_jpeg(
     let encoder = JpegEncoder::new().quality(quality);
     let buffer = encoder.encode(pixels, width_u16, height_u16, colorspace, Some((dpi, dpi)))?;
     Ok(buffer)
+}
+
+/// A fast CMYK -> RGB conversion function based on Python Pillow's implementation.
+///
+/// Some stuff are "guaranteed" by the caller (e.g., input length is multiple of 4, etc).
+#[inline(always)]
+fn cmyk2rgb_pix_fast(c: u8, m: u8, y: u8, k: u8) -> (u8, u8, u8) {
+    // We use u32 to prevent overflow during multiplication, but we know
+    // the result fits in u8, so we can skip saturating_sub and min.
+
+    // nk = 255 - k
+    let nk = 255 - k as u32;
+
+    // The logic: result = nk - ((color * nk + 128) / 255)
+    // The fast division (x + 128) / 255 is approx ((x + 128) * 257) >> 16
+    // Or the shift trick you used: t = v + 128; (t + (t >> 8)) >> 8
+
+    // R
+    let r_target = c as u32 * nk + 128;
+    let r_div = (r_target + (r_target >> 8)) >> 8;
+    let r = (nk - r_div) as u8;
+
+    // G
+    let g_target = m as u32 * nk + 128;
+    let g_div = (g_target + (g_target >> 8)) >> 8;
+    let g = (nk - g_div) as u8;
+
+    // B
+    let b_target = y as u32 * nk + 128;
+    let b_div = (b_target + (b_target >> 8)) >> 8;
+    let b = (nk - b_div) as u8;
+
+    (r, g, b)
+}
+
+fn cmyk2rgb(pixels: &[u8]) -> Result<Vec<u8>, RenderError> {
+    // check dimension that each row has multiple of 4 bytes
+    if pixels.len() % 4 != 0 {
+        return Err(RenderError::UnsupportedLayout);
+    }
+
+    let num_pixels = pixels.len() / 4;
+
+    // pre-allocate output buffer
+    let mut results = vec![0u8; num_pixels * 3];
+
+    // parallel convert
+    results
+        .par_chunks_exact_mut(3) // Output RGB slice
+        .zip(pixels.par_chunks_exact(4)) // Input CMYK slice
+        .for_each(|(out_pixel, in_pixel)| {
+            // no need for bounds checking, chunks_exact ensures correct sizes
+            let (r, g, b) = cmyk2rgb_pix_fast(in_pixel[0], in_pixel[1], in_pixel[2], in_pixel[3]);
+
+            out_pixel[0] = r;
+            out_pixel[1] = g;
+            out_pixel[2] = b;
+        });
+
+    Ok(results)
 }
 
 #[derive(Debug, Clone)]

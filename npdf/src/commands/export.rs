@@ -41,6 +41,11 @@ pub struct ExportArgs {
     /// do additional check whether there is CMYK content (or color with CMYK fallback).
     #[arg(long, default_value_t = false)]
     pub with_cmyk: bool,
+    /// Use CMYK to RGB conversion when exporting CMYK images
+    ///
+    /// This will automatically use PNG format for the converted images instead of JPEG.
+    #[arg(long, default_value_t = false)]
+    pub cmyk_to_rgb: bool,
     /// JPEG quality (1-100) when exporting to JPEG files.
     #[arg(short = 'q', long, default_value_t = 96, value_parser = clap::value_parser!(u8).range(1..=100))]
     pub quality: u8,
@@ -111,6 +116,7 @@ pub fn run(args: ExportArgs, passwords: Option<&PdfPasswords>) -> Result<(), Str
         quality,
         threads,
         auto_dpi_ratio,
+        cmyk_to_rgb,
     } = args;
 
     let output = match (output_opt, describe) {
@@ -161,6 +167,7 @@ pub fn run(args: ExportArgs, passwords: Option<&PdfPasswords>) -> Result<(), Str
         crop_mode: bounding.to_crop_mode(),
         color_mode: color.to_color_mode().unwrap_or(ColorMode::Rgb8),
         jpeg_quality: Some(quality),
+        cmyk_to_rgb,
     };
 
     let mut images_mappings: BTreeMap<u32, Vec<ImageInfo>> = BTreeMap::new();
@@ -215,8 +222,7 @@ pub fn run(args: ExportArgs, passwords: Option<&PdfPasswords>) -> Result<(), Str
                     .map(|pre| pre.dpi)
                     .unwrap_or(dpi);
             }
-            let extension = extension_for_mode(per_page.color_mode);
-            let file_name = format!("page-{page:04}.{extension}");
+            let file_name = format!("page-{page:04}");
             let output_path = output.as_ref().map(|o| o.join(&file_name));
             PagePlan {
                 page_number: page,
@@ -352,7 +358,14 @@ fn process_job(document: &mut Document, job: PagePlan) -> Result<(), String> {
     let encoded = document
         .render_page_image_bytes(job.zero_index_page, &job.options)
         .map_err(|err| format!("failed to export page {}: {err}", job.page_number))?;
-    fs::write(output_path, &encoded.bytes)
+
+    let extension = match encoded.format {
+        tiny_poppler::ImageFormat::Png => "png",
+        tiny_poppler::ImageFormat::Jpeg => "jpg",
+    };
+
+    let output_path_with_ext = output_path.with_extension(extension);
+    fs::write(output_path_with_ext, &encoded.bytes)
         .map_err(|err| format!("failed to write {}: {err}", output_path.display()))?;
 
     // pad page number depending on total pages
@@ -564,12 +577,5 @@ pub fn image_is_intersecting(matrix: PdfMatrix, bbox: PdfRect) -> bool {
     } else {
         // Overlap detected
         true
-    }
-}
-
-fn extension_for_mode(mode: ColorMode) -> &'static str {
-    match mode {
-        ColorMode::Cmyk8 | ColorMode::DeviceN8 => "jpg",
-        _ => "png",
     }
 }
