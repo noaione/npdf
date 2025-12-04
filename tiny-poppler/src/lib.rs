@@ -30,6 +30,16 @@ use std::sync::Arc;
 
 use thiserror::Error;
 
+/// Output mode for rendering PDF pages.
+#[derive(Debug, Clone, Copy, PartialEq, Default, Eq)]
+pub enum OutputMode {
+    /// PNG/JPG encoded image bytes.
+    #[default]
+    Encoded,
+    /// Raw bitmap data, this basically an interleaved pixel buffer.
+    RawBitmap,
+}
+
 /// Configuration for a render operation.
 #[derive(Debug, Clone)]
 pub struct RenderOptions {
@@ -37,7 +47,7 @@ pub struct RenderOptions {
     pub color_mode: ColorMode,
     pub crop_mode: PdfCropMode,
     pub jpeg_quality: Option<u8>,
-    pub cmyk_to_rgb: bool,
+    pub output_mode: OutputMode,
 }
 
 impl Default for RenderOptions {
@@ -47,7 +57,7 @@ impl Default for RenderOptions {
             color_mode: ColorMode::Rgb8,
             crop_mode: PdfCropMode::CropBox,
             jpeg_quality: Some(95),
-            cmyk_to_rgb: false,
+            output_mode: OutputMode::Encoded,
         }
     }
 }
@@ -80,8 +90,12 @@ impl PdfPasswords {
 /// Encoded image formats supported by the renderer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ImageFormat {
+    /// PNG format.
     Png,
+    /// JPEG format.
     Jpeg,
+    /// Raw bitmap data.
+    Raw,
 }
 
 impl ImageFormat {
@@ -89,6 +103,7 @@ impl ImageFormat {
         match self {
             ImageFormat::Png => "png",
             ImageFormat::Jpeg => "jpg",
+            ImageFormat::Raw => "bin",
         }
     }
 }
@@ -222,7 +237,7 @@ impl Document {
             &image,
             options.jpeg_quality.unwrap_or(DEFAULT_JPEG_QUALITY),
             options.dpi,
-            options.cmyk_to_rgb,
+            options.output_mode,
         )
     }
 
@@ -478,7 +493,7 @@ fn encode_image(
     image: &ffi::Image,
     quality: u8,
     dpi: f64,
-    cmyk_to_rgb: bool,
+    output_mode: OutputMode,
 ) -> Result<EncodedImage, RenderError> {
     if image.width == 0 || image.height == 0 {
         return Err(RenderError::UnsupportedLayout);
@@ -518,73 +533,86 @@ fn encode_image(
                 return Err(RenderError::UnsupportedLayout);
             }
             let pixels = collect_rows(image, row_bytes)?;
-            // Poppler represents mono1 scans with 1 bit per pixel; encode using a
-            // two-entry palette (black, white) to preserve the bit-packed data.
-            const PALETTE: [u8; 6] = [0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF];
-            let bytes = encode_png(
-                &pixels,
-                width,
-                height,
-                dpi,
-                ColorType::Indexed,
-                BitDepth::One,
-                Some(&PALETTE),
-            )?;
-            Ok(EncodedImage {
-                format: ImageFormat::Png,
-                bytes,
-            })
+            match output_mode {
+                OutputMode::RawBitmap => Ok(EncodedImage {
+                    format: ImageFormat::Raw,
+                    bytes: pixels,
+                }),
+                OutputMode::Encoded => {
+                    // Poppler represents mono1 scans with 1 bit per pixel; encode using a
+                    // two-entry palette (black, white) to preserve the bit-packed data.
+                    const PALETTE: [u8; 6] = [0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF];
+                    let bytes = encode_png(
+                        &pixels,
+                        width,
+                        height,
+                        dpi,
+                        ColorType::Indexed,
+                        BitDepth::One,
+                        Some(&PALETTE),
+                    )?;
+                    Ok(EncodedImage {
+                        format: ImageFormat::Png,
+                        bytes,
+                    })
+                }
+            }
         }
-        ColorMode::Mono8 => {
+        ColorMode::Mono8 | ColorMode::Rgb8 => {
             let pixels = collect_rows(image, row_bytes)?;
-            let bytes = encode_png(
-                &pixels,
-                width,
-                height,
-                dpi,
-                ColorType::Grayscale,
-                BitDepth::Eight,
-                None,
-            )?;
-            Ok(EncodedImage {
-                format: ImageFormat::Png,
-                bytes,
-            })
-        }
-        ColorMode::Rgb8 => {
-            let pixels = collect_rows(image, row_bytes)?;
-            let bytes = encode_png(
-                &pixels,
-                width,
-                height,
-                dpi,
-                ColorType::Rgb,
-                BitDepth::Eight,
-                None,
-            )?;
-            Ok(EncodedImage {
-                format: ImageFormat::Png,
-                bytes,
-            })
+            match output_mode {
+                OutputMode::RawBitmap => Ok(EncodedImage {
+                    format: ImageFormat::Raw,
+                    bytes: pixels,
+                }),
+                OutputMode::Encoded => {
+                    let is_rgb = matches!(image.color_mode, ColorMode::Rgb8);
+                    let bytes = encode_png(
+                        &pixels,
+                        width,
+                        height,
+                        dpi,
+                        if is_rgb {
+                            ColorType::Rgb
+                        } else {
+                            ColorType::Grayscale
+                        },
+                        BitDepth::Eight,
+                        None,
+                    )?;
+                    Ok(EncodedImage {
+                        format: ImageFormat::Png,
+                        bytes,
+                    })
+                }
+            }
         }
         ColorMode::Bgr8 => {
             let mut pixels = collect_rows(image, row_bytes)?;
             for chunk in pixels.chunks_exact_mut(3) {
                 chunk.swap(0, 2);
             }
-            let bytes = encode_png(
-                &pixels,
-                width,
-                height,
-                dpi,
-                ColorType::Rgb,
-                BitDepth::Eight,
-                None,
-            )?;
-            Ok(EncodedImage {
-                format: ImageFormat::Png,
-                bytes,
-            })
+            match output_mode {
+                OutputMode::RawBitmap => Ok(EncodedImage {
+                    format: ImageFormat::Raw,
+                    bytes: pixels,
+                }),
+                OutputMode::Encoded => {
+                    let bytes = encode_png(
+                        &pixels,
+                        width,
+                        height,
+                        dpi,
+                        ColorType::Rgb,
+                        BitDepth::Eight,
+                        None,
+                    )?;
+                    Ok(EncodedImage {
+                        format: ImageFormat::Png,
+                        bytes,
+                    })
+                }
+            }
         }
         ColorMode::Xbgr8 => {
             let raw = collect_rows(image, row_bytes)?;
@@ -595,19 +623,27 @@ fn encode_image(
                 rgba.push(chunk[1]);
                 rgba.push(255);
             }
-            let bytes = encode_png(
-                &rgba,
-                width,
-                height,
-                dpi,
-                ColorType::Rgba,
-                BitDepth::Eight,
-                None,
-            )?;
-            Ok(EncodedImage {
-                format: ImageFormat::Png,
-                bytes,
-            })
+            match output_mode {
+                OutputMode::RawBitmap => Ok(EncodedImage {
+                    format: ImageFormat::Raw,
+                    bytes: rgba,
+                }),
+                OutputMode::Encoded => {
+                    let bytes = encode_png(
+                        &rgba,
+                        width,
+                        height,
+                        dpi,
+                        ColorType::Rgba,
+                        BitDepth::Eight,
+                        None,
+                    )?;
+                    Ok(EncodedImage {
+                        format: ImageFormat::Png,
+                        bytes,
+                    })
+                }
+            }
         }
         ColorMode::Cmyk8 => encode_cmyk_like(
             image,
@@ -617,7 +653,7 @@ fn encode_image(
             false,
             quality,
             dpi,
-            cmyk_to_rgb,
+            output_mode,
         ),
         ColorMode::DeviceN8 => encode_cmyk_like(
             image,
@@ -627,7 +663,7 @@ fn encode_image(
             true,
             quality,
             dpi,
-            cmyk_to_rgb,
+            output_mode,
         ),
     }
 }
@@ -690,7 +726,7 @@ fn encode_cmyk_like(
     drop_spot_channels: bool,
     quality: u8,
     dpi: f64,
-    cmyk_to_rgb: bool,
+    output_mode: OutputMode,
 ) -> Result<EncodedImage, RenderError> {
     if image.bits_per_component != 8 {
         return Err(RenderError::UnsupportedLayout);
@@ -716,47 +752,38 @@ fn encode_cmyk_like(
         return Err(RenderError::UnsupportedLayout);
     };
 
-    if cmyk_to_rgb {
-        let rgb_pixels = cmyk2rgb(payload)?;
-        let png = encode_png(
-            &rgb_pixels,
-            width,
-            height,
-            dpi,
-            ColorType::Rgb,
-            BitDepth::Eight,
-            None,
-        )?;
-        Ok(EncodedImage {
-            format: ImageFormat::Png,
-            bytes: png,
-        })
-    } else {
-        // invert CMYK to match JPEGli expectations
-        let inverted_payload = {
-            let mut buf = payload.to_vec();
-            buf.par_iter_mut().for_each(|p| *p = 255 - *p);
-            buf
-        };
+    match output_mode {
+        OutputMode::RawBitmap => Ok(EncodedImage {
+            format: ImageFormat::Raw,
+            bytes: payload.to_vec(),
+        }),
+        OutputMode::Encoded => {
+            // invert CMYK to match JPEGli expectations
+            let inverted_payload = {
+                let mut buf = payload.to_vec();
+                buf.par_iter_mut().for_each(|p| *p = 255 - *p);
+                buf
+            };
 
-        // convert dpi f64 to u16
-        let dpi_usize: usize = dpi.round().clamp(72.0, u16::MAX as f64) as usize;
-        let dpi_u16: u16 = dpi_usize
-            .try_into()
-            .map_err(|_| RenderError::InvalidDpiValue(dpi))?;
+            // convert dpi f64 to u16
+            let dpi_usize: usize = dpi.round().clamp(72.0, u16::MAX as f64) as usize;
+            let dpi_u16: u16 = dpi_usize
+                .try_into()
+                .map_err(|_| RenderError::InvalidDpiValue(dpi))?;
 
-        let jpeg = encode_jpeg(
-            &inverted_payload,
-            width,
-            height,
-            JpegColorType::Cmyk,
-            quality,
-            dpi_u16,
-        )?;
-        Ok(EncodedImage {
-            format: ImageFormat::Jpeg,
-            bytes: jpeg,
-        })
+            let jpeg = encode_jpeg(
+                &inverted_payload,
+                width,
+                height,
+                JpegColorType::Cmyk,
+                quality,
+                dpi_u16,
+            )?;
+            Ok(EncodedImage {
+                format: ImageFormat::Jpeg,
+                bytes: jpeg,
+            })
+        }
     }
 }
 
