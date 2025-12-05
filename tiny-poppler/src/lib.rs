@@ -988,7 +988,7 @@ pub fn rgb2gray(pixels: &[u8]) -> Result<Vec<u8>, RenderError> {
 /// ```rust
 /// let cmyk_pixels = vec![0u8, 255, 255, 0, 255, 0, 255, 0]; // Two CMYK pixels
 /// let gray_pixels = tiny_poppler::cmyk2gray(&cmyk_pixels).unwrap();
-/// assert_eq!(gray_pixels, vec![178, 104]); // Corresponding grayscale values
+/// assert_eq!(gray_pixels, vec![77, 151]); // Corresponding grayscale values
 /// ```
 pub fn cmyk2gray(pixels: &[u8]) -> Result<Vec<u8>, RenderError> {
     // Check dimension that each row has multiple of 4 bytes
@@ -1039,7 +1039,7 @@ impl<'a> VersionInfo<'a> {
 /// ```rust
 /// let version = tiny_poppler::get_version();
 ///
-/// assert_eq!(version.version_string(), "25.11.90"); // Example version
+/// assert_eq!(version.version_string(), "25.12.90"); // Example version
 /// ```
 pub fn get_version() -> VersionInfo<'static> {
     let version = get_poppler_version();
