@@ -14,10 +14,12 @@ pub use ffi::{
     ImageExportRequest, ImageExportSelector, ImageExportType, ImageInfo, ImageType, PageInfo,
     PdfCropMode, PdfImageColorSpace, PdfMatrix, PdfPoint, PdfRect,
 };
-use png::{BitDepth, ColorType, Encoder};
+use png::Encoder;
+pub use png::{BitDepth as PngBitDepth, ColorType as PngColorType};
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 use rayon::slice::{ParallelSlice, ParallelSliceMut};
-use simple_jpegli_enc::{ColorSpace as JpegColorType, JpegEncoder, JpegError};
+pub use simple_jpegli_enc::ColorSpace as JpegColorType;
+use simple_jpegli_enc::{JpegEncoder, JpegError};
 pub use sink::{
     EncodedExportedImage, ImageSinkError, ImageSinkOptions, PngCompression, TiffCompression,
     TiffDeflateLevel, sink_exported_image,
@@ -113,6 +115,9 @@ impl ImageFormat {
 pub struct EncodedImage {
     pub format: ImageFormat,
     pub bytes: Vec<u8>,
+    pub width: usize,
+    pub height: usize,
+    pub dpi: f64,
 }
 
 impl EncodedImage {
@@ -537,6 +542,9 @@ fn encode_image(
                 OutputMode::RawBitmap => Ok(EncodedImage {
                     format: ImageFormat::Raw,
                     bytes: pixels,
+                    width,
+                    height,
+                    dpi,
                 }),
                 OutputMode::Encoded => {
                     // Poppler represents mono1 scans with 1 bit per pixel; encode using a
@@ -547,13 +555,16 @@ fn encode_image(
                         width,
                         height,
                         dpi,
-                        ColorType::Indexed,
-                        BitDepth::One,
+                        PngColorType::Indexed,
+                        PngBitDepth::One,
                         Some(&PALETTE),
                     )?;
                     Ok(EncodedImage {
                         format: ImageFormat::Png,
                         bytes,
+                        width,
+                        height,
+                        dpi,
                     })
                 }
             }
@@ -564,6 +575,9 @@ fn encode_image(
                 OutputMode::RawBitmap => Ok(EncodedImage {
                     format: ImageFormat::Raw,
                     bytes: pixels,
+                    width,
+                    height,
+                    dpi,
                 }),
                 OutputMode::Encoded => {
                     let is_rgb = matches!(image.color_mode, ColorMode::Rgb8);
@@ -573,16 +587,19 @@ fn encode_image(
                         height,
                         dpi,
                         if is_rgb {
-                            ColorType::Rgb
+                            PngColorType::Rgb
                         } else {
-                            ColorType::Grayscale
+                            PngColorType::Grayscale
                         },
-                        BitDepth::Eight,
+                        PngBitDepth::Eight,
                         None,
                     )?;
                     Ok(EncodedImage {
                         format: ImageFormat::Png,
                         bytes,
+                        width,
+                        height,
+                        dpi,
                     })
                 }
             }
@@ -596,6 +613,9 @@ fn encode_image(
                 OutputMode::RawBitmap => Ok(EncodedImage {
                     format: ImageFormat::Raw,
                     bytes: pixels,
+                    width,
+                    height,
+                    dpi,
                 }),
                 OutputMode::Encoded => {
                     let bytes = encode_png(
@@ -603,13 +623,16 @@ fn encode_image(
                         width,
                         height,
                         dpi,
-                        ColorType::Rgb,
-                        BitDepth::Eight,
+                        PngColorType::Rgb,
+                        PngBitDepth::Eight,
                         None,
                     )?;
                     Ok(EncodedImage {
                         format: ImageFormat::Png,
                         bytes,
+                        width,
+                        height,
+                        dpi,
                     })
                 }
             }
@@ -627,6 +650,9 @@ fn encode_image(
                 OutputMode::RawBitmap => Ok(EncodedImage {
                     format: ImageFormat::Raw,
                     bytes: rgba,
+                    width,
+                    height,
+                    dpi,
                 }),
                 OutputMode::Encoded => {
                     let bytes = encode_png(
@@ -634,13 +660,16 @@ fn encode_image(
                         width,
                         height,
                         dpi,
-                        ColorType::Rgba,
-                        BitDepth::Eight,
+                        PngColorType::Rgba,
+                        PngBitDepth::Eight,
                         None,
                     )?;
                     Ok(EncodedImage {
                         format: ImageFormat::Png,
                         bytes,
+                        width,
+                        height,
+                        dpi,
                     })
                 }
             }
@@ -683,13 +712,18 @@ fn collect_rows(image: &ffi::Image, row_bytes: usize) -> Result<Vec<u8>, RenderE
     Ok(buffer)
 }
 
-fn encode_png(
+/// Encode raw pixel data into PNG format using the `png` crate.
+///
+/// # Errors
+/// Returns `RenderError::InvalidU32Size` if the provided width or height
+/// cannot be converted to `u32`.
+pub fn encode_png(
     pixels: &[u8],
     width: usize,
     height: usize,
     dpi: f64,
-    colorspace: ColorType,
-    depth: BitDepth,
+    colorspace: PngColorType,
+    depth: PngBitDepth,
     palette: Option<&[u8]>,
 ) -> Result<Vec<u8>, RenderError> {
     let width_u32: u32 = width
@@ -756,6 +790,9 @@ fn encode_cmyk_like(
         OutputMode::RawBitmap => Ok(EncodedImage {
             format: ImageFormat::Raw,
             bytes: payload.to_vec(),
+            width,
+            height,
+            dpi,
         }),
         OutputMode::Encoded => {
             // invert CMYK to match JPEGli expectations
@@ -782,6 +819,9 @@ fn encode_cmyk_like(
             Ok(EncodedImage {
                 format: ImageFormat::Jpeg,
                 bytes: jpeg,
+                width,
+                height,
+                dpi,
             })
         }
     }
@@ -797,7 +837,12 @@ fn strip_spot_channels(pixels: &[u8], components: usize) -> Vec<u8> {
     base
 }
 
-fn encode_jpeg(
+/// Encode raw pixel data into JPEG format using the `simple_jpegli_enc` crate.
+///
+/// # Errors
+/// Returns `RenderError::InvalidJpegDimension` if the provided width or height
+/// cannot be converted to `u16`.
+pub fn encode_jpeg(
     pixels: &[u8],
     width: usize,
     height: usize,
