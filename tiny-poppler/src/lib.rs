@@ -1010,7 +1010,8 @@ pub fn cmyk2gray(pixels: &[u8]) -> Result<Vec<u8>, RenderError> {
             // >> gray = max(0, min(255, gray))
             let cmy_part = (c * 77 + m * 151 + y * 28) >> 8;
             let gray = k.saturating_add(cmy_part as u8);
-            gray
+            // invert to get final gray value
+            255 - gray
         })
         .collect();
 

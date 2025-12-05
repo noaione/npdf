@@ -677,6 +677,7 @@ dependencies = [
  "inquire",
  "lopdf",
  "num_cpus",
+ "rayon",
  "sha2",
  "simple-jpegli-enc",
  "tiny-poppler",

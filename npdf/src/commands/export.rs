@@ -1,6 +1,7 @@
 use clap::{Args, ValueEnum};
 use color_print::{cformat, cprintln};
 use crossbeam_channel::unbounded;
+use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 use std::collections::BTreeMap;
 use std::fs;
 use std::num::NonZeroUsize;
@@ -8,7 +9,8 @@ use std::path::PathBuf;
 use std::thread;
 use tiny_poppler::{
     ColorMode, Document, DocumentFactory, ImageInfo, ImageType, PageInfo, PdfCropMode,
-    PdfImageColorSpace, PdfMatrix, PdfPasswords, PdfRect, RenderOptions,
+    PdfImageColorSpace, PdfMatrix, PdfPasswords, PdfRect, RenderError, RenderOptions, cmyk2gray,
+    cmyk2rgb,
 };
 
 #[derive(Args)]
@@ -41,11 +43,15 @@ pub struct ExportArgs {
     /// do additional check whether there is CMYK content (or color with CMYK fallback).
     #[arg(long, default_value_t = false)]
     pub with_cmyk: bool,
-    /// Use CMYK to RGB conversion when exporting CMYK images
+    /// Save CMYK images in PNG format.
     ///
-    /// This will automatically use PNG format for the converted images instead of JPEG.
+    /// Since PNG does not support CMYK, we would convert it to RGB first.
+    /// If you use this flag with --color auto, CMYK images will be saved depending
+    /// on the detected colorspace.
+    ///
+    /// This would force the rendering to purely use CMYK colorspace.
     #[arg(long, default_value_t = false)]
-    pub cmyk_to_rgb: bool,
+    pub cmyk_png: bool,
     /// JPEG quality (1-100) when exporting to JPEG files.
     #[arg(short = 'q', long, default_value_t = 96, value_parser = clap::value_parser!(u8).range(1..=100))]
     pub quality: u8,
@@ -116,7 +122,7 @@ pub fn run(args: ExportArgs, passwords: Option<&PdfPasswords>) -> Result<(), Str
         quality,
         threads,
         auto_dpi_ratio,
-        cmyk_to_rgb,
+        cmyk_png,
     } = args;
 
     let output = match (output_opt, describe) {
@@ -165,9 +171,17 @@ pub fn run(args: ExportArgs, passwords: Option<&PdfPasswords>) -> Result<(), Str
     let base_options = RenderOptions {
         dpi,
         crop_mode: bounding.to_crop_mode(),
-        color_mode: color.to_color_mode().unwrap_or(ColorMode::Rgb8),
+        color_mode: if cmyk_png {
+            ColorMode::Cmyk8
+        } else {
+            color.to_color_mode().unwrap_or(ColorMode::Rgb8)
+        },
         jpeg_quality: Some(quality),
-        cmyk_to_rgb,
+        output_mode: if cmyk_png {
+            tiny_poppler::OutputMode::RawBitmap
+        } else {
+            tiny_poppler::OutputMode::Encoded
+        },
     };
 
     let mut images_mappings: BTreeMap<u32, Vec<ImageInfo>> = BTreeMap::new();
@@ -210,11 +224,12 @@ pub fn run(args: ExportArgs, passwords: Option<&PdfPasswords>) -> Result<(), Str
         .into_iter()
         .map(|page| {
             let mut per_page = base_options.clone();
-            if color == ColorChoice::Auto {
-                per_page.color_mode = precalculated_settings
-                    .get(&page)
-                    .map(|pre| pre.color)
-                    .unwrap_or(ColorMode::Mono1); // For empty pages, use mono 1-bit
+            let detected_color = precalculated_settings
+                .get(&page)
+                .map(|pre| pre.color)
+                .unwrap_or(ColorMode::Mono1); // For empty pages, use mono 1-bit
+            if color == ColorChoice::Auto && !cmyk_png {
+                per_page.color_mode = detected_color
             }
             if auto_dpi.is_some() {
                 per_page.dpi = precalculated_settings
@@ -229,6 +244,8 @@ pub fn run(args: ExportArgs, passwords: Option<&PdfPasswords>) -> Result<(), Str
                 zero_index_page: page - 1,
                 total_pages: page_count,
                 output_path,
+                request_color: color,
+                detected_color: detected_color,
                 options: per_page,
             }
         })
@@ -286,6 +303,8 @@ struct PagePlan {
     zero_index_page: u32,
     total_pages: u32,
     output_path: Option<PathBuf>,
+    request_color: ColorChoice,
+    detected_color: ColorMode,
     options: RenderOptions,
 }
 
@@ -359,22 +378,141 @@ fn process_job(document: &mut Document, job: PagePlan) -> Result<(), String> {
         .render_page_image_bytes(job.zero_index_page, &job.options)
         .map_err(|err| format!("failed to export page {}: {err}", job.page_number))?;
 
-    let extension = match encoded.format {
-        tiny_poppler::ImageFormat::Png => "png",
-        tiny_poppler::ImageFormat::Jpeg => "jpg",
+    let (bytes_data, extension) = match encoded.format {
+        tiny_poppler::ImageFormat::Png => (encoded.bytes, "png"),
+        tiny_poppler::ImageFormat::Jpeg => (encoded.bytes, "png"),
+        tiny_poppler::ImageFormat::Raw => {
+            // For raw bitmap, currently only used for CMYK PNG export
+            let want_color = if job.request_color == ColorChoice::Auto {
+                job.detected_color
+            } else {
+                job.request_color.to_color_mode().unwrap_or(ColorMode::Rgb8)
+            };
+
+            match want_color {
+                // Still export as JPEG
+                ColorMode::Cmyk8 | ColorMode::DeviceN8 => {
+                    let inverted_payload = {
+                        let mut buf = encoded.bytes;
+                        buf.par_iter_mut().for_each(|p| *p = 255 - *p);
+                        buf
+                    };
+
+                    // convert dpi f64 to u16
+                    let dpi_usize: usize =
+                        encoded.dpi.round().clamp(72.0, u16::MAX as f64) as usize;
+                    let dpi_u16: u16 = dpi_usize
+                        .try_into()
+                        .map_err(|_| RenderError::InvalidDpiValue(encoded.dpi).to_string())?;
+
+                    let jpeg = tiny_poppler::encode_jpeg(
+                        &inverted_payload,
+                        encoded.width,
+                        encoded.height,
+                        tiny_poppler::JpegColorType::Cmyk,
+                        job.options.jpeg_quality.unwrap_or(95),
+                        dpi_u16,
+                    )
+                    .map_err(|err| {
+                        format!(
+                            "failed to encode JPEG for page {}: {}",
+                            job.page_number, err
+                        )
+                    })?;
+                    (jpeg, "jpg")
+                }
+                ColorMode::Mono1 | ColorMode::Mono8 => {
+                    // Export as PNG, use cmyk2gray function
+                    let (colorspace, depth, palette) = if want_color == ColorMode::Mono1 {
+                        (
+                            tiny_poppler::PngColorType::Indexed,
+                            tiny_poppler::PngBitDepth::One,
+                            Some(&[0x00u8, 0x00, 0x00, 0xFF, 0xFF, 0xFF] as &[u8]),
+                        )
+                    } else {
+                        (
+                            tiny_poppler::PngColorType::Grayscale,
+                            tiny_poppler::PngBitDepth::Eight,
+                            None,
+                        )
+                    };
+
+                    let as_gray = cmyk2gray(&encoded.bytes).map_err(|err| {
+                        format!(
+                            "failed to convert CMYK to Grayscale for page {}: {}",
+                            job.page_number, err
+                        )
+                    })?;
+
+                    let png = tiny_poppler::encode_png(
+                        &as_gray,
+                        encoded.width,
+                        encoded.height,
+                        encoded.dpi,
+                        colorspace,
+                        depth,
+                        palette,
+                    )
+                    .map_err(|err| {
+                        format!("failed to encode PNG for page {}: {}", job.page_number, err)
+                    })?;
+
+                    (png, "png")
+                }
+                other => {
+                    // Export as PNG, convert to RGB first
+                    let rgb_data = cmyk2rgb(&encoded.bytes).map_err(|err| {
+                        format!(
+                            "failed to convert CMYK to RGB for page {}: {}",
+                            job.page_number, err
+                        )
+                    })?;
+
+                    let (adjusted_rgb, colorspace) = if other == ColorMode::Xbgr8 {
+                        let mut rgba = Vec::with_capacity(encoded.width * encoded.height * 4);
+                        for chunk in rgb_data.chunks_exact(3) {
+                            // we only want to add an opaque alpha channel
+                            rgba.push(chunk[0]);
+                            rgba.push(chunk[1]);
+                            rgba.push(chunk[2]);
+                            rgba.push(0xFF);
+                        }
+                        (rgba, tiny_poppler::PngColorType::Rgba)
+                    } else {
+                        (rgb_data, tiny_poppler::PngColorType::Rgb)
+                    };
+
+                    let png = tiny_poppler::encode_png(
+                        &adjusted_rgb,
+                        encoded.width,
+                        encoded.height,
+                        encoded.dpi,
+                        colorspace,
+                        tiny_poppler::PngBitDepth::Eight,
+                        None,
+                    )
+                    .map_err(|err| {
+                        format!("failed to encode PNG for page {}: {}", job.page_number, err)
+                    })?;
+
+                    (png, "png")
+                }
+            }
+        }
     };
 
     let output_path_with_ext = output_path.with_extension(extension);
-    fs::write(output_path_with_ext, &encoded.bytes)
+    fs::write(output_path_with_ext, &bytes_data)
         .map_err(|err| format!("failed to write {}: {err}", output_path.display()))?;
 
     // pad page number depending on total pages
     let total_page = job.total_pages.to_string().len();
     let pad_page = format!("{:0width$}", job.page_number, width = total_page);
     cprintln!(
-        "Exported <m,s>page {}</m,s> -> <m,s>{}</m,s> ({:?}, {:?}, {} dpi)",
+        "Exported <m,s>page {}</m,s> -> <m,s>{}.{}</m,s> ({:?}, {:?}, {} dpi)",
         pad_page,
         output_path.display(),
+        extension,
         encoded.format,
         job.options.color_mode,
         job.options.dpi,
