@@ -396,32 +396,32 @@ fn encode_ccitt_as_tiff_image(
     let x_res_val = [width_dpi_rational.n, width_dpi_rational.d];
     let y_res_val = [height_dpi_rational.n, height_dpi_rational.d];
 
-    let mut tags = Vec::new();
-
-    // 256: ImageWidth
-    tags.push((256u16, 4u16, 1u32, params.columns as u32));
-    // 257: ImageLength
-    tags.push((257u16, 4u16, 1u32, params.rows as u32));
-    // 258: BitsPerSample (1)
-    tags.push((258u16, 3u16, 1u32, 1u32)); // Value 1 fits in offset
-    // 259: Compression
-    tags.push((259u16, 3u16, 1u32, compression as u32));
-    // 262: PhotometricInterpretation
-    tags.push((262u16, 3u16, 1u32, photometric as u32));
-    // 273: StripOffsets (Placeholder, calculated later)
-    tags.push((273u16, 4u16, 1u32, 0u32));
-    // 277: SamplesPerPixel (1)
-    tags.push((277u16, 3u16, 1u32, 1u32));
-    // 278: RowsPerStrip (All rows in one strip)
-    tags.push((278u16, 4u16, 1u32, params.rows as u32));
-    // 279: StripByteCounts (Size of raw data)
-    tags.push((279u16, 4u16, 1u32, data.len() as u32));
-    // 282: XResolution (RATIONAL - Offset calculated later)
-    tags.push((282u16, 5u16, 1u32, 0u32));
-    // 283: YResolution (RATIONAL - Offset calculated later)
-    tags.push((283u16, 5u16, 1u32, 0u32));
-    // 296: ResolutionUnit (2 = Inch)
-    tags.push((296u16, 3u16, 1u32, 2u32));
+    let mut tags = vec![
+        // 256: ImageWidth
+        (256u16, 4u16, 1u32, params.columns as u32),
+        // 257: ImageLength
+        (257u16, 4u16, 1u32, params.rows as u32),
+        // 258: BitsPerSample (1)
+        (258u16, 3u16, 1u32, 1u32), // Value 1 fits in offste
+        // 259: Compression
+        (259u16, 3u16, 1u32, compression as u32),
+        // 262: PhotometricInterpretation
+        (262u16, 3u16, 1u32, photometric as u32),
+        // 273: StripOffsets (Placeholder, calculated later)
+        (273u16, 4u16, 1u32, 0u32),
+        // 277: SamplesPerPixel (1)
+        (277u16, 3u16, 1u32, 1u32),
+        // 278: RowsPerStrip (All rows in one strip)
+        (278u16, 4u16, 1u32, params.rows as u32),
+        // 279: StripByteCounts (Size of raw data)
+        (279u16, 4u16, 1u32, data.len() as u32),
+        // 282: XResolution (RATIONAL - Offset calculated later)
+        (282u16, 5u16, 1u32, 0u32),
+        // 283: YResolution (RATIONAL - Offset calculated later)
+        (283u16, 5u16, 1u32, 0u32),
+        // 296: ResolutionUnit (2 = Inch)
+        (296u16, 3u16, 1u32, 2u32),
+    ];
 
     // Group 3
     if compression == 3 {
@@ -479,7 +479,7 @@ fn encode_ccitt_as_tiff_image(
     buffer.write_all(&y_res_val[1].to_le_bytes())?;
 
     // data
-    buffer.write_all(&data)?;
+    buffer.write_all(data)?;
 
     Ok(EncodedExportedImage {
         bytes: buffer.into_inner(),

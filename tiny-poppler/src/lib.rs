@@ -676,8 +676,7 @@ fn encode_image(
         }
         ColorMode::Cmyk8 => encode_cmyk_like(
             image,
-            width,
-            height,
+            (width, height),
             row_bytes,
             false,
             quality,
@@ -686,8 +685,7 @@ fn encode_image(
         ),
         ColorMode::DeviceN8 => encode_cmyk_like(
             image,
-            width,
-            height,
+            (width, height),
             row_bytes,
             true,
             quality,
@@ -754,8 +752,7 @@ pub fn encode_png(
 
 fn encode_cmyk_like(
     image: &ffi::Image,
-    width: usize,
-    height: usize,
+    sizes: (usize, usize),
     row_bytes: usize,
     drop_spot_channels: bool,
     quality: u8,
@@ -765,6 +762,8 @@ fn encode_cmyk_like(
     if image.bits_per_component != 8 {
         return Err(RenderError::UnsupportedLayout);
     }
+
+    let (width, height) = sizes;
 
     let components = image.components as usize;
     if components < 4 {
@@ -917,7 +916,7 @@ fn cmyk2rgb_pix_fast(c: u8, m: u8, y: u8, k: u8) -> (u8, u8, u8) {
 /// ```
 pub fn cmyk2rgb(pixels: &[u8]) -> Result<Vec<u8>, RenderError> {
     // check dimension that each row has multiple of 4 bytes
-    if pixels.len() % 4 != 0 {
+    if !pixels.len().is_multiple_of(4) {
         return Err(RenderError::UnsupportedLayout);
     }
 
@@ -956,7 +955,7 @@ pub fn cmyk2rgb(pixels: &[u8]) -> Result<Vec<u8>, RenderError> {
 /// ```
 pub fn rgb2gray(pixels: &[u8]) -> Result<Vec<u8>, RenderError> {
     // Check dimension that each row has multiple of 3 bytes
-    if pixels.len() % 3 != 0 {
+    if !pixels.len().is_multiple_of(3) {
         return Err(RenderError::UnsupportedLayout);
     }
 
@@ -993,7 +992,7 @@ pub fn rgb2gray(pixels: &[u8]) -> Result<Vec<u8>, RenderError> {
 /// ```
 pub fn cmyk2gray(pixels: &[u8]) -> Result<Vec<u8>, RenderError> {
     // Check dimension that each row has multiple of 4 bytes
-    if pixels.len() % 4 != 0 {
+    if !pixels.len().is_multiple_of(4) {
         return Err(RenderError::UnsupportedLayout);
     }
 

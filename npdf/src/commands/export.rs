@@ -245,7 +245,7 @@ pub fn run(args: ExportArgs, passwords: Option<&PdfPasswords>) -> Result<(), Str
                 total_pages: page_count,
                 output_path,
                 request_color: color,
-                detected_color: detected_color,
+                detected_color,
                 options: per_page,
             }
         })
