@@ -1,6 +1,6 @@
 # npdf
 
-an opinionated pdf-to-png exporter using poppler splash output renderer 
+an opinionated pdf-to-png exporter/renderer using poppler splash output renderer 
 
 ## why?
 
@@ -10,11 +10,19 @@ poppler/pdftoppm itself is already solid CLI tools but lacks some features that 
 - "native" multi-threaded exporting (see info below)
 - no need to install poppler/pdftoppm separately, it's already bundled in the binary
 
-this version of exporter is custom-made for people that want to export their comic and manga PDF bought from
+this version of exporter/renderer is custom-made for people that want to export their comic and manga PDF bought from
 somewhere into a collection of PNGs.
 
 as for why I use the `SplashOutput` renderer? mainly because it works much better on grayscale/mono images compared to the cairo backend.<br />
 this is why I don't use any pre-existing glib/cairo backend available in crates.io.
+
+## download
+
+this project has built-in nightly CI that build for multiple platforms:
+- [nightly.link](https://nightly.link/noaione/npdf/workflows/build/master?preview)
+- [latest CI build](https://github.com/noaione/npdf/actions/workflows/build.yml)
+
+until I find this project "ready" there would be no official releases/tags.
 
 ## requirements
 
@@ -74,6 +82,8 @@ since i don't think poppler's `PDFDoc` is thread-safe *yet* to allow sharing bet
 when using `--force-cmyk` option, the exported file would use JPEG format instead as PNG does not support CMYK color mode.<br />
 this is powered with [`jpegli`/`libjxl`](https://github.com/libjxl/libjxl) via [`simple-jpegli-enc`](https://github.com/noaione/npdf/tree/master/simple-jpegli-enc) crate.
 
+you can also use the `--cmyk-png` option to use CMYK as rendering color mode but still export as PNG (with color conversion to RGB/Gray).
+
 ### extract
 ```
 npdf extract <pdf_file> <output_dir>
@@ -110,6 +120,12 @@ recrop all pages in the PDF file using the specified crop mode and save the recr
 - `art`: use the ArtBox
 
 this use [`lopdf`](https://crates.io/crates/lopdf) crate to manipulate the PDF file directly.
+
+## other tools
+
+this repository also contains some small tools to work with PDF files using `pikepdf` (which use `qpdf` as backend).
+
+see the [tools/README.md](./tools/README.md) for more info.
 
 ## disclaimer
 
