@@ -12,15 +12,15 @@ description = "A simple PDF-to-PNG exporter tool built with on-top of Poppler."
 readme = "./README.md"
 
 [dependencies]
-clap = { version = "4.5.4", features = ["derive"] }
-crossbeam-channel = "0.5.15"
-num_cpus = "1.17.0"
-color-print = "0.3.7"
+clap.workspace = true
+inquire.workspace = true
+crossbeam-channel.workspace = true
+num_cpus.workspace = true
+color-print.workspace = true
 
 tiny-poppler = { path = "../tiny-poppler" }
 simple-jpegli-enc = { path = "../simple-jpegli-enc" }
-lopdf = { version = "0.38.0", default-features = false, features = ["rayon"] }
-sha2 = "0.10.9"  # for hashing purposes
+lopdf.workspace = true
+sha2.workspace = true
 
-inquire = "0.9.1"
-rayon = "1.11.0"
+rayon.workspace = true

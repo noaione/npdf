@@ -16,11 +16,12 @@ exclude = [
 ]
 
 [dependencies]
-thiserror = "2.0.17"
-png = { version = "0.18.0" }
+thiserror.workspace = true
+rayon.workspace = true
+
 simple-jpegli-enc = { path = "../simple-jpegli-enc" }
-tiff = { version = "0.10", default-features = false, features = ["deflate", "lzw"] }
-rayon = "1.11.0"
+png.workspace = true
+tiff.workspace = true
 
 [features]
 default = []
@@ -30,6 +31,6 @@ tsan = ["simple-jpegli-enc/tsan"]
 ubsan = ["simple-jpegli-enc/ubsan"]
 
 [build-dependencies]
-cc = "1.0"
-cmake = "0.1"
-walkdir = "2.5.0"
+cc.workspace = true
+cmake.workspace = true
+walkdir.workspace = true

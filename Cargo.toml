@@ -15,6 +15,28 @@ repository = "https://github.com/noaione/npdf"
 homepage = "https://github.com/noaione/npdf"
 rust-version = "1.88.0"
 
+[workspace.dependencies]
+rayon = "1.11.0"
+thiserror = "2.0.17"
+sha2 = "0.10.9"  # for hashing purposes
+
+# PDF and images
+png = { version = "0.18.0" }
+tiff = { version = "0.10", default-features = false, features = ["deflate", "lzw"] }
+lopdf = { version = "0.38.0", default-features = false, features = ["rayon"] }
+
+# CLI stuff
+clap = { version = "4.5.4", features = ["derive"] }
+inquire = "0.9.1"
+crossbeam-channel = "0.5.15"
+num_cpus = "1.17.0"
+color-print = "0.3.7"
+
+# Build tools
+cc = "1.2.48"
+cmake = "0.1.54"
+walkdir = "2.5.0"
+
 [profile.release]
 opt-level = "z"
 lto = true

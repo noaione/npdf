@@ -11,7 +11,7 @@ description = "A simple JPEG encoder using jpegli (libjxl)"
 readme = "README.md"
 
 [dependencies]
-thiserror = "2.0"
+thiserror.workspace = true
 
 [features]
 default = []
@@ -21,5 +21,5 @@ tsan = []
 ubsan = []
 
 [build-dependencies]
-cmake = "0.1"
-cc = "1.0"
+cc.workspace = true
+cmake.workspace = true
