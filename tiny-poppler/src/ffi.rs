@@ -617,6 +617,20 @@ pub struct Image {
     pub bits_per_component: u32,
 }
 
+impl std::fmt::Debug for Image {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Image")
+            .field("data[len]", &self.data.len())
+            .field("width", &self.width)
+            .field("height", &self.height)
+            .field("stride", &self.stride)
+            .field("components", &self.components)
+            .field("color_mode", &self.color_mode)
+            .field("bits_per_component", &self.bits_per_component)
+            .finish()
+    }
+}
+
 #[derive(Clone)]
 pub struct ExportedImage {
     pub data: Vec<u8>,
