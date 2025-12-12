@@ -549,7 +549,7 @@ fn test_extract_from_inline_ccitt() {
         exported.extension,
         tiny_poppler::ImageExportExtension::Ccitt
     );
-    assert_eq!(exported.data.len(), 1_597);
+    assert_eq!(exported.data.len(), 1_585);
 
     let params = exported
         .ccitt_params

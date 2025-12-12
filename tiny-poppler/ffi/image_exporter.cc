@@ -107,8 +107,6 @@ ImageOutputDev::~ImageOutputDev() = default;
 
 long ImageOutputDev::getInlineImageLength(Stream *str, int width, int height, GfxImageColorMap *colorMap)
 {
-    long len = 0;
-
     if (colorMap) {
         ImageStream imgStr(str, width, colorMap->getNumPixelComps(), colorMap->getBits());
         if (!imgStr.reset()) {
@@ -131,12 +129,14 @@ long ImageOutputDev::getInlineImageLength(Stream *str, int width, int height, Gf
         }
     }
 
-    auto *embedStr = static_cast<EmbedStream *>(str->getBaseStream());
-    embedStr->rewind();
+    EmbedStream *embedStr = (EmbedStream *)(str->getBaseStream());
+    if (!embedStr->reset()) {
+        return 0;
+    }
+    long len = 0;
     while (embedStr->getChar() != EOF) {
         ++len;
     }
-    embedStr->restore();
 
     return len;
 }
@@ -496,11 +496,8 @@ void ImageOutputDev::writeImage(GfxState *state,
     const double widthDPI = kDefaultImageDPI;
     const double heightDPI = kDefaultImageDPI;
 
-    EmbedStream *embedStr = nullptr;
     if (inlineImg) {
-        embedStr = static_cast<EmbedStream *>(str->getBaseStream());
         getInlineImageLength(str, width, height, colorMap);
-        embedStr->rewind();
     }
 
     const int components = colorMap ? colorMap->getNumPixelComps() : (imageType == imgMask || imageType == imgStencil ? 1 : 0);
@@ -509,16 +506,10 @@ void ImageOutputDev::writeImage(GfxState *state,
     const StreamKind kind = str->getKind();
     if (kind == strDCT) {
         writeRawImage(str, extJpg, imageType, width, height, components, bitsPerComponent, widthDPI, heightDPI, nullptr, nullptr);
-        if (inlineImg && embedStr) {
-            embedStr->restore();
-        }
         return;
     }
     if (kind == strJPX && !inlineImg) {
         writeRawImage(str, extJp2, imageType, width, height, components, bitsPerComponent, widthDPI, heightDPI, nullptr, nullptr);
-        if (inlineImg && embedStr) {
-            embedStr->restore();
-        }
         return;
     }
     if (kind == strJBIG2 && !inlineImg) {
@@ -537,9 +528,6 @@ void ImageOutputDev::writeImage(GfxState *state,
             }
         }
         writeRawImage(str, extJb2e, imageType, width, height, components, bitsPerComponent, widthDPI, heightDPI, &globals, nullptr);
-        if (inlineImg && embedStr) {
-            embedStr->restore();
-        }
         return;
     }
     if (kind == strCCITTFax) {
@@ -557,19 +545,12 @@ void ImageOutputDev::writeImage(GfxState *state,
             paramsPtr = &params;
         }
         writeRawImage(str, extCcitt, imageType, width, height, 1, 1, widthDPI, heightDPI, nullptr, paramsPtr);
-        if (inlineImg && embedStr) {
-            embedStr->restore();
-        }
         return;
     }
 
     const ImageFormat format = determineFormat(colorMap);
     const ImageExtension ext = defaultExtension(format);
     writeImageFile(str, format, ext, imageType, width, height, colorMap, widthDPI, heightDPI);
-
-    if (inlineImg && embedStr) {
-        embedStr->restore();
-    }
 }
 
 bool ImageOutputDev::tilingPatternFill(GfxState *state,
