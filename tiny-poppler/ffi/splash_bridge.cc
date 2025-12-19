@@ -213,6 +213,7 @@ struct CollectedPage {
     uint32_t page_number = 0;
     uint32_t image_count = 0;
     uint64_t object_count = 0;
+    bool is_pdf_a_compatible = true;
 
     // If all 0's, then not set
     double cropbox[4] = {0.0, 0.0, 0.0, 0.0};
@@ -244,9 +245,11 @@ public:
     void reset_for_page(uint32_t page_number) {
         current_page_ = page_number;
         total_objects_ = 0; // reset object count for new page
+        is_pdf_a_compatible_ = true; // we start assuming true for each page
     }
 
     uint64_t get_total_objects() const { return total_objects_; }
+    bool is_pdf_a_compatible() const { return is_pdf_a_compatible_; }
 
     void drawImage(GfxState *state, Object *ref, Stream *str, int width, int height, GfxImageColorMap *color_map, bool interpolate, const int *maskColors, bool inlineImg) override
     {
@@ -320,6 +323,7 @@ public:
         total_objects_++;
         add_image(width, height, color_map, ref, state, SPLASH_IMAGE_TYPE_IMAGE);
         add_image(maskWidth, maskHeight, maskColorMap, ref, state, SPLASH_IMAGE_TYPE_SOFT_MASK);
+        is_pdf_a_compatible_ = false; // since a soft mask was drawn, this page cannot be PDF/A compliant
     }
 
     void drawString(GfxState *state, const GooString *s) override
@@ -327,30 +331,35 @@ public:
         (void)state;
         (void)s;
         total_objects_++;
+        is_pdf_a_compatible_ = false; // since text was drawn, this page cannot be PDF/A compliant
     }
 
     void drawForm(Ref id) override
     {
         (void)id;
         total_objects_++;
+        is_pdf_a_compatible_ = false; // since a form was drawn, this page cannot be PDF/A compliant
     }
 
     void stroke(GfxState *state) override
     {
         (void)state;
         total_objects_++;
+        is_pdf_a_compatible_ = false; // since a stroke was drawn, this page cannot be PDF/A compliant
     }
 
     void fill(GfxState *state) override
     {
         (void)state;
         total_objects_++;
+        is_pdf_a_compatible_ = false; // since a fill was drawn, this page cannot be PDF/A compliant
     }
 
     void eoFill(GfxState *state) override
     {
         (void)state;
         total_objects_++;
+        is_pdf_a_compatible_ = false; // since an even-odd fill was drawn, this page cannot be PDF/A compliant
     }
 
     void clip(GfxState *state) override
@@ -361,6 +370,7 @@ public:
         bool is_clip_empty = state->isPath();
         if (!is_clip_empty) {
             total_objects_++;
+            is_pdf_a_compatible_ = false; // since a clip was drawn, this page cannot be PDF/A compliant
         }
     }
 
@@ -370,6 +380,7 @@ public:
         bool is_clip_empty = state->isPath();
         if (!is_clip_empty) {
             total_objects_++;
+            is_pdf_a_compatible_ = false; // since an even-odd clip was drawn, this page cannot be PDF/A compliant
         }
     }
 
@@ -378,6 +389,7 @@ public:
         (void)psStream;
         (void)level1Stream;
         total_objects_++;
+        is_pdf_a_compatible_ = false; // since a PostScript XObject was drawn, this page cannot be PDF/A compliant
     }
 
 private:
@@ -492,6 +504,7 @@ private:
     std::vector<CollectedImage> *images_ = nullptr;
     uint32_t current_page_ = 0;
     uint64_t total_objects_ = 0;
+    bool is_pdf_a_compatible_ = false;
 };
 
 } // namespace
@@ -700,6 +713,7 @@ int splash_renderer_collect_images(splash_renderer_t *renderer,
         summary.page_number = page_number;
         summary.image_count = static_cast<uint32_t>(after - before);
         summary.object_count = collector.get_total_objects();
+        summary.is_pdf_a_compatible = collector.is_pdf_a_compatible();
 
         if (cropbox) {
             summary.cropbox[0] = cropbox->x1;

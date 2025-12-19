@@ -98,6 +98,7 @@ struct SplashPageInfo {
     page_number: u32,
     image_count: u32,
     object_count: u64,
+    is_pdf_a_compatible: bool,
     cropbox: [f64; 4],
     mediabox: [f64; 4],
 }
@@ -716,6 +717,7 @@ pub struct PageInfo {
     pub page: u32,
     pub image_count: u32,
     pub object_count: u64,
+    pub is_pdf_a_compatible: bool,
     pub mediabox: Option<PdfRect>,
     pub cropbox: Option<PdfRect>,
 }
@@ -909,6 +911,7 @@ impl From<SplashPageInfo> for PageInfo {
             page: value.page_number,
             image_count: value.image_count,
             object_count: value.object_count,
+            is_pdf_a_compatible: value.is_pdf_a_compatible,
             mediabox,
             cropbox,
         }
