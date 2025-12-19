@@ -713,7 +713,7 @@ int splash_renderer_collect_images(splash_renderer_t *renderer,
         summary.page_number = page_number;
         summary.image_count = static_cast<uint32_t>(after - before);
         summary.object_count = collector.get_total_objects();
-        summary.is_pdf_a_compatible = collector.is_pdf_a_compatible();
+        summary.is_pdf_a_compatible = collector.is_pdf_a_compatible() ? 1 : 0;
 
         if (cropbox) {
             summary.cropbox[0] = cropbox->x1;
@@ -801,6 +801,7 @@ int splash_renderer_collect_images(splash_renderer_t *renderer,
             page_buffer[i].page_number = page_summaries[i].page_number;
             page_buffer[i].image_count = page_summaries[i].image_count;
             page_buffer[i].object_count = page_summaries[i].object_count;
+            page_buffer[i].is_pdf_a_compatible = page_summaries[i].is_pdf_a_compatible ? 1 : 0;
 
             for (int j = 0; j < 4; ++j) {
                 page_buffer[i].cropbox[j] = page_summaries[i].cropbox[j];

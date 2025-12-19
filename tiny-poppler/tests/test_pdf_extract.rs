@@ -54,6 +54,7 @@ fn test_extract_from_rgb8() {
                 object: 4,
                 generation: 0,
             },
+            describe_only: false,
         })
         .expect("Failed to extarct image");
 
@@ -121,6 +122,7 @@ fn test_extract_from_jbig2_with_globals() {
                 object: obj,
                 generation,
             },
+            describe_only: false,
         })
         .expect("Failed to export JBIG2 image");
 
@@ -184,6 +186,7 @@ fn test_extract_from_ccitt_group3() {
                 object: obj,
                 generation,
             },
+            describe_only: false,
         })
         .expect("Failed to export CCITT image");
 
@@ -258,6 +261,7 @@ fn test_extract_from_rgba8_with_softmask() {
                 object: 5,
                 generation: 0,
             },
+            describe_only: false,
         })
         .expect("Failed to export RGBA8 image");
 
@@ -304,6 +308,7 @@ fn test_extract_from_rgba16_with_softmask() {
                 object: 5,
                 generation: 0,
             },
+            describe_only: false,
         })
         .expect("Failed to export RGBA16 image");
 
@@ -343,6 +348,7 @@ fn test_extract_from_rgb16() {
                 object: 4,
                 generation: 0,
             },
+            describe_only: false,
         })
         .expect("Failed to export RGB16 image");
 
@@ -384,6 +390,7 @@ fn test_extract_from_cmyk_jpeg() {
                 object: 4,
                 generation: 0,
             },
+            describe_only: false,
         })
         .expect("Failed to export CMYK image");
 
@@ -423,6 +430,7 @@ fn test_extract_from_luma8() {
                 object: 4,
                 generation: 0,
             },
+            describe_only: false,
         })
         .expect("Failed to export luma8 image");
 
@@ -458,6 +466,7 @@ fn test_extract_from_luma16() {
                 object: 4,
                 generation: 0,
             },
+            describe_only: false,
         })
         .expect("Failed to export luma16 image");
 
@@ -499,6 +508,7 @@ fn test_extract_from_one_bit_gray() {
                 object: 6,
                 generation: 0,
             },
+            describe_only: false,
         })
         .expect("Failed to export 1-bit image");
 
@@ -536,6 +546,7 @@ fn test_extract_from_inline_ccitt() {
             page_index: 0,
             target_type: tiny_poppler::ImageExportType::Image,
             selector: tiny_poppler::ImageExportSelector::NthOfType { occurrence: 0 },
+            describe_only: false,
         })
         .expect("Failed to export inline CCITT image");
 
@@ -586,6 +597,7 @@ fn test_extract_from_ccitt_group1() {
                 object: 8,
                 generation: 0,
             },
+            describe_only: false,
         })
         .expect("Failed to export CCITT Group 1 image");
 
@@ -637,6 +649,7 @@ fn test_extract_from_ccitt_group4() {
                 object: 8,
                 generation: 0,
             },
+            describe_only: false,
         })
         .expect("Failed to export CCITT Group 4 image");
 

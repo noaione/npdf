@@ -160,21 +160,25 @@ void ImageOutputDev::storeResult(const std::vector<uint8_t> &buffer,
     }
 
     uint8_t *payload = nullptr;
-    if (!buffer.empty()) {
+    if (!buffer.empty() && !describeOnly) {
         payload = static_cast<uint8_t *>(gmalloc(buffer.size()));
         memcpy(payload, buffer.data(), buffer.size());
     }
 
     uint8_t *globalsPayload = nullptr;
     size_t globalsLen = 0;
-    if (jbig2Globals && !jbig2Globals->empty()) {
+    bool hasJbig2Globals = false;
+    if (jbig2Globals && !jbig2Globals->empty() && !describeOnly) {
         globalsLen = jbig2Globals->size();
         globalsPayload = static_cast<uint8_t *>(gmalloc(globalsLen));
         memcpy(globalsPayload, jbig2Globals->data(), globalsLen);
+        hasJbig2Globals = true;
+    } else if (jbig2Globals && describeOnly) {
+        hasJbig2Globals = true;
     }
 
     outputBuffer->data = payload;
-    outputBuffer->len = buffer.size();
+    outputBuffer->len = describeOnly ? 0 : buffer.size();
     outputBuffer->width = width;
     outputBuffer->height = height;
     outputBuffer->stride = stride;
@@ -185,6 +189,7 @@ void ImageOutputDev::storeResult(const std::vector<uint8_t> &buffer,
     outputBuffer->format = format;
     outputBuffer->type = type;
     outputBuffer->extension = ext;
+    outputBuffer->hasJbig2Globals = hasJbig2Globals; // mainly for indicator only
     outputBuffer->jbig2Globals = globalsPayload;
     outputBuffer->jbig2GlobalsLen = globalsLen;
     if (ccittParams) {
@@ -251,7 +256,20 @@ void ImageOutputDev::writeRawImage(Stream *str,
         return;
     }
 
+    const uint32_t w = width > 0 ? static_cast<uint32_t>(width) : 0;
+    const uint32_t h = height > 0 ? static_cast<uint32_t>(height) : 0;
+    const uint32_t comps = components > 0 ? static_cast<uint32_t>(components) : 0;
+    const uint32_t bpc = bitsPerComponent > 0 ? static_cast<uint32_t>(bitsPerComponent) : 0;
+
     std::vector<uint8_t> buffer;
+    if (describeOnly) {
+        storeResult(buffer, imgUnknown, ext, type, w, h, 0, comps, bpc, widthDPI, heightDPI, jbig2Globals, ccittParams);
+        if (dataStream) {
+            dataStream->close();
+        }
+        return;
+    }
+
     buffer.reserve(64 * 1024);
     int c;
     while ((c = dataStream->getChar()) != EOF) {
@@ -259,10 +277,6 @@ void ImageOutputDev::writeRawImage(Stream *str,
     }
 
     dataStream->close();
-    const uint32_t w = width > 0 ? static_cast<uint32_t>(width) : 0;
-    const uint32_t h = height > 0 ? static_cast<uint32_t>(height) : 0;
-    const uint32_t comps = components > 0 ? static_cast<uint32_t>(components) : 0;
-    const uint32_t bpc = bitsPerComponent > 0 ? static_cast<uint32_t>(bitsPerComponent) : 0;
     storeResult(buffer, imgUnknown, ext, type, w, h, 0, comps, bpc, widthDPI, heightDPI, jbig2Globals, ccittParams);
 }
 
@@ -332,6 +346,34 @@ void ImageOutputDev::writeImageFile(Stream *str,
         components = 0;
         stride = 0;
         break;
+    }
+
+    if (describeOnly) {
+        if (format != imgMonochrome) {
+            imgStr->close();
+            delete imgStr;
+        }
+
+        if (str) {
+            str->close();
+        }
+
+        std::vector<uint8_t> raster; // empty buffer for description only
+        storeResult(raster,
+                    format,
+                    ext,
+                    type,
+                    static_cast<uint32_t>(width),
+                    static_cast<uint32_t>(height),
+                    stride,
+                    components,
+                    bitsPerComponent,
+                    widthDPI,
+                    heightDPI,
+                    nullptr,
+                    nullptr);
+
+        return;
     }
 
     std::vector<uint8_t> raster(static_cast<size_t>(stride) * height);

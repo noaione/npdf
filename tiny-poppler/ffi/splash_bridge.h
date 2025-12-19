@@ -89,6 +89,8 @@ typedef struct splash_page_info {
     uint32_t image_count;
     uint64_t object_count;
 
+    uint8_t is_pdf_a_compatible;
+
     // Cropbox and mediabox in user space units
     // If all 0's, then not set
     double cropbox[4];

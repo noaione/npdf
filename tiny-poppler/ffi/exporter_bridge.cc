@@ -139,6 +139,7 @@ void reset_output(image_export_image_t *image)
 int image_exporter_extract(splash_renderer_t *renderer,
                            const image_export_params_t *params,
                            image_export_image_t *out_image,
+                           bool describe_only,
                            char **error_out)
 {
     if (!renderer || !out_image) {

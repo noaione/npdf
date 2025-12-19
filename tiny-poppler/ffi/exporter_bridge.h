@@ -75,6 +75,7 @@ typedef struct image_export_image {
 	image_export_format_t format;
 	image_export_type_t type;
 	image_export_extension_t extension;
+	uint8_t has_jbig2_globals;
 	uint8_t *jbig2_globals;
 	size_t jbig2_globals_len;
 	uint8_t has_ccitt_params;
@@ -84,6 +85,7 @@ typedef struct image_export_image {
 int image_exporter_extract(splash_renderer_t *renderer,
 						   const image_export_params_t *params,
 						   image_export_image_t *out_image,
+						   bool describe_only, // This parameter would not actually "extract" anything when true, this will keep the buffer empty
 						   char **error_out);
 
 void image_exporter_free(image_export_image_t *image);

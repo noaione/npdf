@@ -104,6 +104,7 @@ public:
         ImageFormat format;
         ImageType type;
         ImageExtension extension;
+        bool hasJbig2Globals;
         uint8_t *jbig2Globals;
         size_t jbig2GlobalsLen;
         bool hasCcittParams;
@@ -133,6 +134,9 @@ public:
 
     // Does this device need non-text content?
     bool needNonText() override { return true; }
+
+    // Set whether to only describe images instead of extracting them
+    void setDescribeOnly(bool describeOnlyA) { describeOnly = describeOnlyA; }
 
     // Get the error code
     // 0 = No error, 1 = Error opening a PDF file, 2 = Error opening an output file, 3 = Error related to PDF permissions, 99 = Other error.
@@ -215,6 +219,7 @@ private:
     bool captured = false; // true once an image has been extracted
     ImageOutput *outputBuffer = nullptr; // output buffer for images
     int errorCode; // code for any error creating the output files
+    bool describeOnly = false;
 };
 
 #endif

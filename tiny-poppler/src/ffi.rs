@@ -98,7 +98,7 @@ struct SplashPageInfo {
     page_number: u32,
     image_count: u32,
     object_count: u64,
-    is_pdf_a_compatible: bool,
+    is_pdf_a_compatible: u8,
     cropbox: [f64; 4],
     mediabox: [f64; 4],
 }
@@ -220,6 +220,7 @@ struct ImageExportImage {
     format: ImageExportFormat,
     image_type: ImageExportType,
     extension: ImageExportExtension,
+    has_jbig2_globals: u8,
     jbig2_globals: *mut u8,
     jbig2_globals_len: usize,
     has_ccitt_params: u8,
@@ -288,6 +289,7 @@ unsafe extern "C" {
         renderer: *mut SplashRenderer,
         params: *const ImageExportParams,
         out_image: *mut ImageExportImage,
+        describe_only: bool,
         error_out: *mut *mut c_char,
     ) -> i32;
     fn image_exporter_free(image: *mut ImageExportImage);
@@ -520,6 +522,7 @@ impl Renderer {
             format: ImageExportFormat::Unknown,
             image_type: request.target_type,
             extension: ImageExportExtension::Png,
+            has_jbig2_globals: 0,
             jbig2_globals: ptr::null_mut(),
             jbig2_globals_len: 0,
             has_ccitt_params: 0,
@@ -535,7 +538,15 @@ impl Renderer {
             },
         };
         let mut error = ptr::null_mut();
-        let status = unsafe { image_exporter_extract(self.raw, &params, &mut raw, &mut error) };
+        let status = unsafe {
+            image_exporter_extract(
+                self.raw,
+                &params,
+                &mut raw,
+                request.describe_only,
+                &mut error,
+            )
+        };
         if status != 0 {
             unsafe { image_exporter_free(&mut raw) };
             return Err(take_error(error));
@@ -567,6 +578,9 @@ impl Renderer {
 
         let jbig2_globals = if raw.jbig2_globals_len == 0 || raw.jbig2_globals.is_null() {
             None
+        } else if request.describe_only && raw.has_jbig2_globals == 1 {
+            // empty vector to indicate presence of globals without data
+            Some(Vec::new())
         } else {
             let bytes = unsafe { slice::from_raw_parts(raw.jbig2_globals, raw.jbig2_globals_len) };
             Some(bytes.to_vec())
@@ -710,6 +724,7 @@ pub struct ImageExportRequest {
     pub page_index: u32,
     pub target_type: ImageExportType,
     pub selector: ImageExportSelector,
+    pub describe_only: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -720,6 +735,23 @@ pub struct PageInfo {
     pub is_pdf_a_compatible: bool,
     pub mediabox: Option<PdfRect>,
     pub cropbox: Option<PdfRect>,
+}
+
+impl PartialEq for PageInfo {
+    fn eq(&self, other: &Self) -> bool {
+        self.page == other.page
+    }
+}
+impl Eq for PageInfo {}
+impl std::hash::Hash for PageInfo {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.page.hash(state);
+    }
+}
+impl std::borrow::Borrow<u32> for PageInfo {
+    fn borrow(&self) -> &u32 {
+        &self.page
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -855,6 +887,28 @@ pub struct ImageInfo {
     pub xref: Option<(i32, i32)>,
 }
 
+impl PartialEq for ImageInfo {
+    // we only compare page + xref for equality
+    fn eq(&self, other: &Self) -> bool {
+        self.page == other.page && self.xref == other.xref
+    }
+}
+
+impl Eq for ImageInfo {}
+impl Ord for ImageInfo {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        match self.page.cmp(&other.page) {
+            std::cmp::Ordering::Equal => self.xref.cmp(&other.xref),
+            ord => ord,
+        }
+    }
+}
+impl PartialOrd for ImageInfo {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 impl From<SplashImageInfo> for ImageInfo {
     fn from(value: SplashImageInfo) -> Self {
         let xref = if value.xref_object >= 0 {
@@ -911,7 +965,7 @@ impl From<SplashPageInfo> for PageInfo {
             page: value.page_number,
             image_count: value.image_count,
             object_count: value.object_count,
-            is_pdf_a_compatible: value.is_pdf_a_compatible,
+            is_pdf_a_compatible: value.is_pdf_a_compatible == 1,
             mediabox,
             cropbox,
         }
