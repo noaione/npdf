@@ -189,6 +189,7 @@ int image_exporter_extract(splash_renderer_t *renderer,
                               to_image_type(params->target_type),
                               match_by_occurrence,
                               params->occurrence_index);
+    output_dev.setDescribeOnly(describe_only);
 
     renderer->doc->displayPage(&output_dev, page_number, 72.0, 72.0, 0, true, true, false);
 
@@ -217,6 +218,7 @@ int image_exporter_extract(splash_renderer_t *renderer,
     out_image->format = static_cast<image_export_format_t>(captured.format);
     out_image->type = static_cast<image_export_type_t>(captured.type);
     out_image->extension = static_cast<image_export_extension_t>(captured.extension);
+    out_image->has_jbig2_globals = captured.hasJbig2Globals ? 1 : 0;
     out_image->jbig2_globals = captured.jbig2Globals;
     out_image->jbig2_globals_len = captured.jbig2GlobalsLen;
     captured.jbig2Globals = nullptr;

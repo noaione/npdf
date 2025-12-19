@@ -576,11 +576,11 @@ impl Renderer {
             owned
         };
 
-        let jbig2_globals = if raw.jbig2_globals_len == 0 || raw.jbig2_globals.is_null() {
-            None
-        } else if request.describe_only && raw.has_jbig2_globals == 1 {
+        let jbig2_globals = if request.describe_only && raw.has_jbig2_globals == 1 {
             // empty vector to indicate presence of globals without data
             Some(Vec::new())
+        } else if raw.jbig2_globals_len == 0 || raw.jbig2_globals.is_null() {
+            None
         } else {
             let bytes = unsafe { slice::from_raw_parts(raw.jbig2_globals, raw.jbig2_globals_len) };
             Some(bytes.to_vec())

@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use tiny_poppler::{ImageExportRequest, ImageSinkOptions};
+use tiny_poppler::ImageExportRequest;
 
 const FLOAT_TOLERANCE: f64 = 1e-5;
 
@@ -22,7 +22,7 @@ fn assert_close(actual: f64, expected: f64, label: &str) {
 }
 
 #[test]
-fn test_extract_from_rgb8() {
+fn test_describe_from_rgb8() {
     let mut document = open_document("image_rgb8.pdf");
     let images = document
         .image_metadata()
@@ -45,7 +45,7 @@ fn test_extract_from_rgb8() {
         None => panic!("Expected XRef for the image"),
     };
 
-    // Try extracting page
+    // Try extracting page with describe_only
     let exported = document
         .export_image(ImageExportRequest {
             page_index: 0,
@@ -54,10 +54,11 @@ fn test_extract_from_rgb8() {
                 object: 4,
                 generation: 0,
             },
-            describe_only: false,
+            describe_only: true,
         })
-        .expect("Failed to extarct image");
+        .expect("Failed to describe image");
 
+    assert!(exported.data.is_empty()); // No data should be returned in describe_only mode
     assert_eq!(exported.width, 200);
     assert_eq!(exported.height, 200);
     assert_eq!(exported.stride, 600);
@@ -69,21 +70,10 @@ fn test_extract_from_rgb8() {
     assert_eq!(exported.height_dpi, 72.0);
     assert!(exported.jbig2_globals.is_none());
     assert!(exported.ccitt_params.is_none());
-
-    // Process into sink
-    assert!(!exported.data.is_empty());
-
-    let sink_image = tiny_poppler::sink_exported_image(exported, ImageSinkOptions::default())
-        .expect("Failed to sink exported image");
-
-    // Peek into data, make sure PNG header is present
-    let png_header = &sink_image.bytes[0..8];
-    let expected_header = [137, 80, 78, 71, 13, 10, 26, 10];
-    assert_eq!(png_header, expected_header);
 }
 
 #[test]
-fn test_extract_from_jbig2_with_globals() {
+fn test_describe_from_jbig2_with_globals() {
     let pdf_path = PathBuf::from("tests/pdf/image_jbig2_withglobals.pdf");
 
     let mut document =
@@ -119,10 +109,11 @@ fn test_extract_from_jbig2_with_globals() {
                 object: obj,
                 generation,
             },
-            describe_only: false,
+            describe_only: true,
         })
-        .expect("Failed to export JBIG2 image");
+        .expect("Failed to describe JBIG2 image");
 
+    assert!(exported.data.is_empty()); // No data should be returned in describe_only mode
     assert_eq!(exported.width, 1747);
     assert_eq!(exported.height, 2554);
     assert_eq!(exported.stride, 0);
@@ -136,18 +127,17 @@ fn test_extract_from_jbig2_with_globals() {
     assert_eq!(exported.width_dpi, 72.0);
     assert_eq!(exported.height_dpi, 72.0);
     assert!(exported.ccitt_params.is_none());
-    assert!(!exported.data.is_empty());
-    assert_eq!(exported.data.len(), 2577);
 
+    // JBIG2 globals should still be available
     let globals = exported
         .jbig2_globals
         .as_ref()
         .expect("Expected JBIG2 globals to be present");
-    assert_eq!(globals.len(), 80_537);
+    assert_eq!(globals.len(), 0);
 }
 
 #[test]
-fn test_extract_from_ccitt_group3() {
+fn test_describe_from_ccitt_group3() {
     let pdf_path = PathBuf::from("tests/pdf/image_ccit_3.pdf");
 
     let mut document =
@@ -183,10 +173,11 @@ fn test_extract_from_ccitt_group3() {
                 object: obj,
                 generation,
             },
-            describe_only: false,
+            describe_only: true,
         })
-        .expect("Failed to export CCITT image");
+        .expect("Failed to describe CCITT image");
 
+    assert!(exported.data.is_empty()); // No data should be returned in describe_only mode
     assert_eq!(exported.width, 1451);
     assert_eq!(exported.height, 2528);
     assert_eq!(exported.stride, 0);
@@ -200,8 +191,6 @@ fn test_extract_from_ccitt_group3() {
     assert_eq!(exported.width_dpi, 72.0);
     assert_eq!(exported.height_dpi, 72.0);
     assert!(exported.jbig2_globals.is_none());
-    assert!(!exported.data.is_empty());
-    assert_eq!(exported.data.len(), 27_619);
 
     let params = exported
         .ccitt_params
@@ -218,7 +207,7 @@ fn test_extract_from_ccitt_group3() {
 }
 
 #[test]
-fn test_extract_from_rgba8_with_softmask() {
+fn test_describe_from_rgba8_with_softmask() {
     let mut document = open_document("image_rgba8.pdf");
     let images = document
         .image_metadata()
@@ -258,10 +247,11 @@ fn test_extract_from_rgba8_with_softmask() {
                 object: 5,
                 generation: 0,
             },
-            describe_only: false,
+            describe_only: true,
         })
-        .expect("Failed to export RGBA8 image");
+        .expect("Failed to describe RGBA8 image");
 
+    assert!(exported.data.is_empty()); // No data should be returned in describe_only mode
     assert_eq!(exported.width, 200);
     assert_eq!(exported.height, 200);
     assert_eq!(exported.stride, 600);
@@ -271,13 +261,12 @@ fn test_extract_from_rgba8_with_softmask() {
     assert_eq!(exported.extension, tiny_poppler::ImageExportExtension::Png);
     assert_eq!(exported.width_dpi, 72.0);
     assert_eq!(exported.height_dpi, 72.0);
-    assert_eq!(exported.data.len(), 120_000);
     assert!(exported.jbig2_globals.is_none());
     assert!(exported.ccitt_params.is_none());
 }
 
 #[test]
-fn test_extract_from_rgba16_with_softmask() {
+fn test_describe_from_rgba16_with_softmask() {
     let mut document = open_document("image_rgba16.pdf");
     let images = document
         .image_metadata()
@@ -305,10 +294,11 @@ fn test_extract_from_rgba16_with_softmask() {
                 object: 5,
                 generation: 0,
             },
-            describe_only: false,
+            describe_only: true,
         })
-        .expect("Failed to export RGBA16 image");
+        .expect("Failed to describe RGBA16 image");
 
+    assert!(exported.data.is_empty()); // No data should be returned in describe_only mode
     assert_eq!(exported.width, 200);
     assert_eq!(exported.height, 200);
     assert_eq!(exported.stride, 1_200);
@@ -316,13 +306,12 @@ fn test_extract_from_rgba16_with_softmask() {
     assert_eq!(exported.bits_per_component, 16);
     assert_eq!(exported.format, tiny_poppler::ImageExportFormat::Rgb48);
     assert_eq!(exported.extension, tiny_poppler::ImageExportExtension::Png);
-    assert_eq!(exported.data.len(), 240_000);
     assert_eq!(exported.width_dpi, 72.0);
     assert_eq!(exported.height_dpi, 72.0);
 }
 
 #[test]
-fn test_extract_from_rgb16() {
+fn test_describe_from_rgb16() {
     let mut document = open_document("image_rgb16.pdf");
     let images = document
         .image_metadata()
@@ -345,10 +334,11 @@ fn test_extract_from_rgb16() {
                 object: 4,
                 generation: 0,
             },
-            describe_only: false,
+            describe_only: true,
         })
-        .expect("Failed to export RGB16 image");
+        .expect("Failed to describe RGB16 image");
 
+    assert!(exported.data.is_empty()); // No data should be returned in describe_only mode
     assert_eq!(exported.width, 200);
     assert_eq!(exported.height, 200);
     assert_eq!(exported.components, 3);
@@ -356,11 +346,10 @@ fn test_extract_from_rgb16() {
     assert_eq!(exported.stride, 1_200);
     assert_eq!(exported.format, tiny_poppler::ImageExportFormat::Rgb48);
     assert_eq!(exported.extension, tiny_poppler::ImageExportExtension::Png);
-    assert_eq!(exported.data.len(), 240_000);
 }
 
 #[test]
-fn test_extract_from_cmyk_jpeg() {
+fn test_describe_from_cmyk_jpeg() {
     let mut document = open_document("image_cmyk_jpg.pdf");
     let images = document
         .image_metadata()
@@ -387,10 +376,11 @@ fn test_extract_from_cmyk_jpeg() {
                 object: 4,
                 generation: 0,
             },
-            describe_only: false,
+            describe_only: true,
         })
-        .expect("Failed to export CMYK image");
+        .expect("Failed to describe CMYK image");
 
+    assert!(exported.data.is_empty()); // No data should be returned in describe_only mode
     assert_eq!(exported.width, 200);
     assert_eq!(exported.height, 200);
     assert_eq!(exported.components, 4);
@@ -398,11 +388,10 @@ fn test_extract_from_cmyk_jpeg() {
     assert_eq!(exported.stride, 0);
     assert_eq!(exported.format, tiny_poppler::ImageExportFormat::Unknown);
     assert_eq!(exported.extension, tiny_poppler::ImageExportExtension::Jpeg);
-    assert_eq!(exported.data.len(), 8_001);
 }
 
 #[test]
-fn test_extract_from_luma8() {
+fn test_describe_from_luma8() {
     let mut document = open_document("image_luma8.pdf");
     let images = document
         .image_metadata()
@@ -427,10 +416,11 @@ fn test_extract_from_luma8() {
                 object: 4,
                 generation: 0,
             },
-            describe_only: false,
+            describe_only: true,
         })
-        .expect("Failed to export luma8 image");
+        .expect("Failed to describe luma8 image");
 
+    assert!(exported.data.is_empty()); // No data should be returned in describe_only mode
     assert_eq!(exported.width, 200);
     assert_eq!(exported.height, 200);
     assert_eq!(exported.components, 1);
@@ -438,11 +428,10 @@ fn test_extract_from_luma8() {
     assert_eq!(exported.stride, 200);
     assert_eq!(exported.format, tiny_poppler::ImageExportFormat::Gray);
     assert_eq!(exported.extension, tiny_poppler::ImageExportExtension::Png);
-    assert_eq!(exported.data.len(), 40_000);
 }
 
 #[test]
-fn test_extract_from_luma16() {
+fn test_describe_from_luma16() {
     let mut document = open_document("image_luma16.pdf");
     let images = document
         .image_metadata()
@@ -463,10 +452,11 @@ fn test_extract_from_luma16() {
                 object: 4,
                 generation: 0,
             },
-            describe_only: false,
+            describe_only: true,
         })
-        .expect("Failed to export luma16 image");
+        .expect("Failed to describe luma16 image");
 
+    assert!(exported.data.is_empty()); // No data should be returned in describe_only mode
     assert_eq!(exported.width, 200);
     assert_eq!(exported.height, 200);
     assert_eq!(exported.components, 1);
@@ -474,11 +464,10 @@ fn test_extract_from_luma16() {
     assert_eq!(exported.stride, 200);
     assert_eq!(exported.format, tiny_poppler::ImageExportFormat::Gray);
     assert_eq!(exported.extension, tiny_poppler::ImageExportExtension::Png);
-    assert_eq!(exported.data.len(), 40_000);
 }
 
 #[test]
-fn test_extract_from_one_bit_gray() {
+fn test_describe_from_one_bit_gray() {
     let mut document = open_document("image_1_bit_per_component.pdf");
     let images = document
         .image_metadata()
@@ -505,10 +494,11 @@ fn test_extract_from_one_bit_gray() {
                 object: 6,
                 generation: 0,
             },
-            describe_only: false,
+            describe_only: true,
         })
-        .expect("Failed to export 1-bit image");
+        .expect("Failed to describe 1-bit image");
 
+    assert!(exported.data.is_empty()); // No data should be returned in describe_only mode
     assert_eq!(exported.width, 256);
     assert_eq!(exported.height, 256);
     assert_eq!(exported.components, 1);
@@ -516,11 +506,10 @@ fn test_extract_from_one_bit_gray() {
     assert_eq!(exported.stride, 32);
     assert_eq!(exported.format, tiny_poppler::ImageExportFormat::Monochrome);
     assert_eq!(exported.extension, tiny_poppler::ImageExportExtension::Png);
-    assert_eq!(exported.data.len(), 8_192);
 }
 
 #[test]
-fn test_extract_from_inline_ccitt() {
+fn test_describe_from_inline_ccitt() {
     let mut document = open_document("image_inline_2.pdf");
     let images = document
         .image_metadata()
@@ -543,10 +532,11 @@ fn test_extract_from_inline_ccitt() {
             page_index: 0,
             target_type: tiny_poppler::ImageExportType::Image,
             selector: tiny_poppler::ImageExportSelector::NthOfType { occurrence: 0 },
-            describe_only: false,
+            describe_only: true,
         })
-        .expect("Failed to export inline CCITT image");
+        .expect("Failed to describe inline CCITT image");
 
+    assert!(exported.data.is_empty()); // No data should be returned in describe_only mode
     assert_eq!(exported.width, 138);
     assert_eq!(exported.height, 130);
     assert_eq!(exported.components, 1);
@@ -557,7 +547,6 @@ fn test_extract_from_inline_ccitt() {
         exported.extension,
         tiny_poppler::ImageExportExtension::Ccitt
     );
-    assert_eq!(exported.data.len(), 1_585);
 
     let params = exported
         .ccitt_params
@@ -573,7 +562,7 @@ fn test_extract_from_inline_ccitt() {
 }
 
 #[test]
-fn test_extract_from_ccitt_group1() {
+fn test_describe_from_ccitt_group1() {
     let mut document = open_document("image_ccit_1.pdf");
     let images = document
         .image_metadata()
@@ -594,10 +583,11 @@ fn test_extract_from_ccitt_group1() {
                 object: 8,
                 generation: 0,
             },
-            describe_only: false,
+            describe_only: true,
         })
-        .expect("Failed to export CCITT Group 1 image");
+        .expect("Failed to describe CCITT Group 1 image");
 
+    assert!(exported.data.is_empty()); // No data should be returned in describe_only mode
     assert_eq!(exported.width, 415);
     assert_eq!(exported.height, 314);
     assert_eq!(exported.components, 1);
@@ -608,7 +598,6 @@ fn test_extract_from_ccitt_group1() {
         exported.extension,
         tiny_poppler::ImageExportExtension::Ccitt
     );
-    assert_eq!(exported.data.len(), 911);
 
     let params = exported
         .ccitt_params
@@ -625,7 +614,7 @@ fn test_extract_from_ccitt_group1() {
 }
 
 #[test]
-fn test_extract_from_ccitt_group4() {
+fn test_describe_from_ccitt_group4() {
     let mut document = open_document("image_ccit_4.pdf");
     let images = document
         .image_metadata()
@@ -646,10 +635,11 @@ fn test_extract_from_ccitt_group4() {
                 object: 8,
                 generation: 0,
             },
-            describe_only: false,
+            describe_only: true,
         })
-        .expect("Failed to export CCITT Group 4 image");
+        .expect("Failed to describe CCITT Group 4 image");
 
+    assert!(exported.data.is_empty()); // No data should be returned in describe_only mode
     assert_eq!(exported.width, 2336);
     assert_eq!(exported.height, 2857);
     assert_eq!(exported.components, 1);
@@ -660,7 +650,6 @@ fn test_extract_from_ccitt_group4() {
         exported.extension,
         tiny_poppler::ImageExportExtension::Ccitt
     );
-    assert_eq!(exported.data.len(), 31_187);
 
     let params = exported
         .ccitt_params
