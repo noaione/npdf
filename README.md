@@ -119,7 +119,7 @@ recrop all pages in the PDF file using the specified crop mode and save the recr
 - `trim`: use the TrimBox
 - `art`: use the ArtBox
 
-this use [`lopdf`](https://crates.io/crates/lopdf) crate to manipulate the PDF file directly.
+this use [`qpdf-rs`](https://crates.io/crates/qpdf-rs) crate to manipulate the PDF file directly.
 
 ## other tools
 
@@ -131,14 +131,12 @@ see the [tools/README.md](./tools/README.md) for more info.
 
 this project is not affiliated with or endorsed by the poppler/xpdf project or its maintainers. use at your own risk.
 
-i also haven't ran `miri` yet on this since i need some example PDFs first that could help test some stuff.
-
 ## license
 
 GPL-3.0-or-later as the poppler/xpdf library is licensed in GPL
 
 ## acknowledgements
 
-- thanks to the poppler/xpdf project for their great rendering library for PDF files.
-- the libjxl project for the great JPEG compression library (especially the jpegli bridge).
-- the lopdf project for their PDF manipulation library.
+- thanks to the [poppler](https://poppler.freedesktop.org/)/xpdf project for their great rendering library for PDF files.
+- the [libjxl](https://github.com/libjxl/libjxl) project for the great JPEG compression library (especially the jpegli bridge).
+- the [qpdf](https://github.com/qpdf/qpdf) (and the [rust-binding](https://github.com/ancwrd1/qpdf-rs)) project for their PDF manipulation library.
