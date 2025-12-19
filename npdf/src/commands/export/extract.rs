@@ -23,15 +23,29 @@ pub(super) struct ExtractPagePlan {
     pub output_path: Option<PathBuf>,
 }
 
+/// Minimal version of [`ImageInfo`] for internal processing.
+///
+/// Since the [`ImageInfo`] struct is way too big for the main enum.
+#[derive(Clone)]
+pub(super) struct TinyImageInfo {
+    page: u32,
+    image_type: ImageType,
+    xref: Option<(i32, i32)>,
+}
+
 #[derive(Clone)]
 pub(super) struct ImageEntry {
-    info: ImageInfo,
+    info: TinyImageInfo,
     selector: ExtractionSelector,
     target_type: ImageExportType,
 }
 
 impl ImageEntry {
-    fn new(info: ImageInfo, selector: ExtractionSelector, target_type: ImageExportType) -> Self {
+    fn new(
+        info: TinyImageInfo,
+        selector: ExtractionSelector,
+        target_type: ImageExportType,
+    ) -> Self {
         Self {
             info,
             selector,
@@ -39,8 +53,28 @@ impl ImageEntry {
         }
     }
 
-    pub fn info(&self) -> &ImageInfo {
+    pub fn info(&self) -> &TinyImageInfo {
         &self.info
+    }
+}
+
+impl From<&ImageInfo> for TinyImageInfo {
+    fn from(value: &ImageInfo) -> Self {
+        Self {
+            page: value.page,
+            image_type: value.image_type,
+            xref: value.xref,
+        }
+    }
+}
+
+impl From<ImageInfo> for TinyImageInfo {
+    fn from(value: ImageInfo) -> Self {
+        Self {
+            page: value.page,
+            image_type: value.image_type,
+            xref: value.xref,
+        }
     }
 }
 
@@ -134,7 +168,7 @@ fn build_page_groups(page: u32, entries: Vec<ImageInfo>) -> Vec<ImageGroup> {
         match info.image_type {
             ImageType::Image | ImageType::Stencil => {
                 let maybe_xref = info.xref;
-                let entry = ImageEntry::new(info, selector, target_type);
+                let entry = ImageEntry::new(info.into(), selector, target_type);
                 let idx = groups.len();
                 groups.push(ImageGroup::new(entry));
                 if let Some((object, generation)) = maybe_xref {
@@ -208,7 +242,7 @@ fn attach_component(
             ComponentKind::Mask => ImageExportType::Mask,
             ComponentKind::SoftMask => ImageExportType::SoftMask,
         };
-        let entry = ImageEntry::new(info, selector, target_type);
+        let entry = ImageEntry::new(info.into(), selector, target_type);
         match kind {
             ComponentKind::Mask => groups[idx].mask = Some(entry),
             ComponentKind::SoftMask => groups[idx].soft_mask = Some(entry),
@@ -241,7 +275,7 @@ pub(super) fn describe_component(
     page: u32,
     slot: Option<usize>,
     component_suffix: &str,
-    info: &ImageInfo,
+    info: &TinyImageInfo,
     image: &ExportedImage,
 ) {
     let size = format!("{} × {}", image.width, image.height);
@@ -290,7 +324,7 @@ fn persist_encoded(
     page: u32,
     slot: Option<usize>,
     component_suffix: &str,
-    info: &ImageInfo,
+    info: &TinyImageInfo,
     image: &EncodedExportedImage,
 ) -> Result<(), String> {
     if let Some(parent) = path.parent() {
@@ -329,7 +363,7 @@ fn persist_encoded(
             params.push_str("-B ");
         }
         params.push_str("-M\n"); // PDF uses MSB first
-        let ccitt_params_path = path.with_extension(&format!("{}.params", image.file_extension()));
+        let ccitt_params_path = path.with_extension(format!("{}.params", image.file_extension()));
         fs::write(&ccitt_params_path, params)
             .map_err(|err| format!("failed to write {}: {err}", ccitt_params_path.display()))?;
     }
