@@ -291,8 +291,8 @@ fn should_be_extracted(page: &PageInfo, images: &[ImageInfo], mode: ExtractionMo
                 // if no images, render
                 false
             } else {
-                // if pdf/a compliant, extract
-                page.is_pdf_a_compatible
+                // if pdf/a compliant, extract if only single image that covers the whole page
+                page.is_pdf_a_compatible && images.len() == 1
             }
         }
     }

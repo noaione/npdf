@@ -71,7 +71,7 @@ list all available images in the PDF files, can be used to help determine what y
 npdf export <pdf_file> <output_dir>
 ```
 
-export the PDF into `<output_dir>` as PNG images. Use `-h`/`--help` to see options (DPI, color mode, page ranges, etc.).
+export OR extract the PDF into `<output_dir>` as PNG images. Use `-h`/`--help` to see options (DPI, color mode, page ranges, etc.).
 
 by default `npdf export` spawns multiple workers (one per logical CPU).<br />
 pass `--threads 1` to run single-threaded or `--threads N` to clamp the worker count.
@@ -84,15 +84,11 @@ this is powered with [`jpegli`/`libjxl`](https://github.com/libjxl/libjxl) via [
 
 you can also use the `--cmyk-png` option to use CMYK as rendering color mode but still export as PNG (with color conversion to RGB/Gray).
 
-### extract
-```
-npdf extract <pdf_file> <output_dir>
-```
+previously, the `npdf extract` is their own command but has been merged into `npdf export` for simplicity.<br />
+to get the previous behavior of extract, use: `npdf export --extract all -o <output_dir> <pdf_file>`.
 
-extract all images embedded in the PDF file and save them into `<output_dir>`.<br />
-the images will be saved using their original format (png/jpg/tiff/etc.) if possible
-
-this command should be similar to `pdfimages` from poppler/xpdf.
+there is a new extract mode which is `--extract some` which do extraction if the page only contains single image that covers the whole page (like scanned pages).<br />
+this is useful for scanned PDFs that you want to extract the images directly instead of rendering them again (which may cause quality loss).
 
 ### unwatermark
 ```
@@ -118,6 +114,16 @@ recrop all pages in the PDF file using the specified crop mode and save the recr
 - `bleed`: use the BleedBox
 - `trim`: use the TrimBox
 - `art`: use the ArtBox
+
+this use [`qpdf-rs`](https://crates.io/crates/qpdf-rs) crate to manipulate the PDF file directly.
+
+### recrop
+```
+npdf fix-color -o <output_file> <pdf_file>
+```
+
+batch fix stencil pages to only use black/white for digital preservation/display and save the fixed PDF into `<output_file>`.<br />
+internally this use black Separation color space which works the best with our `export` command (which use poppler SplashOutput renderer).
 
 this use [`qpdf-rs`](https://crates.io/crates/qpdf-rs) crate to manipulate the PDF file directly.
 
