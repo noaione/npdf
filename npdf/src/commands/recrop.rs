@@ -39,8 +39,11 @@ pub fn run(args: RecropArgs, passwords: Option<&PdfPasswords>) -> Result<(), Str
     };
 
     cprintln!("<m,s>Loading PDF</>: {}", args.pdf.display());
+    // read PDF to bytes first to avoid multiple opens
+    let pdf_bytes = std::fs::read(&args.pdf)
+        .map_err(|err| format!("Failed to read PDF file {}: {}", args.pdf.display(), err))?;
 
-    let doc = open_maybe_locked(&args.pdf, passwords)?;
+    let doc = open_maybe_locked(&pdf_bytes, passwords)?;
     let total_pages = doc
         .get_num_pages()
         .map_err(|err| format!("Failed to get number of pages: {}", err))?;
