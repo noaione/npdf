@@ -10,7 +10,8 @@ use clap::{
 };
 use color_print::cprintln;
 use commands::{
-    ExportArgs, ListArgs, RecropArgs, UnwatermarkArgs, export, list, recrop, unwatermark,
+    ExportArgs, FixColorspaceArgs, ListArgs, RecropArgs, UnwatermarkArgs, export, fix_color, list,
+    recrop, unwatermark,
 };
 use tiny_poppler::PdfPasswords;
 
@@ -36,6 +37,7 @@ fn execute(cli: Cli) -> Result<(), String> {
         Commands::Export(args) => export::run(args, passwords.as_ref()),
         Commands::Unwatermark(args) => unwatermark::run(args, passwords.as_ref()),
         Commands::Recrop(args) => recrop::run(args, passwords.as_ref()),
+        Commands::FixColor(args) => fix_color::run(args, passwords.as_ref()),
         Commands::Version => cmd_show_version_info(),
     }
 }
@@ -70,6 +72,8 @@ enum Commands {
     Unwatermark(UnwatermarkArgs),
     /// Recrop pages in the PDF based on specified box.
     Recrop(RecropArgs),
+    /// Fix stencil page color issues in the PDF.
+    FixColor(FixColorspaceArgs),
     /// Get version information.
     Version,
 }
