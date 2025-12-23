@@ -131,9 +131,16 @@ fn main() {
         .parent()
         .expect("crate should reside inside workspace root");
     let poppler_path = parent_dir.join("third_party/poppler/poppler");
+    let poppler_splash_path = parent_dir.join("third_party/poppler/splash");
     // iterate all cc and h files
     for entry in walkdir::WalkDir::new(&poppler_path) {
         let entry = entry.expect("failed to read file in poppler source tree");
+        if entry.file_type().is_file() {
+            println!("cargo:rerun-if-changed={}", entry.path().display());
+        }
+    }
+    for entry in walkdir::WalkDir::new(&poppler_splash_path) {
+        let entry = entry.expect("failed to read file in poppler/splash source tree");
         if entry.file_type().is_file() {
             println!("cargo:rerun-if-changed={}", entry.path().display());
         }
