@@ -13,6 +13,7 @@ mod extract;
 mod render;
 
 use crate::commands::export::extract::{ExtractPagePlan, describe_component};
+use crate::commands::export::render::ZeroWidthLineChoice;
 use crate::commands::export::render::{AutoDPIDirection, ColorChoice, CropChoice, RenderPagePlan};
 
 pub type PagePairings = HashMap<PageInfo, Vec<ImageInfo>>;
@@ -79,6 +80,9 @@ pub struct ExportArgs {
     /// Export CCITT as TIFF images where applicable.
     #[arg(long, default_value_t = false)]
     pub ccitt_as_tiff: bool,
+    /// Zero-width line rendering mode.
+    #[arg(short = 'z', long, value_enum, default_value_t = ZeroWidthLineChoice::Default)]
+    pub zero_width_line: ZeroWidthLineChoice,
 }
 
 pub fn run(args: ExportArgs, passwords: Option<&PdfPasswords>) -> Result<(), String> {

@@ -57,6 +57,20 @@ std::optional<SplashColorMode> to_splash_color_mode(splash_color_mode_t mode)
     }
 }
 
+std::optional<SplashZeroWidthLineMode> to_splash_zero_width_line_mode(splash_zero_width_line_mode_t mode)
+{
+    switch (mode) {
+    case SPLASH_ZERO_WIDTH_LINE_DEFAULT:
+        return splashZeroWidthLineDefault;
+    case SPLASH_ZERO_WIDTH_LINE_HAIRLINE:
+        return splashZeroWidthLineHairline;
+    case SPLASH_ZERO_WIDTH_LINE_NOTHING:
+        return splashZeroWidthLineNothing;
+    default:
+        return std::nullopt;
+    }
+}
+
 void ensure_global_params()
 {
     std::call_once(init_flag, []() {
@@ -579,6 +593,7 @@ int splash_renderer_render_page(splash_renderer_t *renderer,
                                 double dpi,
                                 splash_color_mode_t color_mode,
                                 splash_crop_mode_t crop_mode,
+                                splash_zero_width_line_mode_t zero_width_line_mode,
                                 splash_image_t *out_image,
                                 char **error_out)
 {
@@ -600,12 +615,19 @@ int splash_renderer_render_page(splash_renderer_t *renderer,
         return errInternal;
     }
 
+    auto maybe_zero_width_line_mode = to_splash_zero_width_line_mode(zero_width_line_mode);
+    if (!maybe_zero_width_line_mode) {
+        set_error(error_out, "unsupported Splash zero-width line mode requested");
+        return errInternal;
+    }
+
     Page *page = renderer->doc->getPage(page_number); // Preload page to set up crop boxes, etc.
 
     const double clamped_dpi = dpi > 0.0 ? dpi : 72.0;
     bool use_media_box = crop_mode == SPLASH_CROP_MODE_MEDIA_BOX;
 
     const SplashColorMode requested_mode = *maybe_mode;
+    const SplashZeroWidthLineMode requested_zero_width_line_mode = *maybe_zero_width_line_mode;
     const bool enable_overprint =
         color_mode == SPLASH_COLOR_MODE_CMYK8 || color_mode == SPLASH_COLOR_MODE_DEVICEN8;
 
@@ -630,6 +652,7 @@ int splash_renderer_render_page(splash_renderer_t *renderer,
     output_dev.setFontAntialias(true);
     output_dev.setEnableFreeType(true);
     output_dev.setFreeTypeHinting(true, true);
+    output_dev.setZeroWidthLineMode(requested_zero_width_line_mode);
     output_dev.startDoc(renderer->doc.get());
 
     page->display(

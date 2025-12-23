@@ -51,6 +51,12 @@ typedef enum splash_crop_mode {
     // SPLASH_CROP_MODE_ART_BOX = 4,
 } splash_crop_mode_t;
 
+typedef enum splash_zero_width_line_mode {
+    SPLASH_ZERO_WIDTH_LINE_DEFAULT = 0,  // use default behavior
+    SPLASH_ZERO_WIDTH_LINE_HAIRLINE = 1, // draw zero-width lines as
+    SPLASH_ZERO_WIDTH_LINE_NOTHING = 2   // do not draw zero-width lines
+} splash_zero_width_line_mode_t;
+
 typedef struct splash_image {
     uint8_t *data;
     size_t len;
@@ -117,6 +123,7 @@ int splash_renderer_render_page(splash_renderer_t *renderer,
                                 double dpi,
                                 splash_color_mode_t color_mode,
                                 splash_crop_mode_t crop_mode,
+                                splash_zero_width_line_mode_t zero_width_line_mode,
                                 splash_image_t *out_image,
                                 char **error_out);
 

@@ -5,7 +5,8 @@ use std::fs;
 use std::path::PathBuf;
 use tiny_poppler::{
     ColorMode, Document, DocumentFactory, ImageInfo, ImageType, PageInfo, PdfCropMode,
-    PdfImageColorSpace, PdfMatrix, PdfRect, RenderError, RenderOptions, cmyk2gray, cmyk2rgb,
+    PdfImageColorSpace, PdfMatrix, PdfRect, RenderError, RenderOptions, ZeroWidthLineMode,
+    cmyk2gray, cmyk2rgb,
 };
 
 use crate::commands::ExportArgs;
@@ -35,6 +36,13 @@ pub enum CropChoice {
     // ArtBox,
     // BleedBox,
     // TrimBox,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, ValueEnum)]
+pub enum ZeroWidthLineChoice {
+    Default,
+    Hairline,
+    None,
 }
 
 #[derive(Clone)]
@@ -236,6 +244,7 @@ pub(super) fn prepare_job(
         } else {
             tiny_poppler::OutputMode::Encoded
         },
+        zero_width_line_mode: args.zero_width_line.to_zero_width_line_mode(),
     };
 
     let guessed = precalculate_auto_export_config(
@@ -488,6 +497,16 @@ impl CropChoice {
         match self {
             CropChoice::Crop => PdfCropMode::CropBox,
             CropChoice::Media => PdfCropMode::MediaBox,
+        }
+    }
+}
+
+impl ZeroWidthLineChoice {
+    fn to_zero_width_line_mode(self) -> ZeroWidthLineMode {
+        match self {
+            ZeroWidthLineChoice::Default => ZeroWidthLineMode::Default,
+            ZeroWidthLineChoice::Hairline => ZeroWidthLineMode::Hairline,
+            ZeroWidthLineChoice::None => ZeroWidthLineMode::Nothing,
         }
     }
 }

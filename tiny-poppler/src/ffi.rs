@@ -63,6 +63,15 @@ pub enum ImageType {
 }
 
 #[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ZeroWidthLineMode {
+    #[default]
+    Default = 0,
+    Hairline = 1,
+    Nothing = 2,
+}
+
+#[repr(C)]
 struct SplashImage {
     data: *mut u8,
     len: usize,
@@ -255,6 +264,7 @@ unsafe extern "C" {
         dpi: c_double,
         color_mode: ColorMode,
         crop_mode: PdfCropMode,
+        zero_width_line_mode: ZeroWidthLineMode,
         out_image: *mut SplashImage,
         error_out: *mut *mut c_char,
     ) -> i32;
@@ -445,6 +455,7 @@ impl Renderer {
         dpi: f64,
         color_mode: ColorMode,
         crop_mode: PdfCropMode,
+        zero_width_line_mode: ZeroWidthLineMode,
     ) -> Result<Image, String> {
         let mut image = SplashImage {
             data: ptr::null_mut(),
@@ -459,7 +470,14 @@ impl Renderer {
         let mut error = ptr::null_mut();
         let status = unsafe {
             splash_renderer_render_page(
-                self.raw, page_index, dpi, color_mode, crop_mode, &mut image, &mut error,
+                self.raw,
+                page_index,
+                dpi,
+                color_mode,
+                crop_mode,
+                zero_width_line_mode,
+                &mut image,
+                &mut error,
             )
         };
         if status != 0 {

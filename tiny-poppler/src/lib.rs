@@ -12,7 +12,7 @@ use ffi::get_poppler_version;
 pub use ffi::{
     CcittParams, ColorMode, ExportedImage, ImageExportExtension, ImageExportFormat,
     ImageExportRequest, ImageExportSelector, ImageExportType, ImageInfo, ImageType, PageInfo,
-    PdfCropMode, PdfImageColorSpace, PdfMatrix, PdfPoint, PdfRect,
+    PdfCropMode, PdfImageColorSpace, PdfMatrix, PdfPoint, PdfRect, ZeroWidthLineMode,
 };
 use png::Encoder;
 pub use png::{BitDepth as PngBitDepth, ColorType as PngColorType};
@@ -50,6 +50,7 @@ pub struct RenderOptions {
     pub crop_mode: PdfCropMode,
     pub jpeg_quality: Option<u8>,
     pub output_mode: OutputMode,
+    pub zero_width_line_mode: ZeroWidthLineMode,
 }
 
 impl Default for RenderOptions {
@@ -60,6 +61,7 @@ impl Default for RenderOptions {
             crop_mode: PdfCropMode::CropBox,
             jpeg_quality: Some(95),
             output_mode: OutputMode::Encoded,
+            zero_width_line_mode: ZeroWidthLineMode::Default,
         }
     }
 }
@@ -227,6 +229,7 @@ impl Document {
                 options.dpi,
                 options.color_mode,
                 options.crop_mode,
+                options.zero_width_line_mode,
             )
             .map_err(RenderError::Poppler)
     }
