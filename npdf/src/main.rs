@@ -124,5 +124,6 @@ fn cmd_show_version_info() -> Result<(), String> {
             jxl_version.lib_version()
         );
     }
+
     Ok(())
 }
