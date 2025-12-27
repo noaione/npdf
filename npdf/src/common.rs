@@ -1,5 +1,4 @@
 use lopdf::Document;
-use qpdf::QPdf;
 use tiny_poppler::PdfPasswords;
 
 pub(crate) fn unlock_pdf(doc: &Document, passwords: Option<&PdfPasswords>) -> Result<(), String> {
@@ -32,28 +31,4 @@ pub(crate) fn ensure_pdf_output(output_path: &std::path::Path) -> Result<(), Str
         ));
     }
     Ok(())
-}
-
-pub(crate) fn open_maybe_locked(
-    buffers: &[u8],
-    passwords: Option<&PdfPasswords>,
-) -> Result<QPdf, String> {
-    match passwords {
-        Some(pwds) => {
-            if let Some(user_pwd) = &pwds.user {
-                QPdf::read_from_memory_encrypted(buffers, user_pwd)
-                    .map_err(|e| format!("Failed to open PDF with user password: {}", e))
-            } else if let Some(owner_pwd) = &pwds.owner {
-                QPdf::read_from_memory_encrypted(buffers, owner_pwd)
-                    .map_err(|e| format!("Failed to open PDF with owner password: {}", e))
-            } else {
-                // no password provided, try without
-                QPdf::read_from_memory(buffers).map_err(|e| format!("Failed to open PDF: {}", e))
-            }
-        }
-        None => {
-            // Try processing without a password
-            QPdf::read_from_memory(buffers).map_err(|e| format!("Failed to open PDF: {}", e))
-        }
-    }
 }

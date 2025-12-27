@@ -21,7 +21,6 @@ color-print.workspace = true
 tiny-poppler = { path = "../tiny-poppler" }
 simple-jpegli-enc = { path = "../simple-jpegli-enc" }
 lopdf.workspace = true
-qpdf = { version = "0.3.4", features = ["vendored"], default-features = false }
 sha2.workspace = true
 
 rayon.workspace = true

@@ -1,14 +1,10 @@
-use std::path::PathBuf;
-
 use clap::{Args, ValueEnum};
 use color_print::{cformat, cprintln};
-use qpdf::{
-    ObjectStreamMode, QPdf, QPdfArray, QPdfDictionary, QPdfObject, QPdfObjectLike, QPdfObjectType,
-    QPdfScalar,
-};
+use lopdf::{Document, Object, ObjectId};
+use std::path::PathBuf;
 use tiny_poppler::PdfPasswords;
 
-use crate::common::{ensure_pdf_output, open_maybe_locked};
+use crate::common::{ensure_pdf_output, unlock_pdf};
 
 #[derive(Args)]
 pub struct RecropArgs {
@@ -38,29 +34,39 @@ pub fn run(args: RecropArgs, passwords: Option<&PdfPasswords>) -> Result<(), Str
         (None, false) => return Err("--output is required when not using --describe".into()),
     };
 
-    cprintln!("<m,s>Loading PDF</>: {}", args.pdf.display());
-    // read PDF to bytes first to avoid multiple opens
-    let pdf_bytes = std::fs::read(&args.pdf)
-        .map_err(|err| format!("Failed to read PDF file {}: {}", args.pdf.display(), err))?;
+    cprintln!("<magenta,bold>Loading PDF</>: {}", args.pdf.display());
+    let mut doc = Document::load(args.pdf).map_err(|err| err.to_string())?;
 
-    let doc = open_maybe_locked(&pdf_bytes, passwords)?;
-    let total_pages = doc
-        .get_num_pages()
-        .map_err(|err| format!("Failed to get number of pages: {}", err))?;
+    unlock_pdf(&doc, passwords)?;
 
-    cprintln!("<m,s>Processing pages</>...");
+    // Check if encrypted and encryption state is still None (i.e., not yet authenticated)
+    let is_encrypted = doc.is_encrypted() && doc.encryption_state.is_none();
 
-    for pg_num in 0..total_pages {
-        let page = doc
-            .get_page(pg_num)
-            .ok_or(format!("Page {} not found in document.", pg_num + 1))?;
+    match (passwords, is_encrypted) {
+        (Some(pwds), true) => {
+            if let Some(user_pwd) = &pwds.user {
+                doc.authenticate_password(user_pwd)
+                    .map_err(|err| err.to_string())?;
+            } else if let Some(owner_pwd) = &pwds.owner {
+                doc.authenticate_owner_password(owner_pwd)
+                    .map_err(|err| err.to_string())?;
+            }
+        }
+        (None, true) => {
+            return Err("PDF is encrypted but no passwords were provided.".to_string());
+        }
+        _ => {}
+    }
 
-        let page_box = get_page_box(&page)?;
+    cprintln!("<magenta,bold>Processing pages</>...");
+    for (page_num, object_id) in doc.get_pages() {
+        let page_box = get_page_box(&doc, object_id)
+            .map_err(|err| format!("Failed to get page box for page {}: {}", page_num, err))?;
 
         if args.describe {
             cprintln!(
                 " > <bold>Page <cyan>{page}</cyan></bold> ┆ {crop} ┆ {media} ┆ {art} ┆ {bleed} ┆ {trim} ┆ {orig}",
-                page = pg_num,
+                page = page_num,
                 crop = print_box("CropBox", page_box.cropbox),
                 media = print_box("MediaBox", page_box.mediabox),
                 art = print_box("ArtBox", page_box.artbox),
@@ -73,256 +79,51 @@ pub fn run(args: RecropArgs, passwords: Option<&PdfPasswords>) -> Result<(), Str
 
         match page_box.get_box(args.bounding) {
             Some(new_box) => {
-                set_new_crop_box(&doc, page, new_box, &page_box).map_err(|err| {
-                    format!(
-                        "Failed to set new crop box for page {}: {}",
-                        pg_num + 1,
-                        err
-                    )
+                set_new_crop_box(&mut doc, object_id, new_box).map_err(|err| {
+                    format!("Failed to set new crop box for page {}: {}", page_num, err)
                 })?;
-                cprintln!("<green>Recropped page</> {} to {:?}", pg_num, new_box);
+                cprintln!("<green>Recropped page</> {} to {:?}", page_num, new_box);
             }
             None => {
                 cprintln!(
                     "<yellow>Warning:</> Page {} does not have the specified box {:?}. Skipping.",
-                    pg_num,
+                    page_num,
                     args.bounding
                 );
             }
         }
     }
 
-    if let Some(output_path) = output {
-        cprintln!(
-            "<magenta,bold>Saving output PDF</>: {}",
-            output_path.display()
-        );
-
-        let pdf_version = doc.get_pdf_version();
-
-        doc.writer()
-            .static_id(false)
-            .force_pdf_version(&pdf_version)
-            .normalize_content(true)
-            .preserve_unreferenced_objects(false)
-            .compress_streams(true)
-            .object_stream_mode(ObjectStreamMode::Preserve)
-            .write(output_path)
-            .map_err(|err| format!("Failed to save output PDF: {}", err))?;
+    if args.describe {
+        return Ok(());
     }
 
+    let output_path = output
+        .as_ref()
+        .ok_or_else(|| "output path not set for non-describe mode".to_string())?;
+
+    cprintln!(
+        "<magenta,bold>Saving output PDF</>: {}",
+        output_path.display()
+    );
+    doc.save(output_path)
+        .map_err(|err| format!("Failed to save output PDF: {}", err))?;
+
+    cprintln!("<green,bold>Done!</>");
     Ok(())
-}
-
-fn get_page_box(page: &QPdfDictionary) -> Result<PageBox, String> {
-    let mut page_box = PageBox {
-        cropbox: None,
-        mediabox: None,
-        artbox: None,
-        bleedbox: None,
-        trimbox: None,
-        old_cropbox: None,
-    };
-
-    if let Some(cropbox) = page.get("/CropBox").and_then(|x| {
-        if x.get_type() == QPdfObjectType::Array {
-            Some(QPdfArray::from(x))
-        } else {
-            None
-        }
-    }) && cropbox.len() == 4
-    {
-        let vals: [f64; 4] = [
-            object_to_f64(cropbox.get(0).ok_or("/CropBox missing first element")?)?,
-            object_to_f64(cropbox.get(1).ok_or("/CropBox missing second element")?)?,
-            object_to_f64(cropbox.get(2).ok_or("/CropBox missing third element")?)?,
-            object_to_f64(cropbox.get(3).ok_or("/CropBox missing fourth element")?)?,
-        ];
-
-        page_box.cropbox = Some(vals);
-    };
-
-    if let Some(old_cropbox) = page.get("/OriginalCropBox").and_then(|x| {
-        if x.get_type() == QPdfObjectType::Array {
-            Some(QPdfArray::from(x))
-        } else {
-            None
-        }
-    }) && old_cropbox.len() == 4
-    {
-        let vals: [f64; 4] = [
-            object_to_f64(
-                old_cropbox
-                    .get(0)
-                    .ok_or("/OriginalCropBox missing first element")?,
-            )?,
-            object_to_f64(
-                old_cropbox
-                    .get(1)
-                    .ok_or("/OriginalCropBox missing second element")?,
-            )?,
-            object_to_f64(
-                old_cropbox
-                    .get(2)
-                    .ok_or("/OriginalCropBox missing third element")?,
-            )?,
-            object_to_f64(
-                old_cropbox
-                    .get(3)
-                    .ok_or("/OriginalCropBox missing fourth element")?,
-            )?,
-        ];
-
-        page_box.old_cropbox = Some(vals);
-    };
-
-    if let Some(mediabox) = page.get("/MediaBox").and_then(|x| {
-        if x.get_type() == QPdfObjectType::Array {
-            Some(QPdfArray::from(x))
-        } else {
-            None
-        }
-    }) && mediabox.len() == 4
-    {
-        let vals: [f64; 4] = [
-            object_to_f64(mediabox.get(0).ok_or("/MediaBox missing first element")?)?,
-            object_to_f64(mediabox.get(1).ok_or("/MediaBox missing second element")?)?,
-            object_to_f64(mediabox.get(2).ok_or("/MediaBox missing third element")?)?,
-            object_to_f64(mediabox.get(3).ok_or("/MediaBox missing fourth element")?)?,
-        ];
-
-        page_box.mediabox = Some(vals);
-    };
-
-    if let Some(artbox) = page.get("/ArtBox").and_then(|x| {
-        if x.get_type() == QPdfObjectType::Array {
-            Some(QPdfArray::from(x))
-        } else {
-            None
-        }
-    }) && artbox.len() == 4
-    {
-        let vals: [f64; 4] = [
-            object_to_f64(artbox.get(0).ok_or("/ArtBox missing first element")?)?,
-            object_to_f64(artbox.get(1).ok_or("/ArtBox missing second element")?)?,
-            object_to_f64(artbox.get(2).ok_or("/ArtBox missing third element")?)?,
-            object_to_f64(artbox.get(3).ok_or("/ArtBox missing fourth element")?)?,
-        ];
-
-        page_box.artbox = Some(vals);
-    };
-
-    if let Some(bleedbox) = page.get("/BleedBox").and_then(|x| {
-        if x.get_type() == QPdfObjectType::Array {
-            Some(QPdfArray::from(x))
-        } else {
-            None
-        }
-    }) && bleedbox.len() == 4
-    {
-        let vals: [f64; 4] = [
-            object_to_f64(bleedbox.get(0).ok_or("/BleedBox missing first element")?)?,
-            object_to_f64(bleedbox.get(1).ok_or("/BleedBox missing second element")?)?,
-            object_to_f64(bleedbox.get(2).ok_or("/BleedBox missing third element")?)?,
-            object_to_f64(bleedbox.get(3).ok_or("/BleedBox missing fourth element")?)?,
-        ];
-
-        page_box.bleedbox = Some(vals);
-    };
-
-    if let Some(trimbox) = page.get("/TrimBox").and_then(|x| {
-        if x.get_type() == QPdfObjectType::Array {
-            Some(QPdfArray::from(x))
-        } else {
-            None
-        }
-    }) && trimbox.len() == 4
-    {
-        let vals: [f64; 4] = [
-            object_to_f64(trimbox.get(0).ok_or("/TrimBox missing first element")?)?,
-            object_to_f64(trimbox.get(1).ok_or("/TrimBox missing second element")?)?,
-            object_to_f64(trimbox.get(2).ok_or("/TrimBox missing third element")?)?,
-            object_to_f64(trimbox.get(3).ok_or("/TrimBox missing fourth element")?)?,
-        ];
-
-        page_box.trimbox = Some(vals);
-    };
-
-    Ok(page_box)
-}
-
-fn object_to_f64(obj: QPdfObject) -> Result<f64, String> {
-    match obj.get_type() {
-        QPdfObjectType::Integer => {
-            let int_val = QPdfScalar::from(obj).as_i64();
-            Ok(int_val as f64)
-        }
-        QPdfObjectType::Real => {
-            let real_val = QPdfScalar::from(obj).as_f64();
-            Ok(real_val)
-        }
-        _ => Err(format!(
-            "Expected numeric object (Integer or Real), found {:?}",
-            obj.get_type()
-        )),
-    }
-}
-
-fn set_new_crop_box(
-    doc: &QPdf,
-    page: QPdfDictionary,
-    new_box: [f64; 4],
-    pagebox: &PageBox,
-) -> Result<(), String> {
-    let new_crop = doc.new_array_from([
-        f64_to_real(doc, new_box[0]),
-        f64_to_real(doc, new_box[1]),
-        f64_to_real(doc, new_box[2]),
-        f64_to_real(doc, new_box[3]),
-    ]);
-
-    page.set("/CropBox", new_crop);
-
-    if pagebox.old_cropbox.is_none()
-        && let Some(cropbox) = pagebox.cropbox
-    {
-        let original_crop = doc.new_array_from([
-            f64_to_real(doc, cropbox[0]),
-            f64_to_real(doc, cropbox[1]),
-            f64_to_real(doc, cropbox[2]),
-            f64_to_real(doc, cropbox[3]),
-        ]);
-        page.set("/OriginalCropBox", original_crop);
-    }
-
-    Ok(())
-}
-
-fn f64_to_real(doc: &QPdf, value: f64) -> QPdfObject {
-    let dec_places = value.fract().abs().log10().ceil() as u32;
-    doc.new_real(value, dec_places).into()
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, ValueEnum)]
-pub enum CropChoice {
-    Crop,
-    Media,
-    Art,
-    Bleed,
-    Trim,
 }
 
 struct PageBox {
-    cropbox: Option<[f64; 4]>,
-    mediabox: Option<[f64; 4]>,
-    artbox: Option<[f64; 4]>,
-    bleedbox: Option<[f64; 4]>,
-    trimbox: Option<[f64; 4]>,
-    old_cropbox: Option<[f64; 4]>,
+    cropbox: Option<[f32; 4]>,
+    mediabox: Option<[f32; 4]>,
+    artbox: Option<[f32; 4]>,
+    bleedbox: Option<[f32; 4]>,
+    trimbox: Option<[f32; 4]>,
+    old_cropbox: Option<[f32; 4]>,
 }
 
 impl PageBox {
-    fn get_box(&self, choice: CropChoice) -> Option<[f64; 4]> {
+    fn get_box(&self, choice: CropChoice) -> Option<[f32; 4]> {
         match choice {
             // Always use old cropbox for recropping to CropBox
             CropChoice::Crop => self.old_cropbox,
@@ -334,7 +135,157 @@ impl PageBox {
     }
 }
 
-fn print_box(box_name: &str, box_values: Option<[f64; 4]>) -> String {
+fn get_page_box(doc: &Document, page_id: ObjectId) -> Result<PageBox, lopdf::Error> {
+    let page = doc.get_object(page_id).and_then(|o| o.as_dict())?;
+
+    let mut page_box = PageBox {
+        cropbox: None,
+        mediabox: None,
+        artbox: None,
+        bleedbox: None,
+        trimbox: None,
+        old_cropbox: None,
+    };
+
+    if let Ok(cropbox) = page.get(b"CropBox").and_then(Object::as_array)
+        && cropbox.len() == 4
+    {
+        let vals: [f32; 4] = [
+            f32_or_i64(&cropbox[0])?,
+            f32_or_i64(&cropbox[1])?,
+            f32_or_i64(&cropbox[2])?,
+            f32_or_i64(&cropbox[3])?,
+        ];
+        page_box.cropbox = Some(vals);
+    }
+    if let Ok(original_cropbox) = page.get(b"OriginalCropBox").and_then(Object::as_array)
+        && original_cropbox.len() == 4
+    {
+        let vals: [f32; 4] = [
+            f32_or_i64(&original_cropbox[0])?,
+            f32_or_i64(&original_cropbox[1])?,
+            f32_or_i64(&original_cropbox[2])?,
+            f32_or_i64(&original_cropbox[3])?,
+        ];
+        page_box.old_cropbox = Some(vals);
+    }
+    if let Ok(mediabox) = page.get(b"MediaBox").and_then(Object::as_array)
+        && mediabox.len() == 4
+    {
+        let vals: [f32; 4] = [
+            f32_or_i64(&mediabox[0])?,
+            f32_or_i64(&mediabox[1])?,
+            f32_or_i64(&mediabox[2])?,
+            f32_or_i64(&mediabox[3])?,
+        ];
+        page_box.mediabox = Some(vals);
+    }
+    if let Ok(artbox) = page.get(b"ArtBox").and_then(Object::as_array)
+        && artbox.len() == 4
+    {
+        let vals: [f32; 4] = [
+            f32_or_i64(&artbox[0])?,
+            f32_or_i64(&artbox[1])?,
+            f32_or_i64(&artbox[2])?,
+            f32_or_i64(&artbox[3])?,
+        ];
+        page_box.artbox = Some(vals);
+    }
+    if let Ok(bleedbox) = page.get(b"BleedBox").and_then(Object::as_array)
+        && bleedbox.len() == 4
+    {
+        let vals: [f32; 4] = [
+            f32_or_i64(&bleedbox[0])?,
+            f32_or_i64(&bleedbox[1])?,
+            f32_or_i64(&bleedbox[2])?,
+            f32_or_i64(&bleedbox[3])?,
+        ];
+        page_box.bleedbox = Some(vals);
+    }
+    if let Ok(trimbox) = page.get(b"TrimBox").and_then(Object::as_array)
+        && trimbox.len() == 4
+    {
+        let vals: [f32; 4] = [
+            f32_or_i64(&trimbox[0])?,
+            f32_or_i64(&trimbox[1])?,
+            f32_or_i64(&trimbox[2])?,
+            f32_or_i64(&trimbox[3])?,
+        ];
+        page_box.trimbox = Some(vals);
+    }
+
+    Ok(page_box)
+}
+
+fn set_new_crop_box(
+    doc: &mut Document,
+    page_id: ObjectId,
+    new_box: [f32; 4],
+) -> Result<(), lopdf::Error> {
+    // Get the old cropbox
+    let old_cropbox = {
+        let page = doc.get_object(page_id).and_then(|o| o.as_dict())?;
+        if let Ok(cropbox) = page.get(b"CropBox").and_then(Object::as_array) {
+            if cropbox.len() == 4 {
+                Some([
+                    cropbox[0].as_f32()?,
+                    cropbox[1].as_f32()?,
+                    cropbox[2].as_f32()?,
+                    cropbox[3].as_f32()?,
+                ])
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    };
+
+    let new_cropbox = Object::Array(vec![
+        Object::Real(new_box[0]),
+        Object::Real(new_box[1]),
+        Object::Real(new_box[2]),
+        Object::Real(new_box[3]),
+    ]);
+
+    let page = doc.get_object_mut(page_id).and_then(|o| o.as_dict_mut())?;
+    page.set(b"CropBox", new_cropbox);
+    // check if have OriginalCropBox
+    let has_original_cropbox = page.get(b"OriginalCropBox").is_ok();
+    if !has_original_cropbox && let Some(old_box) = old_cropbox {
+        let original_cropbox = Object::Array(vec![
+            Object::Real(old_box[0]),
+            Object::Real(old_box[1]),
+            Object::Real(old_box[2]),
+            Object::Real(old_box[3]),
+        ]);
+
+        page.set(b"OriginalCropBox", original_cropbox);
+    }
+    Ok(())
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, ValueEnum)]
+pub enum CropChoice {
+    Crop,
+    Media,
+    Art,
+    Bleed,
+    Trim,
+}
+
+fn f32_or_i64(obj: &Object) -> Result<f32, lopdf::Error> {
+    match obj {
+        Object::Real(val) => Ok(*val),
+        Object::Integer(val) => Ok(*val as f32),
+        _ => Err(lopdf::Error::ObjectType {
+            expected: "Real or Integer",
+            found: obj.enum_variant(),
+        }),
+    }
+}
+
+fn print_box(box_name: &str, box_values: Option<[f32; 4]>) -> String {
     if let Some(values) = box_values {
         cformat!(
             "<blue>{}</>: [{:.2}, {:.2}, {:.2}, {:.2}]",
