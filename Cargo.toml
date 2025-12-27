@@ -24,6 +24,7 @@ sha2 = "0.10.9"  # for hashing purposes
 png = { version = "0.18.0" }
 tiff = { version = "0.10.3", default-features = false, features = ["deflate", "lzw"] }
 lopdf = { version = "0.38.0", default-features = false, features = ["rayon"] }
+flate2 = "1.1.5" # for recompressing PDF stream
 
 # CLI stuff
 clap = { version = "4.5.53", features = ["derive"] }
@@ -33,7 +34,7 @@ num_cpus = "1.17.0"
 color-print = "0.3.7"
 
 # Build tools
-cc = "1.2.49"
+cc = "1.2.51"
 cmake = "0.1.57"
 walkdir = "2.5.0"
 

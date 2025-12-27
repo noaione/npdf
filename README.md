@@ -117,6 +117,16 @@ recrop all pages in the PDF file using the specified crop mode and save the recr
 
 this use [`lopdf`](https://crates.io/crates/lopdf) crate to manipulate the PDF file directly.
 
+### fix-color
+```
+npdf fix-color -o <output_file> <pdf_file>
+```
+
+batch fix stencil pages to only use black/white for digital preservation/display and save the fixed PDF into `<output_file>`.<br />
+internally this use black `/Separation` color space which works the best with the `export` command (which use poppler `SplashOutput` renderer).
+
+this use [`lopdf`](https://crates.io/crates/lopdf) crate to manipulate the PDF file directly.
+
 ## other tools
 
 this repository also contains some small tools to work with PDF files using `pikepdf` (which use `qpdf` as backend).
