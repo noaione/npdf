@@ -39,25 +39,6 @@ pub fn run(args: RecropArgs, passwords: Option<&PdfPasswords>) -> Result<(), Str
 
     unlock_pdf(&doc, passwords)?;
 
-    // Check if encrypted and encryption state is still None (i.e., not yet authenticated)
-    let is_encrypted = doc.is_encrypted() && doc.encryption_state.is_none();
-
-    match (passwords, is_encrypted) {
-        (Some(pwds), true) => {
-            if let Some(user_pwd) = &pwds.user {
-                doc.authenticate_password(user_pwd)
-                    .map_err(|err| err.to_string())?;
-            } else if let Some(owner_pwd) = &pwds.owner {
-                doc.authenticate_owner_password(owner_pwd)
-                    .map_err(|err| err.to_string())?;
-            }
-        }
-        (None, true) => {
-            return Err("PDF is encrypted but no passwords were provided.".to_string());
-        }
-        _ => {}
-    }
-
     cprintln!("<magenta,bold>Processing pages</>...");
     for (page_num, object_id) in doc.get_pages() {
         let page_box = get_page_box(&doc, object_id)

@@ -162,47 +162,42 @@ fn scan_resources(
                 _ => continue,
             };
 
-            if let Ok(stream) = actual_object.as_stream() {
+            if let Ok(stream) = actual_object.as_stream()
+                && let Ok(subtype) = stream.dict.get(b"Subtype")
+            {
                 // Check the Subtype
-                if let Ok(subtype) = stream.dict.get(b"Subtype") {
-                    let subtype_name = subtype.as_name()?;
+                let subtype_name = subtype.as_name()?;
 
-                    if subtype_name == b"Image" {
-                        // FOUND ONE: It's an image
-                        let width = stream.dict.get(b"Width").and_then(|w| w.as_i64())? as u32;
-                        let height = stream.dict.get(b"Height").and_then(|h| h.as_i64())? as u32;
+                if subtype_name == b"Image" {
+                    // FOUND ONE: It's an image
+                    let width = stream.dict.get(b"Width").and_then(|w| w.as_i64())? as u32;
+                    let height = stream.dict.get(b"Height").and_then(|h| h.as_i64())? as u32;
 
-                        let hash = {
-                            let digest = Sha256::digest(&stream.content);
-                            format!("{:x}", digest)
-                        };
+                    let hash = {
+                        let digest = Sha256::digest(&stream.content);
+                        format!("{:x}", digest)
+                    };
 
-                        let image_info = SimpleImageInfo {
-                            id: obj_id,
-                            width,
-                            height,
-                            hash,
-                        };
+                    let image_info = SimpleImageInfo {
+                        id: obj_id,
+                        width,
+                        height,
+                        hash,
+                    };
 
-                        if !collected_images.contains(&image_info) {
-                            collected_images.push(image_info);
-                        }
-                    } else if subtype_name == b"Form" {
-                        // RECURSE: It's a Form, it might contain images inside
-                        if !visited_forms.contains(&obj_id) {
-                            visited_forms.insert(obj_id);
+                    if !collected_images.contains(&image_info) {
+                        collected_images.push(image_info);
+                    }
+                } else if subtype_name == b"Form" {
+                    // RECURSE: It's a Form, it might contain images inside
+                    if !visited_forms.contains(&obj_id) {
+                        visited_forms.insert(obj_id);
 
-                            // Forms have their own "Resources" dictionary
-                            if let Ok(form_res) = stream.dict.get(b"Resources")
-                                && let Ok(form_res_dict) = resolve_to_dict(doc, form_res)
-                            {
-                                scan_resources(
-                                    doc,
-                                    form_res_dict,
-                                    collected_images,
-                                    visited_forms,
-                                )?;
-                            }
+                        // Forms have their own "Resources" dictionary
+                        if let Ok(form_res) = stream.dict.get(b"Resources")
+                            && let Ok(form_res_dict) = resolve_to_dict(doc, form_res)
+                        {
+                            scan_resources(doc, form_res_dict, collected_images, visited_forms)?;
                         }
                     }
                 }
