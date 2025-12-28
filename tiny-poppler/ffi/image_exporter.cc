@@ -208,6 +208,10 @@ bool ImageOutputDev::matchesTarget(Object *ref, bool inlineImg, ImageType imageT
         return false;
     }
 
+    if (imageType != requestedType) {
+        return false;
+    }
+
     if (matchByRef) {
         if (inlineImg || !ref || !ref->isRef()) {
             return false;
@@ -217,10 +221,6 @@ bool ImageOutputDev::matchesTarget(Object *ref, bool inlineImg, ImageType imageT
     }
 
     if (!matchByOccurrence) {
-        return false;
-    }
-
-    if (imageType != requestedType) {
         return false;
     }
 

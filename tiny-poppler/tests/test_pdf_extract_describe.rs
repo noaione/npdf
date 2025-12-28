@@ -168,7 +168,7 @@ fn test_describe_from_ccitt_group3() {
     let exported = document
         .export_image(ImageExportRequest {
             page_index: 0,
-            target_type: tiny_poppler::ImageExportType::Image,
+            target_type: tiny_poppler::ImageExportType::Stencil,
             selector: tiny_poppler::ImageExportSelector::Reference {
                 object: obj,
                 generation,
@@ -263,6 +263,34 @@ fn test_describe_from_rgba8_with_softmask() {
     assert_eq!(exported.height_dpi, 72.0);
     assert!(exported.jbig2_globals.is_none());
     assert!(exported.ccitt_params.is_none());
+
+    let mask_export = document
+        .export_image(ImageExportRequest {
+            page_index: 0,
+            target_type: tiny_poppler::ImageExportType::SoftMask,
+            selector: tiny_poppler::ImageExportSelector::Reference {
+                object: 5,
+                generation: 0,
+            },
+            describe_only: true,
+        })
+        .expect("Failed to export RGBA8 soft mask image");
+
+    assert!(mask_export.data.is_empty()); // should be empty
+    assert_eq!(mask_export.width, 200);
+    assert_eq!(mask_export.height, 200);
+    assert_eq!(mask_export.stride, 200);
+    assert_eq!(mask_export.components, 1);
+    assert_eq!(mask_export.bits_per_component, 8);
+    assert_eq!(mask_export.format, tiny_poppler::ImageExportFormat::Gray);
+    assert_eq!(
+        mask_export.extension,
+        tiny_poppler::ImageExportExtension::Png
+    );
+    assert_eq!(exported.width_dpi, 72.0);
+    assert_eq!(mask_export.height_dpi, 72.0);
+    assert!(mask_export.jbig2_globals.is_none());
+    assert!(exported.ccitt_params.is_none());
 }
 
 #[test]
@@ -308,6 +336,34 @@ fn test_describe_from_rgba16_with_softmask() {
     assert_eq!(exported.extension, tiny_poppler::ImageExportExtension::Png);
     assert_eq!(exported.width_dpi, 72.0);
     assert_eq!(exported.height_dpi, 72.0);
+
+    let mask_export = document
+        .export_image(ImageExportRequest {
+            page_index: 0,
+            target_type: tiny_poppler::ImageExportType::SoftMask,
+            selector: tiny_poppler::ImageExportSelector::Reference {
+                object: 5,
+                generation: 0,
+            },
+            describe_only: true,
+        })
+        .expect("Failed to export RGBA8 soft mask image");
+
+    assert!(mask_export.data.is_empty()); // should be empty
+    assert_eq!(mask_export.width, 200);
+    assert_eq!(mask_export.height, 200);
+    assert_eq!(mask_export.stride, 200);
+    assert_eq!(mask_export.components, 1);
+    assert_eq!(mask_export.bits_per_component, 8);
+    assert_eq!(mask_export.format, tiny_poppler::ImageExportFormat::Gray);
+    assert_eq!(
+        mask_export.extension,
+        tiny_poppler::ImageExportExtension::Png
+    );
+    assert_eq!(exported.width_dpi, 72.0);
+    assert_eq!(mask_export.height_dpi, 72.0);
+    assert!(mask_export.jbig2_globals.is_none());
+    assert!(exported.ccitt_params.is_none());
 }
 
 #[test]
@@ -630,7 +686,7 @@ fn test_describe_from_ccitt_group4() {
     let exported = document
         .export_image(ImageExportRequest {
             page_index: 0,
-            target_type: tiny_poppler::ImageExportType::Image,
+            target_type: tiny_poppler::ImageExportType::Stencil,
             selector: tiny_poppler::ImageExportSelector::Reference {
                 object: 8,
                 generation: 0,
