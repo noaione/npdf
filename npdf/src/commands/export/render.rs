@@ -197,7 +197,7 @@ pub(super) fn process_job(document: &mut Document, job: &RenderPagePlan) -> Resu
     let total_page = job.total_pages.to_string().len();
     let pad_page = format!("{:0width$}", job.page_number, width = total_page);
     cprintln!(
-        "Exported <m,s>page {}</m,s> -> <m,s>{}.{}</m,s> ({:?}, {:?}, {} dpi)",
+        "Rendered <m,s>page {}</m,s> -> <m,s>{}.{}</m,s> ({:?}, {:?}, {} dpi)",
         pad_page,
         output_path.display(),
         extension,
