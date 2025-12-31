@@ -245,20 +245,20 @@ struct VersionInfo {
 }
 
 unsafe extern "C" {
-    fn splash_renderer_create(
+    fn ntsplash_renderer_create(
         path: *const c_char,
         owner_password: *const c_char,
         user_password: *const c_char,
         out_renderer: *mut *mut SplashRenderer,
         error_out: *mut *mut c_char,
     ) -> i32;
-    fn splash_renderer_destroy(renderer: *mut SplashRenderer);
-    fn splash_renderer_page_count(
+    fn ntsplash_renderer_destroy(renderer: *mut SplashRenderer);
+    fn ntsplash_renderer_page_count(
         renderer: *mut SplashRenderer,
         out_count: *mut c_uint,
         error_out: *mut *mut c_char,
     ) -> i32;
-    fn splash_renderer_render_page(
+    fn ntsplash_renderer_render_page(
         renderer: *mut SplashRenderer,
         page_index: c_uint,
         dpi: c_double,
@@ -268,9 +268,9 @@ unsafe extern "C" {
         out_image: *mut SplashImage,
         error_out: *mut *mut c_char,
     ) -> i32;
-    fn splash_renderer_free_image(image: *mut SplashImage);
-    fn splash_renderer_free_cstr(message: *mut c_char);
-    fn splash_renderer_collect_images(
+    fn ntsplash_renderer_free_image(image: *mut SplashImage);
+    fn ntsplash_renderer_free_cstr(message: *mut c_char);
+    fn ntsplash_renderer_collect_images(
         renderer: *mut SplashRenderer,
         out_images: *mut *mut SplashImageInfo,
         out_len: *mut usize,
@@ -280,29 +280,29 @@ unsafe extern "C" {
         page_end: c_uint,
         error_out: *mut *mut c_char,
     ) -> i32;
-    fn splash_renderer_free_image_info(images: *mut SplashImageInfo);
-    fn splash_renderer_free_page_info(pages: *mut SplashPageInfo);
-    fn splash_get_version(out_version: *mut VersionInfo);
+    fn ntsplash_renderer_free_image_info(images: *mut SplashImageInfo);
+    fn ntsplash_renderer_free_page_info(pages: *mut SplashPageInfo);
+    fn ntsplash_get_version(out_version: *mut VersionInfo);
 
     /// Colorspace related
-    fn gfxcs_get_color_mode(ptr: *const c_void) -> ImageColorSpace;
-    fn gfxcs_get_indexed_info(ptr: *const c_void, out: *mut ColorspaceIndexedInfo) -> bool;
-    fn gfxcs_get_separation_info(ptr: *const c_void, out: *mut ColorspaceSeparationInfo) -> bool;
-    fn gfxcs_get_devicen_info(ptr: *const c_void, out: *mut ColorspaceDeviceNInfo) -> bool;
-    fn gfxcs_get_labxyz_info(ptr: *const c_void, out: *mut ColorspaceLabXYZInfo) -> bool;
-    fn gfxcs_get_icc_info(ptr: *const c_void, out: *mut ColorspaceICCInfo) -> bool;
+    fn ntgfxcs_get_color_mode(ptr: *const c_void) -> ImageColorSpace;
+    fn ntgfxcs_get_indexed_info(ptr: *const c_void, out: *mut ColorspaceIndexedInfo) -> bool;
+    fn ntgfxcs_get_separation_info(ptr: *const c_void, out: *mut ColorspaceSeparationInfo) -> bool;
+    fn ntgfxcs_get_devicen_info(ptr: *const c_void, out: *mut ColorspaceDeviceNInfo) -> bool;
+    fn ntgfxcs_get_labxyz_info(ptr: *const c_void, out: *mut ColorspaceLabXYZInfo) -> bool;
+    fn ntgfxcs_get_icc_info(ptr: *const c_void, out: *mut ColorspaceICCInfo) -> bool;
 
-    fn gfxcs_free_string(s: *const c_char);
-    fn gfxcs_free_string_array(arr: *const *const c_char, count: c_uint);
+    fn ntgfxcs_free_string(s: *const c_char);
+    fn ntgfxcs_free_string_array(arr: *const *const c_char, count: c_uint);
 
-    fn image_exporter_extract(
+    fn ntsplash_exporer_extract_page(
         renderer: *mut SplashRenderer,
         params: *const ImageExportParams,
         out_image: *mut ImageExportImage,
         describe_only: bool,
         error_out: *mut *mut c_char,
     ) -> i32;
-    fn image_exporter_free(image: *mut ImageExportImage);
+    fn ntsplash_exporter_free(image: *mut ImageExportImage);
 }
 
 fn take_error(message: *mut c_char) -> String {
@@ -312,7 +312,7 @@ fn take_error(message: *mut c_char) -> String {
     unsafe {
         let c_str = CStr::from_ptr(message);
         let string = c_str.to_string_lossy().into_owned();
-        splash_renderer_free_cstr(message);
+        ntsplash_renderer_free_cstr(message);
         string
     }
 }
@@ -363,7 +363,7 @@ impl Renderer {
         let mut raw: *mut SplashRenderer = ptr::null_mut();
         let mut error = ptr::null_mut();
         let status = unsafe {
-            splash_renderer_create(
+            ntsplash_renderer_create(
                 c_path.as_ptr(),
                 owner_c
                     .as_ref()
@@ -387,7 +387,7 @@ impl Renderer {
     pub fn page_count(&self) -> Result<u32, String> {
         let mut count: c_uint = 0;
         let mut error = ptr::null_mut();
-        let status = unsafe { splash_renderer_page_count(self.raw, &mut count, &mut error) };
+        let status = unsafe { ntsplash_renderer_page_count(self.raw, &mut count, &mut error) };
         if status != 0 {
             return Err(take_error(error));
         }
@@ -405,7 +405,7 @@ impl Renderer {
             return Err("invalid page range".into());
         }
         let status = unsafe {
-            splash_renderer_collect_images(
+            ntsplash_renderer_collect_images(
                 self.raw,
                 &mut infos_ptr,
                 &mut image_len,
@@ -418,10 +418,10 @@ impl Renderer {
         };
         if status != 0 {
             if !infos_ptr.is_null() {
-                unsafe { splash_renderer_free_image_info(infos_ptr) };
+                unsafe { ntsplash_renderer_free_image_info(infos_ptr) };
             }
             if !pages_ptr.is_null() {
-                unsafe { splash_renderer_free_page_info(pages_ptr) };
+                unsafe { ntsplash_renderer_free_page_info(pages_ptr) };
             }
             return Err(take_error(error));
         }
@@ -433,7 +433,7 @@ impl Renderer {
             Vec::new()
         };
         if !infos_ptr.is_null() {
-            unsafe { splash_renderer_free_image_info(infos_ptr) };
+            unsafe { ntsplash_renderer_free_image_info(infos_ptr) };
         }
 
         let pages = if !pages_ptr.is_null() && page_len > 0 {
@@ -443,7 +443,7 @@ impl Renderer {
             Vec::new()
         };
         if !pages_ptr.is_null() {
-            unsafe { splash_renderer_free_page_info(pages_ptr) };
+            unsafe { ntsplash_renderer_free_page_info(pages_ptr) };
         }
 
         Ok(ImageCollection { images, pages })
@@ -469,7 +469,7 @@ impl Renderer {
         };
         let mut error = ptr::null_mut();
         let status = unsafe {
-            splash_renderer_render_page(
+            ntsplash_renderer_render_page(
                 self.raw,
                 page_index,
                 dpi,
@@ -484,7 +484,7 @@ impl Renderer {
             return Err(take_error(error));
         }
         if image.data.is_null() || image.len == 0 {
-            unsafe { splash_renderer_free_image(&mut image) };
+            unsafe { ntsplash_renderer_free_image(&mut image) };
             return Err("renderer returned empty bitmap".into());
         }
         let width = image.width;
@@ -496,7 +496,7 @@ impl Renderer {
         let pixels = unsafe { slice::from_raw_parts(image.data, image.len) };
         let mut data = Vec::with_capacity(image.len);
         data.extend_from_slice(pixels);
-        unsafe { splash_renderer_free_image(&mut image) };
+        unsafe { ntsplash_renderer_free_image(&mut image) };
         Ok(Image {
             data,
             width,
@@ -557,7 +557,7 @@ impl Renderer {
         };
         let mut error = ptr::null_mut();
         let status = unsafe {
-            image_exporter_extract(
+            ntsplash_exporer_extract_page(
                 self.raw,
                 &params,
                 &mut raw,
@@ -566,11 +566,11 @@ impl Renderer {
             )
         };
         if status != 0 {
-            unsafe { image_exporter_free(&mut raw) };
+            unsafe { ntsplash_exporter_free(&mut raw) };
             return Err(take_error(error));
         }
         if raw.len > 0 && raw.data.is_null() {
-            unsafe { image_exporter_free(&mut raw) };
+            unsafe { ntsplash_exporter_free(&mut raw) };
             return Err("image exporter returned an empty buffer".into());
         }
 
@@ -610,7 +610,7 @@ impl Renderer {
             Some(CcittParams::from(raw.ccitt))
         };
 
-        unsafe { image_exporter_free(&mut raw) };
+        unsafe { ntsplash_exporter_free(&mut raw) };
 
         Ok(ExportedImage {
             data,
@@ -633,7 +633,7 @@ impl Renderer {
 impl Drop for Renderer {
     fn drop(&mut self) {
         if !self.raw.is_null() {
-            unsafe { splash_renderer_destroy(self.raw) };
+            unsafe { ntsplash_renderer_destroy(self.raw) };
         }
     }
 }
@@ -996,7 +996,7 @@ fn convert_colorspace(cs: *const c_void) -> PdfImageColorSpace {
         return PdfImageColorSpace::Unknown;
     }
 
-    let kind = unsafe { gfxcs_get_color_mode(cs) };
+    let kind = unsafe { ntgfxcs_get_color_mode(cs) };
 
     match kind {
         ImageColorSpace::DeviceGray => PdfImageColorSpace::DeviceGray,
@@ -1004,7 +1004,7 @@ fn convert_colorspace(cs: *const c_void) -> PdfImageColorSpace {
         ImageColorSpace::DeviceCmyk => PdfImageColorSpace::DeviceCMYK,
         ImageColorSpace::Lab => {
             let mut info = MaybeUninit::<ColorspaceLabXYZInfo>::uninit();
-            let ok = unsafe { gfxcs_get_labxyz_info(cs, info.as_mut_ptr()) };
+            let ok = unsafe { ntgfxcs_get_labxyz_info(cs, info.as_mut_ptr()) };
             if !ok {
                 return PdfImageColorSpace::Unknown;
             }
@@ -1033,7 +1033,7 @@ fn convert_colorspace(cs: *const c_void) -> PdfImageColorSpace {
         }
         ImageColorSpace::Icc => {
             let mut info = MaybeUninit::<ColorspaceICCInfo>::uninit();
-            let ok = unsafe { gfxcs_get_icc_info(cs, info.as_mut_ptr()) };
+            let ok = unsafe { ntgfxcs_get_icc_info(cs, info.as_mut_ptr()) };
             if !ok {
                 return PdfImageColorSpace::Unknown;
             }
@@ -1047,7 +1047,7 @@ fn convert_colorspace(cs: *const c_void) -> PdfImageColorSpace {
 
         ImageColorSpace::Indexed => {
             let mut info = MaybeUninit::<ColorspaceIndexedInfo>::uninit();
-            let ok = unsafe { gfxcs_get_indexed_info(cs, info.as_mut_ptr()) };
+            let ok = unsafe { ntgfxcs_get_indexed_info(cs, info.as_mut_ptr()) };
             if !ok {
                 return PdfImageColorSpace::Unknown;
             }
@@ -1061,14 +1061,14 @@ fn convert_colorspace(cs: *const c_void) -> PdfImageColorSpace {
 
         ImageColorSpace::Separation => {
             let mut info = MaybeUninit::<ColorspaceSeparationInfo>::uninit();
-            let ok = unsafe { gfxcs_get_separation_info(cs, info.as_mut_ptr()) };
+            let ok = unsafe { ntgfxcs_get_separation_info(cs, info.as_mut_ptr()) };
             if !ok {
                 return PdfImageColorSpace::Unknown;
             }
             let info = unsafe { info.assume_init() };
 
             let name = unsafe { CStr::from_ptr(info.name).to_string_lossy().into_owned() };
-            unsafe { gfxcs_free_string(info.name) };
+            unsafe { ntgfxcs_free_string(info.name) };
 
             PdfImageColorSpace::Separation {
                 name,
@@ -1078,7 +1078,7 @@ fn convert_colorspace(cs: *const c_void) -> PdfImageColorSpace {
 
         ImageColorSpace::DeviceN => {
             let mut info = MaybeUninit::<ColorspaceDeviceNInfo>::uninit();
-            let ok = unsafe { gfxcs_get_devicen_info(cs, info.as_mut_ptr()) };
+            let ok = unsafe { ntgfxcs_get_devicen_info(cs, info.as_mut_ptr()) };
             if !ok {
                 return PdfImageColorSpace::Unknown;
             }
@@ -1090,7 +1090,7 @@ fn convert_colorspace(cs: *const c_void) -> PdfImageColorSpace {
                 unsafe { names.push(CStr::from_ptr(ptr).to_string_lossy().into_owned()) };
             }
 
-            unsafe { gfxcs_free_string_array(info.names, info.count) };
+            unsafe { ntgfxcs_free_string_array(info.names, info.count) };
 
             PdfImageColorSpace::DeviceN {
                 count: info.count,
@@ -1106,7 +1106,7 @@ fn convert_colorspace(cs: *const c_void) -> PdfImageColorSpace {
 pub(crate) fn get_poppler_version() -> (u32, u32, u32) {
     let mut version = MaybeUninit::<VersionInfo>::uninit();
     unsafe {
-        splash_get_version(version.as_mut_ptr());
+        ntsplash_get_version(version.as_mut_ptr());
         let version = version.assume_init();
         (version.major, version.minor, version.patch)
     }

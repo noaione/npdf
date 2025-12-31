@@ -50,17 +50,17 @@ class GfxState;
 // ImageOutputDev
 //------------------------------------------------------------------------
 
-class ImageOutputDev : public OutputDev
+class NTImageOutputDev : public OutputDev
 {
 public:
-    enum ImageType
+    enum NTImageType
     {
         imgImage,
         imgStencil,
         imgMask,
         imgSmask
     };
-    enum ImageFormat
+    enum NTImageFormat
     {
         imgUnknown,
         imgRGB,
@@ -69,7 +69,7 @@ public:
         imgMonochrome,
         imgCMYK
     };
-    enum ImageExtension
+    enum NTImageExtension
     {
         extJpg, // JPEG
         extJp2, // JPEG 2000
@@ -80,7 +80,7 @@ public:
         extPnm, // PNM (PBM/PGM/PPM) - Use ppm if RGB, else pbm
     };
 
-    struct CcittParams {
+    struct NTCcittParams {
         int encoding;
         bool endOfLine;
         bool byteAlign;
@@ -91,7 +91,7 @@ public:
         int damagedRowsBeforeError;
     };
 
-    struct ImageOutput {
+    struct NTImageOutput {
         uint8_t *data;
         size_t len;
         uint32_t width;
@@ -101,27 +101,27 @@ public:
         uint32_t bits_per_component;
         double wDPI;
         double hDPI;
-        ImageFormat format;
-        ImageType type;
-        ImageExtension extension;
+        NTImageFormat format;
+        NTImageType type;
+        NTImageExtension extension;
         bool hasJbig2Globals;
         uint8_t *jbig2Globals;
         size_t jbig2GlobalsLen;
         bool hasCcittParams;
-        CcittParams ccittParams;
+        NTCcittParams ccittParams;
     };
 
     // Create an extractor targeting a specific image reference. If matchRef is false,
     // the first image of the requested type will be captured.
-    ImageOutputDev(ImageOutput *outputBuffer,
+    NTImageOutputDev(NTImageOutput *outputBuffer,
                    const Ref &targetRef,
                    bool matchRef,
-                   ImageType targetType,
+                   NTImageType targetType,
                    bool matchOccurrence,
                    uint32_t occurrenceIndex);
 
     // Destructor.
-    ~ImageOutputDev() override;
+    ~NTImageOutputDev() override;
 
     // Does this device use tilingPatternFill()?  If this returns false,
     // tiling pattern fills will be reduced to a series of other drawing
@@ -173,10 +173,10 @@ private:
                     int height,
                     GfxImageColorMap *colorMap,
                     bool inlineImg,
-                    ImageType imageType);
+                    NTImageType imageType);
     void writeRawImage(Stream *str,
-                      ImageExtension ext,
-                      ImageType type,
+                      NTImageExtension ext,
+                      NTImageType type,
                       int width,
                       int height,
                       int components,
@@ -184,22 +184,22 @@ private:
                       double widthDPI,
                       double heightDPI,
                       const std::vector<uint8_t> *jbig2Globals,
-                      const CcittParams *ccittParams);
+                      const NTCcittParams *ccittParams);
     void writeImageFile(Stream *str,
-                        ImageFormat format,
-                        ImageExtension ext,
-                        ImageType type,
+                        NTImageFormat format,
+                        NTImageExtension ext,
+                        NTImageType type,
                         int width,
                         int height,
                         GfxImageColorMap *colorMap,
                         double widthDPI,
                         double heightDPI);
     long getInlineImageLength(Stream *str, int width, int height, GfxImageColorMap *colorMap);
-    bool matchesTarget(Object *ref, bool inlineImg, ImageType imageType) const;
+    bool matchesTarget(Object *ref, bool inlineImg, NTImageType imageType) const;
     void storeResult(const std::vector<uint8_t> &buffer,
-                     ImageFormat format,
-                     ImageExtension ext,
-                     ImageType type,
+                     NTImageFormat format,
+                     NTImageExtension ext,
+                     NTImageType type,
                      uint32_t width,
                      uint32_t height,
                      uint32_t stride,
@@ -208,16 +208,16 @@ private:
                      double widthDPI,
                      double heightDPI,
                      const std::vector<uint8_t> *jbig2Globals,
-                     const CcittParams *ccittParams);
+                     const NTCcittParams *ccittParams);
 
     Ref targetRef; // reference to match
     bool matchByRef = true; // match by object reference
     bool matchByOccurrence = false; // capture nth occurrence of requested type
-    ImageType requestedType; // requested image type when matching by occurrence
+    NTImageType requestedType; // requested image type when matching by occurrence
     uint32_t targetOccurrence = 0; // specific occurrence index to capture when matching by occurrence
     mutable uint32_t seenOccurrences = 0; // number of matched images observed so far
     bool captured = false; // true once an image has been extracted
-    ImageOutput *outputBuffer = nullptr; // output buffer for images
+    NTImageOutput *outputBuffer = nullptr; // output buffer for images
     int errorCode; // code for any error creating the output files
     bool describeOnly = false;
 };

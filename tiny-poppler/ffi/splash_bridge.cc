@@ -27,15 +27,15 @@
 #define VERSION_MAJOR POPP
 
 namespace {
-constexpr int kBitmapRowPad = 4;
-constexpr bool kReverseVideo = false;
-constexpr bool kTopDownBitmap = true;
-constexpr SplashThinLineMode kThinLineMode = splashThinLineDefault;
+constexpr int kTSplashBitmapRowPad = 4;
+constexpr bool kTSplashReverseVideo = false;
+constexpr bool kTSplashTopDownBitmap = true;
+constexpr SplashThinLineMode kTSplashThinLineMode = splashThinLineDefault;
 
 // This flag handles the synchronization state
-static std::once_flag init_flag;
+static std::once_flag kTSplashInitFlag;
 
-std::optional<SplashColorMode> to_splash_color_mode(splash_color_mode_t mode)
+std::optional<SplashColorMode> ntsplash_upconvert_color_mode(ntsplash_color_mode_t mode)
 {
     switch (mode) {
     case SPLASH_COLOR_MODE_MONO1:
@@ -57,7 +57,7 @@ std::optional<SplashColorMode> to_splash_color_mode(splash_color_mode_t mode)
     }
 }
 
-std::optional<SplashZeroWidthLineMode> to_splash_zero_width_line_mode(splash_zero_width_line_mode_t mode)
+std::optional<SplashZeroWidthLineMode> ntsplash_upconvert_zwl_mode(ntsplash_zero_width_line_mode_t mode)
 {
     switch (mode) {
     case SPLASH_ZERO_WIDTH_LINE_DEFAULT:
@@ -71,63 +71,15 @@ std::optional<SplashZeroWidthLineMode> to_splash_zero_width_line_mode(splash_zer
     }
 }
 
-void ensure_global_params()
+void ntsplash_ensure_global_params()
 {
-    std::call_once(init_flag, []() {
+    std::call_once(kTSplashInitFlag, []() {
         globalParams = std::make_unique<GlobalParams>();
         globalParams->setErrQuiet(true);
     });
 }
 
-void set_error(char **error_out, const std::string &message)
-{
-    if (!error_out) {
-        return;
-    }
-    *error_out = nullptr;
-    const size_t len = message.size();
-    char *buffer = static_cast<char *>(std::malloc(len + 1));
-    if (!buffer) {
-        return;
-    }
-    std::memcpy(buffer, message.c_str(), len);
-    buffer[len] = '\0';
-    *error_out = buffer;
-}
-
-std::string error_code_to_string(int error_code)
-{
-    switch (error_code) {
-    case errNone:
-        return "ok";
-    case errOpenFile:
-        return "failed to open PDF";
-    case errBadCatalog:
-        return "invalid PDF catalog";
-    case errDamaged:
-        return "PDF is damaged and could not be repaired";
-    case errEncrypted:
-        return "PDF is encrypted and no password was provided";
-    case errHighlightFile:
-        return "invalid highlight file";
-    case errBadPrinter:
-        return "invalid printer configuration";
-    case errPrinting:
-        return "error while printing";
-    case errPermission:
-        return "operation not permitted by PDF";
-    case errBadPageNum:
-        return "invalid page number";
-    case errFileIO:
-        return "file I/O failure";
-    case errFileChangedSinceOpen:
-        return "PDF changed since open";
-    default:
-        return "unknown poppler error";
-    }
-}
-
-splash_image_colorspace_t to_image_colorspace(const GfxColorSpace *color_space)
+ntsplash_image_colorspace_t ntsplash_upconvert_colorspace(const GfxColorSpace *color_space)
 {
     if (!color_space) {
         return SPLASH_IMAGE_COLORSPACE_UNKNOWN;
@@ -159,10 +111,10 @@ splash_image_colorspace_t to_image_colorspace(const GfxColorSpace *color_space)
     }
 }
 
-bool copy_bitmap_to_image(SplashBitmap *bitmap, SplashColorMode mode, splash_image_t *out_image, char **error_out)
+bool ntsplash_copy_bitmap(SplashBitmap *bitmap, SplashColorMode mode, ntsplash_image_t *out_image, char **error_out)
 {
     if (!bitmap || !out_image) {
-        set_error(error_out, "internal splash renderer error");
+        ntsplash_set_error(error_out, "internal splash renderer error");
         return false;
     }
 
@@ -171,7 +123,7 @@ bool copy_bitmap_to_image(SplashBitmap *bitmap, SplashColorMode mode, splash_ima
     const int row_size = bitmap->getRowSize();
 
     if (width <= 0 || height <= 0 || row_size <= 0) {
-        set_error(error_out, "received empty bitmap from renderer");
+        ntsplash_set_error(error_out, "received empty bitmap from renderer");
         return false;
     }
 
@@ -180,7 +132,7 @@ bool copy_bitmap_to_image(SplashBitmap *bitmap, SplashColorMode mode, splash_ima
 
     auto *buffer = static_cast<uint8_t *>(std::malloc(total_size));
     if (!buffer) {
-        set_error(error_out, "unable to allocate buffer for rendered page");
+        ntsplash_set_error(error_out, "unable to allocate buffer for rendered page");
         return false;
     }
 
@@ -189,7 +141,7 @@ bool copy_bitmap_to_image(SplashBitmap *bitmap, SplashColorMode mode, splash_ima
     const SplashColorMode bitmap_mode = bitmap->getMode();
     if (bitmap_mode != mode) {
         std::free(buffer);
-        set_error(error_out, "renderer returned bitmap with unexpected color mode");
+        ntsplash_set_error(error_out, "renderer returned bitmap with unexpected color mode");
         return false;
     }
     const int components = splashColorModeNComps[static_cast<int>(bitmap_mode)];
@@ -201,13 +153,13 @@ bool copy_bitmap_to_image(SplashBitmap *bitmap, SplashColorMode mode, splash_ima
     out_image->height = static_cast<uint32_t>(height);
     out_image->stride = static_cast<uint32_t>(stride);
     out_image->components = static_cast<uint32_t>(components);
-    out_image->color_mode = static_cast<splash_color_mode_t>(bitmap_mode);
+    out_image->color_mode = static_cast<ntsplash_color_mode_t>(bitmap_mode);
     out_image->bits_per_component = bits_per_component;
 
     return true;
 }
 
-struct CollectedImage {
+struct NTSplashCollectedImage {
     uint32_t width = 0;
     uint32_t height = 0;
     uint32_t components = 0;
@@ -217,13 +169,13 @@ struct CollectedImage {
     uint32_t page_number = 0;
     double_t dpi_x = 0;
     double_t dpi_y = 0;
-    splash_image_type_t image_type = SPLASH_IMAGE_TYPE_UNKNOWN;
-    splash_image_colorspace_t colorspace = SPLASH_IMAGE_COLORSPACE_UNKNOWN;
+    ntsplash_image_type_t image_type = SPLASH_IMAGE_TYPE_UNKNOWN;
+    ntsplash_image_colorspace_t colorspace = SPLASH_IMAGE_COLORSPACE_UNKNOWN;
     double ctm[6] = {1.0, 0.0, 0.0, 1.0, 0.0, 0.0}; // Default is identity matrix
     const void *color_space_handle = nullptr;
 };
 
-struct CollectedPage {
+struct NTSplashCollectedPage {
     uint32_t page_number = 0;
     uint32_t image_count = 0;
     uint64_t object_count = 0;
@@ -234,7 +186,7 @@ struct CollectedPage {
     double mediabox[4] = {0.0, 0.0, 0.0, 0.0};
 };
 
-const void *copy_color_space(const GfxColorSpace *space)
+const void *ntsplash_copy_color_space(const GfxColorSpace *space)
 {
     if (!space) {
         return nullptr;
@@ -244,10 +196,10 @@ const void *copy_color_space(const GfxColorSpace *space)
     return static_cast<const void *>(copy.release());
 }
 
-class ImageCollector final : public OutputDev
+class NTSplashImageCollector final : public OutputDev
 {
 public:
-    explicit ImageCollector(std::vector<CollectedImage> *images)
+    explicit NTSplashImageCollector(std::vector<NTSplashCollectedImage> *images)
         : images_(images)
     {
     }
@@ -413,14 +365,14 @@ private:
         GfxImageColorMap *color_map,
         Object *ref,
         GfxState *state,
-        splash_image_type_t image_type
+        ntsplash_image_type_t image_type
     )
     {
         if (!images_) {
             return;
         }
 
-        CollectedImage info;
+        NTSplashCollectedImage info;
         info.page_number = current_page_;
         if (width > 0) {
             info.width = static_cast<uint32_t>(width);
@@ -434,8 +386,8 @@ private:
             info.components = static_cast<uint32_t>(color_map->getNumPixelComps());
             info.bits_per_component = static_cast<uint32_t>(color_map->getBits());
             const GfxColorSpace *space = color_map->getColorSpace();
-            info.colorspace = to_image_colorspace(space);
-            info.color_space_handle = copy_color_space(space);
+            info.colorspace = ntsplash_upconvert_colorspace(space);
+            info.color_space_handle = ntsplash_copy_color_space(space);
         } else {
             info.components = 1;
             info.bits_per_component = 1;
@@ -469,7 +421,7 @@ private:
             return;
         }
 
-        CollectedImage info;
+        NTSplashCollectedImage info;
         info.page_number = current_page_;
         info.image_type = SPLASH_IMAGE_TYPE_STENCIL;
         if (width > 0) {
@@ -515,7 +467,7 @@ private:
         return {xppi, yppi};
     }
 
-    std::vector<CollectedImage> *images_ = nullptr;
+    std::vector<NTSplashCollectedImage> *images_ = nullptr;
     uint32_t current_page_ = 0;
     uint64_t total_objects_ = 0;
     bool is_pdf_a_compatible_ = false;
@@ -523,18 +475,18 @@ private:
 
 } // namespace
 
-int splash_renderer_create(const char *path,
+int ntsplash_renderer_create(const char *path,
                            const char *owner_password,
                            const char *user_password,
-                           splash_renderer_t **out_renderer,
+                           ntsplash_renderer_t **out_renderer,
                            char **error_out)
 {
     if (!path || !out_renderer) {
-        set_error(error_out, "invalid renderer arguments");
+        ntsplash_set_error(error_out, "invalid renderer arguments");
         return errInternal;
     }
 
-    ensure_global_params();
+    ntsplash_ensure_global_params();
 
     auto goo_path = std::make_unique<GooString>(path);
     std::optional<GooString> owner_pw;
@@ -552,18 +504,18 @@ int splash_renderer_create(const char *path,
 
     if (!doc->isOk()) {
         const int error_code = doc->getErrorCode();
-        set_error(error_out, error_code_to_string(error_code));
+        ntsplash_set_error(error_out, ntsplash_stringify_error_code(error_code));
         return error_code == 0 ? errInternal : error_code;
     }
 
-    auto renderer = std::make_unique<splash_renderer>();
+    auto renderer = std::make_unique<ntsplash_renderer>();
     renderer->doc = std::move(doc);
 
     *out_renderer = renderer.release();
     return errNone;
 }
 
-void splash_renderer_destroy(splash_renderer_t *renderer)
+void ntsplash_renderer_destroy(ntsplash_renderer_t *renderer)
 {
     if (!renderer) {
         return;
@@ -571,16 +523,16 @@ void splash_renderer_destroy(splash_renderer_t *renderer)
     delete renderer;
 }
 
-int splash_renderer_page_count(splash_renderer_t *renderer, uint32_t *out_count, char **error_out)
+int ntsplash_renderer_page_count(ntsplash_renderer_t *renderer, uint32_t *out_count, char **error_out)
 {
     if (!renderer || !out_count) {
-        set_error(error_out, "invalid renderer arguments");
+        ntsplash_set_error(error_out, "invalid renderer arguments");
         return errInternal;
     }
 
     const int count = renderer->doc->getNumPages();
     if (count < 0) {
-        set_error(error_out, "failed to query page count");
+        ntsplash_set_error(error_out, "failed to query page count");
         return errInternal;
     }
 
@@ -588,36 +540,36 @@ int splash_renderer_page_count(splash_renderer_t *renderer, uint32_t *out_count,
     return errNone;
 }
 
-int splash_renderer_render_page(splash_renderer_t *renderer,
+int ntsplash_renderer_render_page(ntsplash_renderer_t *renderer,
                                 uint32_t page_index,
                                 double dpi,
-                                splash_color_mode_t color_mode,
-                                splash_crop_mode_t crop_mode,
-                                splash_zero_width_line_mode_t zero_width_line_mode,
-                                splash_image_t *out_image,
+                                ntsplash_color_mode_t color_mode,
+                                ntsplash_crop_mode_t crop_mode,
+                                ntsplash_zero_width_line_mode_t zero_width_line_mode,
+                                ntsplash_image_t *out_image,
                                 char **error_out)
 {
     if (!renderer || !out_image) {
-        set_error(error_out, "invalid renderer arguments");
+        ntsplash_set_error(error_out, "invalid renderer arguments");
         return errInternal;
     }
 
     const int page_number = static_cast<int>(page_index) + 1;
     const int total_pages = renderer->doc->getNumPages();
     if (page_number < 1 || page_number > total_pages) {
-        set_error(error_out, "page index out of range");
+        ntsplash_set_error(error_out, "page index out of range");
         return errBadPageNum;
     }
 
-    auto maybe_mode = to_splash_color_mode(color_mode);
+    auto maybe_mode = ntsplash_upconvert_color_mode(color_mode);
     if (!maybe_mode) {
-        set_error(error_out, "unsupported Splash color mode requested");
+        ntsplash_set_error(error_out, "unsupported Splash color mode requested");
         return errInternal;
     }
 
-    auto maybe_zero_width_line_mode = to_splash_zero_width_line_mode(zero_width_line_mode);
+    auto maybe_zero_width_line_mode = ntsplash_upconvert_zwl_mode(zero_width_line_mode);
     if (!maybe_zero_width_line_mode) {
-        set_error(error_out, "unsupported Splash zero-width line mode requested");
+        ntsplash_set_error(error_out, "unsupported Splash zero-width line mode requested");
         return errInternal;
     }
 
@@ -642,11 +594,11 @@ int splash_renderer_render_page(splash_renderer_t *renderer,
     }
 
     SplashOutputDev output_dev(requested_mode,
-                               kBitmapRowPad,
-                               kReverseVideo,
+                               kTSplashBitmapRowPad,
+                               kTSplashReverseVideo,
                                paper_color,
-                               kTopDownBitmap,
-                               kThinLineMode,
+                               kTSplashTopDownBitmap,
+                               kTSplashThinLineMode,
                                enable_overprint);
     output_dev.setVectorAntialias(true);
     output_dev.setFontAntialias(true);
@@ -667,28 +619,28 @@ int splash_renderer_render_page(splash_renderer_t *renderer,
 
     std::unique_ptr<SplashBitmap> bitmap(output_dev.takeBitmap());
     if (!bitmap) {
-        set_error(error_out, "renderer produced no bitmap");
+        ntsplash_set_error(error_out, "renderer produced no bitmap");
         return errInternal;
     }
 
-    if (!copy_bitmap_to_image(bitmap.get(), requested_mode, out_image, error_out)) {
+    if (!ntsplash_copy_bitmap(bitmap.get(), requested_mode, out_image, error_out)) {
         return errInternal;
     }
 
     return errNone;
 }
 
-int splash_renderer_collect_images(splash_renderer_t *renderer,
-                                   splash_image_info_t **out_images,
+int ntsplash_renderer_collect_images(ntsplash_renderer_t *renderer,
+                                   ntsplash_image_info_t **out_images,
                                    size_t *out_image_len,
-                                   splash_page_info_t **out_pages,
+                                   ntsplash_page_info_t **out_pages,
                                    size_t *out_page_len,
                                    uint32_t page_start,
                                    uint32_t page_end,
                                    char **error_out)
 {
     if (!renderer || !out_images || !out_image_len || !out_pages || !out_page_len) {
-        set_error(error_out, "invalid renderer arguments");
+        ntsplash_set_error(error_out, "invalid renderer arguments");
         return errInternal;
     }
 
@@ -705,22 +657,22 @@ int splash_renderer_collect_images(splash_renderer_t *renderer,
     uint32_t start_page = page_start > 0 ? page_start : 1;
     uint32_t end_page = page_end > 0 ? page_end : static_cast<uint32_t>(total_pages);
     if (start_page < 1 || start_page > static_cast<uint32_t>(total_pages)) {
-        set_error(error_out, "start page out of range");
+        ntsplash_set_error(error_out, "start page out of range");
         return errBadPageNum;
     }
     if (end_page < start_page || end_page > static_cast<uint32_t>(total_pages)) {
-        set_error(error_out, "end page out of range");
+        ntsplash_set_error(error_out, "end page out of range");
         return errBadPageNum;
     }
 
-    std::vector<CollectedImage> collected;
+    std::vector<NTSplashCollectedImage> collected;
     collected.reserve(static_cast<size_t>(total_pages));
 
     const uint32_t page_span = end_page - start_page + 1;
-    std::vector<CollectedPage> page_summaries;
+    std::vector<NTSplashCollectedPage> page_summaries;
     page_summaries.reserve(static_cast<size_t>(page_span));
 
-    ImageCollector collector(&collected);
+    NTSplashImageCollector collector(&collected);
 
     for (uint32_t page_number = start_page; page_number <= end_page; ++page_number) {
         collector.reset_for_page(page_number);
@@ -732,7 +684,7 @@ int splash_renderer_collect_images(splash_renderer_t *renderer,
         const PDFRectangle *cropbox = page->getCropBox();
         const PDFRectangle *mediabox = page->getMediaBox();
 
-        CollectedPage summary;
+        NTSplashCollectedPage summary;
         summary.page_number = page_number;
         summary.image_count = static_cast<uint32_t>(after - before);
         summary.object_count = collector.get_total_objects();
@@ -753,24 +705,24 @@ int splash_renderer_collect_images(splash_renderer_t *renderer,
         page_summaries.push_back(summary);
     }
 
-    splash_image_info_t *image_buffer = nullptr;
+    ntsplash_image_info_t *image_buffer = nullptr;
     if (!collected.empty()) {
         const size_t allocation_count = collected.size();
         const size_t header_size = sizeof(size_t);
-        const size_t payload_size = allocation_count * sizeof(splash_image_info_t);
+        const size_t payload_size = allocation_count * sizeof(ntsplash_image_info_t);
         void *raw = std::malloc(header_size + payload_size);
         if (!raw) {
-            set_error(error_out, "unable to allocate image metadata buffer");
+            ntsplash_set_error(error_out, "unable to allocate image metadata buffer");
             return errInternal;
         }
 
         auto *header = static_cast<size_t *>(raw);
         *header = allocation_count;
 
-        image_buffer = reinterpret_cast<splash_image_info_t *>(header + 1);
+        image_buffer = reinterpret_cast<ntsplash_image_info_t *>(header + 1);
         if (!image_buffer) {
             std::free(raw);
-            set_error(error_out, "unable to allocate image metadata buffer");
+            ntsplash_set_error(error_out, "unable to allocate image metadata buffer");
             return errInternal;
         }
 
@@ -793,30 +745,30 @@ int splash_renderer_collect_images(splash_renderer_t *renderer,
         }
     }
 
-    splash_page_info_t *page_buffer = nullptr;
+    ntsplash_page_info_t *page_buffer = nullptr;
     if (!page_summaries.empty()) {
         const size_t allocation_count = page_summaries.size();
         const size_t header_size = sizeof(size_t);
-        const size_t payload_size = allocation_count * sizeof(splash_page_info_t);
+        const size_t payload_size = allocation_count * sizeof(ntsplash_page_info_t);
         void *raw = std::malloc(header_size + payload_size);
         if (!raw) {
             if (image_buffer) {
-                splash_renderer_free_image_info(image_buffer);
+                ntsplash_renderer_free_image_info(image_buffer);
             }
-            set_error(error_out, "unable to allocate page metadata buffer");
+            ntsplash_set_error(error_out, "unable to allocate page metadata buffer");
             return errInternal;
         }
 
         auto *header = static_cast<size_t *>(raw);
         *header = allocation_count;
 
-        page_buffer = reinterpret_cast<splash_page_info_t *>(header + 1);
+        page_buffer = reinterpret_cast<ntsplash_page_info_t *>(header + 1);
         if (!page_buffer) {
             std::free(raw);
             if (image_buffer) {
-                splash_renderer_free_image_info(image_buffer);
+                ntsplash_renderer_free_image_info(image_buffer);
             }
-            set_error(error_out, "unable to allocate page metadata buffer");
+            ntsplash_set_error(error_out, "unable to allocate page metadata buffer");
             return errInternal;
         }
 
@@ -840,7 +792,7 @@ int splash_renderer_collect_images(splash_renderer_t *renderer,
     return errNone;
 }
 
-void splash_renderer_free_image(splash_image_t *image)
+void ntsplash_renderer_free_image(ntsplash_image_t *image)
 {
     if (!image) {
         return;
@@ -860,12 +812,12 @@ void splash_renderer_free_image(splash_image_t *image)
     image->bits_per_component = 0;
 }
 
-void splash_renderer_free_cstr(char *message)
+void ntsplash_renderer_free_cstr(char *message)
 {
     std::free(message);
 }
 
-void splash_renderer_free_image_info(splash_image_info_t *images)
+void ntsplash_renderer_free_image_info(ntsplash_image_info_t *images)
 {
     if (!images) {
         return;
@@ -885,7 +837,7 @@ void splash_renderer_free_image_info(splash_image_info_t *images)
     std::free(header);
 }
 
-void splash_renderer_free_page_info(splash_page_info_t *pages)
+void ntsplash_renderer_free_page_info(ntsplash_page_info_t *pages)
 {
     if (!pages) {
         return;
@@ -895,7 +847,7 @@ void splash_renderer_free_page_info(splash_page_info_t *pages)
     std::free(header);
 }
 
-void splash_get_version(splash_version_t *out_version) {
+void ntsplash_get_version(ntsplash_version_t *out_version) {
     if (!out_version) {
         return;
     }
@@ -927,12 +879,12 @@ void splash_get_version(splash_version_t *out_version) {
 }
 
 //! Colorspace related functions
-splash_image_colorspace_t gfxcs_get_color_mode(const void *cs_ptr) {
+ntsplash_image_colorspace_t ntgfxcs_get_color_mode(const void *cs_ptr) {
     const auto *cs = static_cast<const GfxColorSpace*>(cs_ptr);
-    return to_image_colorspace(cs);
+    return ntsplash_upconvert_colorspace(cs);
 }
 
-bool gfxcs_get_indexed_info(const void *cs_ptr, colorspaces_indexed_info_t *out) {
+bool ntgfxcs_get_indexed_info(const void *cs_ptr, ntcolorspaces_indexed_info_t *out) {
     const auto *cs = static_cast<const GfxColorSpace*>(cs_ptr);
     if (cs->getMode() != csIndexed) return false;
 
@@ -945,7 +897,7 @@ bool gfxcs_get_indexed_info(const void *cs_ptr, colorspaces_indexed_info_t *out)
     return true;
 }
 
-bool gfxcs_get_separation_info(const void *cs_ptr, colorspaces_separation_info_t *out) {
+bool ntgfxcs_get_separation_info(const void *cs_ptr, ntcolorspaces_separation_info_t *out) {
     auto *cs = static_cast<const GfxColorSpace*>(cs_ptr);
     if (cs->getMode() != csSeparation) return false;
 
@@ -960,7 +912,7 @@ bool gfxcs_get_separation_info(const void *cs_ptr, colorspaces_separation_info_t
     return true;
 }
 
-bool gfxcs_get_devicen_info(const void *cs_ptr, colorspaces_devicen_info_t *out) {
+bool ntgfxcs_get_devicen_info(const void *cs_ptr, ntcolorspaces_devicen_info_t *out) {
     auto *cs = static_cast<const GfxColorSpace*>(cs_ptr);
     if (cs->getMode() != csDeviceN) return false;
 
@@ -984,7 +936,7 @@ bool gfxcs_get_devicen_info(const void *cs_ptr, colorspaces_devicen_info_t *out)
     return true;
 }
 
-bool gfxcs_get_labxyz_info(const void *cs_ptr, colorspaces_labxyz_info_t *out) {
+bool ntgfxcs_get_labxyz_info(const void *cs_ptr, ntcolorspaces_labxyz_info_t *out) {
     auto *cs = static_cast<const GfxColorSpace*>(cs_ptr);
     if (cs->getMode() != csLab) return false;
 
@@ -1005,7 +957,7 @@ bool gfxcs_get_labxyz_info(const void *cs_ptr, colorspaces_labxyz_info_t *out) {
     return true;
 }
 
-bool gfxcs_get_icc_info(const void *cs_ptr, colorspaces_icc_info_t *out) {
+bool ntgfxcs_get_icc_info(const void *cs_ptr, ntcolorspaces_icc_info_t *out) {
     auto *cs = static_cast<const GfxColorSpace*>(cs_ptr);
     if (cs->getMode() != csICCBased) return false;
 
@@ -1017,11 +969,11 @@ bool gfxcs_get_icc_info(const void *cs_ptr, colorspaces_icc_info_t *out) {
     return true;
 }
 
-void gfxcs_free_string(const char *s) {
+void ntgfxcs_free_string(const char *s) {
     free((void*)s);
 }
 
-void gfxcs_free_string_array(const char **arr, uint32_t count) {
+void ntgfxcs_free_string_array(const char **arr, uint32_t count) {
     if (!arr) return;
     for (uint32_t i = 0; i < count; i++) {
         free((void*)arr[i]);

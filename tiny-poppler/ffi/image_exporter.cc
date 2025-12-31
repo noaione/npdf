@@ -1,6 +1,7 @@
 //========================================================================
 //
-// ImageOutputDev.cc
+// image_exporter.cc
+// Renamed from ImageOutputDev.cc
 //
 // Copyright 1998-2003 Glyph & Cog, LLC
 //
@@ -53,43 +54,43 @@
 
 namespace {
 
-ImageOutputDev::ImageFormat determineFormat(GfxImageColorMap *colorMap)
+NTImageOutputDev::NTImageFormat determineFormat(GfxImageColorMap *colorMap)
 {
     if (!colorMap) {
-        return ImageOutputDev::imgMonochrome;
+        return NTImageOutputDev::imgMonochrome;
     }
 
     const int comps = colorMap->getNumPixelComps();
     const int bits = colorMap->getBits();
 
     if (comps == 4) {
-        return ImageOutputDev::imgCMYK;
+        return NTImageOutputDev::imgCMYK;
     }
 
     if (comps == 3) {
-        return bits > 8 ? ImageOutputDev::imgRGB48 : ImageOutputDev::imgRGB;
+        return bits > 8 ? NTImageOutputDev::imgRGB48 : NTImageOutputDev::imgRGB;
     }
 
     if (comps == 1) {
-        return bits == 1 ? ImageOutputDev::imgMonochrome : ImageOutputDev::imgGray;
+        return bits == 1 ? NTImageOutputDev::imgMonochrome : NTImageOutputDev::imgGray;
     }
 
-    return ImageOutputDev::imgRGB;
+    return NTImageOutputDev::imgRGB;
 }
 
-ImageOutputDev::ImageExtension defaultExtension(ImageOutputDev::ImageFormat format)
+NTImageOutputDev::NTImageExtension defaultExtension(NTImageOutputDev::NTImageFormat format)
 {
-    return format == ImageOutputDev::imgCMYK ? ImageOutputDev::extTiff : ImageOutputDev::extPng;
+    return format == NTImageOutputDev::imgCMYK ? NTImageOutputDev::extTiff : NTImageOutputDev::extPng;
 }
 
 constexpr double kDefaultImageDPI = 72.0;
 
 } // namespace
 
-ImageOutputDev::ImageOutputDev(ImageOutput *outputBufferA,
+NTImageOutputDev::NTImageOutputDev(NTImageOutput *outputBufferA,
                                const Ref &targetRefA,
                                bool matchRef,
-                               ImageType targetType,
+                               NTImageType targetType,
                                bool matchOccurrence,
                                uint32_t occurrenceIndex)
     : targetRef(targetRefA)
@@ -103,9 +104,9 @@ ImageOutputDev::ImageOutputDev(ImageOutput *outputBufferA,
 {
 }
 
-ImageOutputDev::~ImageOutputDev() = default;
+NTImageOutputDev::~NTImageOutputDev() = default;
 
-long ImageOutputDev::getInlineImageLength(Stream *str, int width, int height, GfxImageColorMap *colorMap)
+long NTImageOutputDev::getInlineImageLength(Stream *str, int width, int height, GfxImageColorMap *colorMap)
 {
     if (colorMap) {
         ImageStream imgStr(str, width, colorMap->getNumPixelComps(), colorMap->getBits());
@@ -141,10 +142,10 @@ long ImageOutputDev::getInlineImageLength(Stream *str, int width, int height, Gf
     return len;
 }
 
-void ImageOutputDev::storeResult(const std::vector<uint8_t> &buffer,
-                                 ImageFormat format,
-                                 ImageExtension ext,
-                                 ImageType type,
+void NTImageOutputDev::storeResult(const std::vector<uint8_t> &buffer,
+                                 NTImageFormat format,
+                                 NTImageExtension ext,
+                                 NTImageType type,
                                  uint32_t width,
                                  uint32_t height,
                                  uint32_t stride,
@@ -153,7 +154,7 @@ void ImageOutputDev::storeResult(const std::vector<uint8_t> &buffer,
                                  double widthDPI,
                                  double heightDPI,
                                  const std::vector<uint8_t> *jbig2Globals,
-                                 const CcittParams *ccittParams)
+                                 const NTCcittParams *ccittParams)
 {
     if (!outputBuffer) {
         return;
@@ -202,7 +203,7 @@ void ImageOutputDev::storeResult(const std::vector<uint8_t> &buffer,
     captured = true;
 }
 
-bool ImageOutputDev::matchesTarget(Object *ref, bool inlineImg, ImageType imageType) const
+bool NTImageOutputDev::matchesTarget(Object *ref, bool inlineImg, NTImageType imageType) const
 {
     if (captured || !outputBuffer) {
         return false;
@@ -233,9 +234,9 @@ bool ImageOutputDev::matchesTarget(Object *ref, bool inlineImg, ImageType imageT
     return false;
 }
 
-void ImageOutputDev::writeRawImage(Stream *str,
-                                   ImageExtension ext,
-                                   ImageType type,
+void NTImageOutputDev::writeRawImage(Stream *str,
+                                   NTImageExtension ext,
+                                   NTImageType type,
                                    int width,
                                    int height,
                                    int components,
@@ -243,7 +244,7 @@ void ImageOutputDev::writeRawImage(Stream *str,
                                    double widthDPI,
                                    double heightDPI,
                                    const std::vector<uint8_t> *jbig2Globals,
-                                   const CcittParams *ccittParams)
+                                   const NTCcittParams *ccittParams)
 {
     if (!outputBuffer) {
         return;
@@ -280,10 +281,10 @@ void ImageOutputDev::writeRawImage(Stream *str,
     storeResult(buffer, imgUnknown, ext, type, w, h, 0, comps, bpc, widthDPI, heightDPI, jbig2Globals, ccittParams);
 }
 
-void ImageOutputDev::writeImageFile(Stream *str,
-                                    ImageFormat format,
-                                    ImageExtension ext,
-                                    ImageType type,
+void NTImageOutputDev::writeImageFile(Stream *str,
+                                    NTImageFormat format,
+                                    NTImageExtension ext,
+                                    NTImageType type,
                                     int width,
                                     int height,
                                     GfxImageColorMap *colorMap,
@@ -522,14 +523,14 @@ void ImageOutputDev::writeImageFile(Stream *str,
                 nullptr);
 }
 
-void ImageOutputDev::writeImage(GfxState *state,
+void NTImageOutputDev::writeImage(GfxState *state,
                                 Object *ref,
                                 Stream *str,
                                 int width,
                                 int height,
                                 GfxImageColorMap *colorMap,
                                 bool inlineImg,
-                                ImageType imageType)
+                                NTImageType imageType)
 {
     if (!matchesTarget(ref, inlineImg, imageType)) {
         return;
@@ -573,8 +574,8 @@ void ImageOutputDev::writeImage(GfxState *state,
         return;
     }
     if (kind == strCCITTFax) {
-        CcittParams params {};
-        const CcittParams *paramsPtr = nullptr;
+        NTCcittParams params {};
+        const NTCcittParams *paramsPtr = nullptr;
         if (auto *ccitt = dynamic_cast<CCITTFaxStream *>(str); ccitt) {
             params.encoding = ccitt->getEncoding();
             params.endOfLine = ccitt->getEndOfLine();
@@ -590,12 +591,12 @@ void ImageOutputDev::writeImage(GfxState *state,
         return;
     }
 
-    const ImageFormat format = determineFormat(colorMap);
-    const ImageExtension ext = defaultExtension(format);
+    const NTImageFormat format = determineFormat(colorMap);
+    const NTImageExtension ext = defaultExtension(format);
     writeImageFile(str, format, ext, imageType, width, height, colorMap, widthDPI, heightDPI);
 }
 
-bool ImageOutputDev::tilingPatternFill(GfxState *state,
+bool NTImageOutputDev::tilingPatternFill(GfxState *state,
                                        Gfx *gfx,
                                        Catalog *cat,
                                        GfxTilingPattern *tPat,
@@ -621,7 +622,7 @@ bool ImageOutputDev::tilingPatternFill(GfxState *state,
     return true;
 }
 
-void ImageOutputDev::drawImageMask(GfxState *state,
+void NTImageOutputDev::drawImageMask(GfxState *state,
                                    Object *ref,
                                    Stream *str,
                                    int width,
@@ -633,7 +634,7 @@ void ImageOutputDev::drawImageMask(GfxState *state,
     writeImage(state, ref, str, width, height, nullptr, inlineImg, imgStencil);
 }
 
-void ImageOutputDev::drawImage(GfxState *state,
+void NTImageOutputDev::drawImage(GfxState *state,
                                Object *ref,
                                Stream *str,
                                int width,
@@ -646,7 +647,7 @@ void ImageOutputDev::drawImage(GfxState *state,
     writeImage(state, ref, str, width, height, colorMap, inlineImg, imgImage);
 }
 
-void ImageOutputDev::drawMaskedImage(GfxState *state,
+void NTImageOutputDev::drawMaskedImage(GfxState *state,
                                      Object *ref,
                                      Stream *str,
                                      int width,
@@ -663,7 +664,7 @@ void ImageOutputDev::drawMaskedImage(GfxState *state,
     writeImage(state, ref, maskStr, maskWidth, maskHeight, nullptr, false, imgMask);
 }
 
-void ImageOutputDev::drawSoftMaskedImage(GfxState *state,
+void NTImageOutputDev::drawSoftMaskedImage(GfxState *state,
                                          Object *ref,
                                          Stream *str,
                                          int width,

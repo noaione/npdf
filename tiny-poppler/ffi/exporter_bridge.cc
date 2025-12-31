@@ -17,7 +17,7 @@
 
 namespace {
 
-void free_captured(ImageOutputDev::ImageOutput &captured)
+void ntsplash_free_image_export(NTImageOutputDev::NTImageOutput &captured)
 {
     if (captured.data) {
         gfree(captured.data);
@@ -30,103 +30,55 @@ void free_captured(ImageOutputDev::ImageOutput &captured)
     }
 }
 
-void set_error(char **error_out, const std::string &message)
-{
-    if (!error_out) {
-        return;
-    }
-    *error_out = nullptr;
-    const size_t len = message.size();
-    char *buffer = static_cast<char *>(std::malloc(len + 1));
-    if (!buffer) {
-        return;
-    }
-    std::memcpy(buffer, message.c_str(), len);
-    buffer[len] = '\0';
-    *error_out = buffer;
-}
-
-std::string error_code_to_string(int error_code)
-{
-    switch (error_code) {
-    case errNone:
-        return "ok";
-    case errOpenFile:
-        return "failed to open PDF";
-    case errBadCatalog:
-        return "invalid PDF catalog";
-    case errDamaged:
-        return "PDF is damaged and could not be repaired";
-    case errEncrypted:
-        return "PDF is encrypted and no password was provided";
-    case errHighlightFile:
-        return "invalid highlight file";
-    case errBadPrinter:
-        return "invalid printer configuration";
-    case errPrinting:
-        return "error while printing";
-    case errPermission:
-        return "operation not permitted by PDF";
-    case errBadPageNum:
-        return "invalid page number";
-    case errFileIO:
-        return "file I/O failure";
-    case errFileChangedSinceOpen:
-        return "PDF changed since open";
-    default:
-        return "unknown poppler error";
-    }
-}
-
-ImageOutputDev::ImageType to_image_type(image_export_type_t type)
+NTImageOutputDev::NTImageType ntsplash_upconvert_type(nt_image_export_type_t type)
 {
     switch (type) {
     case IMAGE_EXPORT_TYPE_STENCIL:
-        return ImageOutputDev::imgStencil;
+        return NTImageOutputDev::imgStencil;
     case IMAGE_EXPORT_TYPE_MASK:
-        return ImageOutputDev::imgMask;
+        return NTImageOutputDev::imgMask;
     case IMAGE_EXPORT_TYPE_SOFT_MASK:
-        return ImageOutputDev::imgSmask;
+        return NTImageOutputDev::imgSmask;
     case IMAGE_EXPORT_TYPE_IMAGE:
     default:
-        return ImageOutputDev::imgImage;
+        return NTImageOutputDev::imgImage;
     }
 }
 
-bool validate_params(const image_export_params_t *params, char **error_out)
+bool ntsplash_validate_export_params(const nt_image_export_params_t *params, char **error_out)
 {
     if (!params) {
-        set_error(error_out, "missing export parameters");
+        ntsplash_set_error(error_out, "missing export parameters");
         return false;
     }
 
     const bool match_by_ref = params->match_mode == IMAGE_EXPORT_MATCH_BY_REF;
     const bool match_by_occurrence = params->match_mode == IMAGE_EXPORT_MATCH_BY_OCCURRENCE;
     if (!match_by_ref && !match_by_occurrence) {
-        set_error(error_out, "unsupported image match mode");
+        ntsplash_set_error(error_out, "unsupported image match mode");
         return false;
     }
 
     if (match_by_ref) {
         if (params->xref_object <= 0) {
-            set_error(error_out, "image match requested without a valid object reference");
+            ntsplash_set_error(error_out, "image match requested without a valid object reference");
             return false;
         }
         if (params->xref_generation < 0) {
-            set_error(error_out, "image match requested with a negative generation");
+            ntsplash_set_error(error_out, "image match requested with a negative generation");
             return false;
         }
     }
 
     if (match_by_occurrence && params->occurrence_index == UINT32_MAX) {
-        set_error(error_out, "occurrence index overflow");
+        ntsplash_set_error(error_out, "occurrence index overflow");
         return false;
     }
 
     return true;
 }
 
-void reset_output(image_export_image_t *image)
+void ntsplash_export_reset_output(nt_image_export_image_t *image)
 {
     if (!image) {
         return;
@@ -136,42 +88,42 @@ void reset_output(image_export_image_t *image)
 
 } // namespace
 
-int image_exporter_extract(splash_renderer_t *renderer,
-                           const image_export_params_t *params,
-                           image_export_image_t *out_image,
+int ntsplash_exporer_extract_page(ntsplash_renderer_t *renderer,
+                           const nt_image_export_params_t *params,
+                           nt_image_export_image_t *out_image,
                            bool describe_only,
                            char **error_out)
 {
     if (!renderer || !out_image) {
-        set_error(error_out, "invalid renderer arguments");
+        ntsplash_set_error(error_out, "invalid renderer arguments");
         return errInternal;
     }
 
-    reset_output(out_image);
+    ntsplash_export_reset_output(out_image);
 
-    if (!validate_params(params, error_out)) {
+    if (!ntsplash_validate_export_params(params, error_out)) {
         return errInternal;
     }
 
     if (!renderer->doc || !renderer->doc->isOk()) {
-        set_error(error_out, "renderer has no active document");
+        ntsplash_set_error(error_out, "renderer has no active document");
         return errInternal;
     }
 
     const int total_pages = renderer->doc->getNumPages();
     if (total_pages <= 0) {
-        set_error(error_out, "PDF has no pages to inspect");
+        ntsplash_set_error(error_out, "PDF has no pages to inspect");
         return errBadPageNum;
     }
 
     const uint32_t zero_based_index = params->page_index;
     const int page_number = static_cast<int>(zero_based_index) + 1;
     if (page_number < 1 || page_number > total_pages) {
-        set_error(error_out, "page index out of range");
+        ntsplash_set_error(error_out, "page index out of range");
         return errBadPageNum;
     }
 
-    ImageOutputDev::ImageOutput captured {};
+    NTImageOutputDev::NTImageOutput captured {};
     Ref target_ref;
     target_ref.num = params->xref_object;
     target_ref.gen = params->xref_generation;
@@ -183,10 +135,10 @@ int image_exporter_extract(splash_renderer_t *renderer,
     }
 
     const bool match_by_occurrence = params->match_mode == IMAGE_EXPORT_MATCH_BY_OCCURRENCE;
-    ImageOutputDev output_dev(&captured,
+    NTImageOutputDev output_dev(&captured,
                               target_ref,
                               match_by_ref,
-                              to_image_type(params->target_type),
+                              ntsplash_upconvert_type(params->target_type),
                               match_by_occurrence,
                               params->occurrence_index);
     output_dev.setDescribeOnly(describe_only);
@@ -195,14 +147,14 @@ int image_exporter_extract(splash_renderer_t *renderer,
 
     const int dev_error = output_dev.getErrorCode();
     if (dev_error != errNone) {
-        free_captured(captured);
-        set_error(error_out, error_code_to_string(dev_error));
+        ntsplash_free_image_export(captured);
+        ntsplash_set_error(error_out, ntsplash_stringify_error_code(dev_error));
         return dev_error;
     }
 
     if (!output_dev.hasCaptured()) {
-        free_captured(captured);
-        set_error(error_out, "target image was not found on the requested page");
+        ntsplash_free_image_export(captured);
+        ntsplash_set_error(error_out, "target image was not found on the requested page");
         return errInternal;
     }
 
@@ -215,9 +167,9 @@ int image_exporter_extract(splash_renderer_t *renderer,
     out_image->bits_per_component = captured.bits_per_component;
     out_image->width_dpi = captured.wDPI;
     out_image->height_dpi = captured.hDPI;
-    out_image->format = static_cast<image_export_format_t>(captured.format);
-    out_image->type = static_cast<image_export_type_t>(captured.type);
-    out_image->extension = static_cast<image_export_extension_t>(captured.extension);
+    out_image->format = static_cast<nt_image_export_format_t>(captured.format);
+    out_image->type = static_cast<nt_image_export_type_t>(captured.type);
+    out_image->extension = static_cast<nt_image_export_extension_t>(captured.extension);
     out_image->has_jbig2_globals = captured.hasJbig2Globals ? 1 : 0;
     out_image->jbig2_globals = captured.jbig2Globals;
     out_image->jbig2_globals_len = captured.jbig2GlobalsLen;
@@ -240,7 +192,7 @@ int image_exporter_extract(splash_renderer_t *renderer,
     return errNone;
 }
 
-void image_exporter_free(image_export_image_t *image)
+void ntsplash_exporter_free(nt_image_export_image_t *image)
 {
     if (!image) {
         return;
@@ -253,5 +205,5 @@ void image_exporter_free(image_export_image_t *image)
         gfree(image->jbig2_globals);
     }
 
-    reset_output(image);
+    ntsplash_export_reset_output(image);
 }
