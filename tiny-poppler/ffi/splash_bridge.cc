@@ -11,7 +11,6 @@
 #include <utility>
 #include <vector>
 
-#include "ErrorCodes.h"
 #include "GfxState.h"
 #include "GlobalParams.h"
 #include "OutputDev.h"

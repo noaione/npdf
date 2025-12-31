@@ -7,7 +7,6 @@
 #include <mutex>
 #include <string>
 
-#include "ErrorCodes.h"
 #include "GlobalParams.h"
 #include "PDFDoc.h"
 #include "Page.h"
