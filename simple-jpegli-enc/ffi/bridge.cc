@@ -240,6 +240,29 @@ namespace
             return;
         }
     }
+
+    /**
+     * Safe-er string copy without strcopy/strncpy pitfalls
+     *
+     * Similar to curlx_strcopy from curl
+     * (c) cURL contributors, licensed under cURL license.
+     */
+    void sjpegli_strcopy(char *dest, const char *src, size_t dest_size)
+    {
+        if (dest_size == 0)
+        {
+            return;
+        }
+
+        size_t src_len = std::strlen(src);
+        if (src_len < dest_size) {
+            memcpy(dest, src, src_len);
+            dest[src_len] = '\0';
+        } else if (dest_size) {
+            // fail-safe, don't copy anything if it won't fit
+            dest[0] = '\0';
+        }
+    }
 } // namespace
 
 simple_jpegli_enc_result sjpegli_encode_pixels(const unsigned char *pixels, const simple_jpegli_enc_config *config)
@@ -256,7 +279,7 @@ simple_jpegli_enc_result sjpegli_encode_pixels(const unsigned char *pixels, cons
     {
         result.success = SJPEGLI_ERROR;
         result.error_code = SJPEGLI_BAD_INPUT;
-        std::strncpy(result.error_message, "Invalid input, got nullptr", JPEGLI_ERR_MSG_LEN - 1);
+        sjpegli_strcopy(result.error_message, "Invalid input, got nullptr", JPEGLI_ERR_MSG_LEN);
         return result;
     }
 
@@ -279,7 +302,7 @@ simple_jpegli_enc_result sjpegli_encode_pixels(const unsigned char *pixels, cons
     {
         result.success = SJPEGLI_ERROR;
         result.error_code = SJPEGLI_BAD_COLORSPACE;
-        std::strncpy(result.error_message, "Unsupported colorspace", JPEGLI_ERR_MSG_LEN - 1);
+        sjpegli_strcopy(result.error_message, "Unsupported colorspace", JPEGLI_ERR_MSG_LEN);
         return result;
     }
 
@@ -288,7 +311,7 @@ simple_jpegli_enc_result sjpegli_encode_pixels(const unsigned char *pixels, cons
     {
         result.success = SJPEGLI_ERROR;
         result.error_code = SJPEGLI_BAD_COLORSPACE;
-        std::strncpy(result.error_message, "Unsupported colorspace", JPEGLI_ERR_MSG_LEN - 1);
+        sjpegli_strcopy(result.error_message, "Unsupported colorspace", JPEGLI_ERR_MSG_LEN);
         return result;
     }
 
@@ -297,7 +320,7 @@ simple_jpegli_enc_result sjpegli_encode_pixels(const unsigned char *pixels, cons
     {
         result.success = SJPEGLI_ERROR;
         result.error_code = SJPEGLI_BAD_DPI;
-        std::strncpy(result.error_message, "DPI values must be between 0 and 65535", JPEGLI_ERR_MSG_LEN - 1);
+        sjpegli_strcopy(result.error_message, "DPI values must be between 0 and 65535", JPEGLI_ERR_MSG_LEN);
         return result;
     }
 
@@ -317,7 +340,7 @@ simple_jpegli_enc_result sjpegli_encode_pixels(const unsigned char *pixels, cons
         result.success = SJPEGLI_ERROR;
         result.error_code = jerr.pub.msg_code;
 
-        std::strncpy(result.error_message, jerr.last_error_msg, JPEGLI_ERR_MSG_LEN - 1);
+        sjpegli_strcopy(result.error_message, jerr.last_error_msg, JPEGLI_ERR_MSG_LEN);
 
         // cleanup
         jpegli_destroy_compress(&cinfo);
