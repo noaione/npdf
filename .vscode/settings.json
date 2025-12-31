@@ -8,6 +8,7 @@
         "*.webmanifest": "jsonc",
         "*.jsx": "javascriptreact",
         "*.md": "mdc",
+        ".clang-format": "yaml",
         "array": "cpp",
         "istream": "cpp",
         "locale": "cpp",
@@ -35,5 +36,9 @@
     "python.analysis.ignore": [
         "**/site-packages/**",
         "third_party/**/*"
-    ]
+    ],
+    "[cpp]": {
+        "editor.defaultFormatter": "xaver.clang-format",
+        "editor.formatOnSave": true
+    },
 }

@@ -1,0 +1,33 @@
+---
+# We'll use defaults from the LLVM style, but with 4 columns indentation.
+BasedOnStyle: LLVM
+IndentWidth: 4
+UseTab: Never
+---
+Language: Cpp
+# Force pointers to the type for C++.
+DerivePointerAlignment: false
+PointerAlignment: Right
+AlignAfterOpenBracket: true
+AllowAllArgumentsOnNextLine: true
+ColumnLimit: 100
+IndentExternBlock: NoIndent
+BreakBeforeBraces: Custom
+BraceWrapping:
+  # Keep Mozilla behavior
+  AfterFunction: true
+  AfterControlStatement: true
+  AfterEnum: true
+  AfterUnion: true
+  AfterClass: true
+  AfterNamespace: false
+  AfterExternBlock: false
+
+  # Override for your requirement
+  AfterStruct: false
+
+  # Optional Mozilla-aligned settings
+  BeforeElse: true
+  BeforeCatch: true
+  IndentBraces: false
+  SplitEmptyFunction: true
