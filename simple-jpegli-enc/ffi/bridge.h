@@ -18,32 +18,32 @@ extern "C" {
 
 typedef enum simple_jpegli_colorspace
 {
-    GRAYSCALE = 0,
-    RGB = 1,
-    YCbCr = 2,
-    CMYK = 3,
-    YCCK = 4,
-    EXT_RGB = 5,
-    EXT_RGBX = 6,
-    EXT_BGR = 7,
-    EXT_BGRX = 8,
-    EXT_XBGR = 9,
-    EXT_XRGB = 10,
-    EXT_RGBA = 11,
-    EXT_BGRA = 12,
-    EXT_ABGR = 13,
-    EXT_ARGB = 14,
-    RGB565 = 15
+    SJ_GRAYSCALE = 0,
+    SJ_RGB = 1,
+    SJ_YCbCr = 2,
+    SJ_CMYK = 3,
+    SJ_YCCK = 4,
+    SJ_EXT_RGB = 5,
+    SJ_EXT_RGBX = 6,
+    SJ_EXT_BGR = 7,
+    SJ_EXT_BGRX = 8,
+    SJ_EXT_XBGR = 9,
+    SJ_EXT_XRGB = 10,
+    SJ_EXT_RGBA = 11,
+    SJ_EXT_BGRA = 12,
+    SJ_EXT_ABGR = 13,
+    SJ_EXT_ARGB = 14,
+    SJ_RGB565 = 15
 } simple_jpegli_colorspace_t;
 
 typedef enum simple_jpegli_subsampling
 {
-    SUBSAMP_NONE = 0,
-    SUBSAMP_AUTO = 1,
-    SUBSAMP_S420 = 2,
-    SUBSAMP_S422 = 3,
-    SUBSAMP_S440 = 4,
-    SUBSAMP_S444 = 5 // Same as no subsampling
+    SJ_SUBSAMP_NONE = 0,
+    SJ_SUBSAMP_AUTO = 1,
+    SJ_SUBSAMP_S420 = 2,
+    SJ_SUBSAMP_S422 = 3,
+    SJ_SUBSAMP_S440 = 4,
+    SJ_SUBSAMP_S444 = 5 // Same as no subsampling
 } simple_jpegli_subsampling_t;
 
 typedef struct {

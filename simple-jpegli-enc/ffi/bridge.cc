@@ -38,37 +38,37 @@ J_COLOR_SPACE sjpegli_convert_colorspace(simple_jpegli_colorspace_t colorspace)
 {
     switch (colorspace)
     {
-    case GRAYSCALE:
+    case SJ_GRAYSCALE:
         return JCS_GRAYSCALE;
-    case RGB:
+    case SJ_RGB:
         return JCS_RGB;
-    case YCbCr:
+    case SJ_YCbCr:
         return JCS_YCbCr;
-    case CMYK:
+    case SJ_CMYK:
         return JCS_CMYK;
-    case YCCK:
+    case SJ_YCCK:
         return JCS_YCCK;
-    case EXT_RGB:
+    case SJ_EXT_RGB:
         return JCS_EXT_RGB;
-    case EXT_RGBX:
+    case SJ_EXT_RGBX:
         return JCS_EXT_RGBX;
-    case EXT_BGR:
+    case SJ_EXT_BGR:
         return JCS_EXT_BGR;
-    case EXT_BGRX:
+    case SJ_EXT_BGRX:
         return JCS_EXT_BGRX;
-    case EXT_XBGR:
+    case SJ_EXT_XBGR:
         return JCS_EXT_XBGR;
-    case EXT_XRGB:
+    case SJ_EXT_XRGB:
         return JCS_EXT_XRGB;
-    case EXT_RGBA:
+    case SJ_EXT_RGBA:
         return JCS_EXT_RGBA;
-    case EXT_BGRA:
+    case SJ_EXT_BGRA:
         return JCS_EXT_BGRA;
-    case EXT_ABGR:
+    case SJ_EXT_ABGR:
         return JCS_EXT_ABGR;
-    case EXT_ARGB:
+    case SJ_EXT_ARGB:
         return JCS_EXT_ARGB;
-    case RGB565:
+    case SJ_RGB565:
         return JCS_RGB565;
     default:
         return JCS_UNKNOWN;
@@ -205,26 +205,26 @@ void sjpegli_set_subsampling_factors(j_compress_ptr cinfo, J_COLOR_SPACE colorsp
 {
     switch (subsampling)
     {
-    case SUBSAMP_S420:
+    case SJ_SUBSAMP_S420:
         cinfo->comp_info[0].h_samp_factor = 2;
         cinfo->comp_info[0].v_samp_factor = 2;
         return;
-    case SUBSAMP_S422:
+    case SJ_SUBSAMP_S422:
         cinfo->comp_info[0].h_samp_factor = 2;
         cinfo->comp_info[0].v_samp_factor = 1;
         return;
-    case SUBSAMP_S440:
+    case SJ_SUBSAMP_S440:
         cinfo->comp_info[0].h_samp_factor = 1;
         cinfo->comp_info[0].v_samp_factor = 2;
         return;
-    case SUBSAMP_S444:
+    case SJ_SUBSAMP_S444:
         cinfo->comp_info[0].h_samp_factor = 1;
         cinfo->comp_info[0].v_samp_factor = 1;
         return;
-    case SUBSAMP_NONE:
+    case SJ_SUBSAMP_NONE:
         // Keep original sampling factors
         return;
-    case SUBSAMP_AUTO:
+    case SJ_SUBSAMP_AUTO:
     default:
         sjpegli_auto_subsampling_factors(cinfo, colorspace, quality);
         return;
