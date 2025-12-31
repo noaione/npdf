@@ -91,3 +91,15 @@ fn encode_rgb_buffer_mismatch_error() {
     let msg = format!("{}", err);
     assert!(msg.contains("Input buffer size mismatch"));
 }
+
+#[test]
+fn encode_rgb_bad_dpi() {
+    let (w, h) = (16u16, 16u16);
+    let pixels = make_rgb_pixels(w, h);
+    let enc = JpegEncoder::new();
+    let err = enc
+        .encode(&pixels, w, h, ColorSpace::Rgb, Some((40, 40)))
+        .unwrap_err();
+    let msg = format!("{}", err);
+    assert!(msg.contains("DPI values must be at least 72"));
+}

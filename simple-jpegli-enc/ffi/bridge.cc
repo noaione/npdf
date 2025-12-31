@@ -314,8 +314,14 @@ simple_jpegli_enc_result sjpegli_encode_pixels(const unsigned char *pixels,
     {
         result.success = SJPEGLI_ERROR;
         result.error_code = SJPEGLI_BAD_DPI;
-        sjpegli_strcopy(result.error_message, "DPI values must be between 0 and 65535",
-                        JPEGLI_ERR_MSG_LEN);
+        sjpegli_strcopy(result.error_message, "DPI values cannot exceed 65535", JPEGLI_ERR_MSG_LEN);
+        return result;
+    }
+    if (x_dpi < 72 || y_dpi < 72)
+    {
+        result.success = SJPEGLI_ERROR;
+        result.error_code = SJPEGLI_BAD_DPI;
+        sjpegli_strcopy(result.error_message, "DPI values must be at least 72", JPEGLI_ERR_MSG_LEN);
         return result;
     }
 
