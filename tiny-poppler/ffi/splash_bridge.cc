@@ -39,19 +39,19 @@ std::optional<SplashColorMode> ntsplash_upconvert_color_mode(ntsplash_color_mode
 {
     switch (mode)
     {
-    case SPLASH_COLOR_MODE_MONO1:
+    case NTSPLASH_COLOR_MODE_MONO1:
         return splashModeMono1;
-    case SPLASH_COLOR_MODE_MONO8:
+    case NTSPLASH_COLOR_MODE_MONO8:
         return splashModeMono8;
-    case SPLASH_COLOR_MODE_RGB8:
+    case NTSPLASH_COLOR_MODE_RGB8:
         return splashModeRGB8;
-    case SPLASH_COLOR_MODE_BGR8:
+    case NTSPLASH_COLOR_MODE_BGR8:
         return splashModeBGR8;
-    case SPLASH_COLOR_MODE_XBGR8:
+    case NTSPLASH_COLOR_MODE_XBGR8:
         return splashModeXBGR8;
-    case SPLASH_COLOR_MODE_CMYK8:
+    case NTSPLASH_COLOR_MODE_CMYK8:
         return splashModeCMYK8;
-    case SPLASH_COLOR_MODE_DEVICEN8:
+    case NTSPLASH_COLOR_MODE_DEVICEN8:
         return splashModeDeviceN8;
     default:
         return std::nullopt;
@@ -63,11 +63,11 @@ ntsplash_upconvert_zwl_mode(ntsplash_zero_width_line_mode_t mode)
 {
     switch (mode)
     {
-    case SPLASH_ZERO_WIDTH_LINE_DEFAULT:
+    case NTSPLASH_ZERO_WIDTH_LINE_DEFAULT:
         return splashZeroWidthLineDefault;
-    case SPLASH_ZERO_WIDTH_LINE_HAIRLINE:
+    case NTSPLASH_ZERO_WIDTH_LINE_HAIRLINE:
         return splashZeroWidthLineHairline;
-    case SPLASH_ZERO_WIDTH_LINE_NOTHING:
+    case NTSPLASH_ZERO_WIDTH_LINE_NOTHING:
         return splashZeroWidthLineNothing;
     default:
         return std::nullopt;
@@ -86,33 +86,33 @@ ntsplash_image_colorspace_t ntsplash_upconvert_colorspace(const GfxColorSpace *c
 {
     if (!color_space)
     {
-        return SPLASH_IMAGE_COLORSPACE_UNKNOWN;
+        return NTSPLASH_IMAGE_COLORSPACE_UNKNOWN;
     }
 
     switch (color_space->getMode())
     {
     case GfxColorSpaceMode::csDeviceGray:
     case GfxColorSpaceMode::csCalGray:
-        return SPLASH_IMAGE_COLORSPACE_DEVICE_GRAY;
+        return NTSPLASH_IMAGE_COLORSPACE_DEVICE_GRAY;
     case GfxColorSpaceMode::csDeviceRGB:
     case GfxColorSpaceMode::csCalRGB:
-        return SPLASH_IMAGE_COLORSPACE_DEVICE_RGB;
+        return NTSPLASH_IMAGE_COLORSPACE_DEVICE_RGB;
     case GfxColorSpaceMode::csDeviceCMYK:
-        return SPLASH_IMAGE_COLORSPACE_DEVICE_CMYK;
+        return NTSPLASH_IMAGE_COLORSPACE_DEVICE_CMYK;
     case GfxColorSpaceMode::csLab:
-        return SPLASH_IMAGE_COLORSPACE_LAB;
+        return NTSPLASH_IMAGE_COLORSPACE_LAB;
     case GfxColorSpaceMode::csICCBased:
-        return SPLASH_IMAGE_COLORSPACE_ICC;
+        return NTSPLASH_IMAGE_COLORSPACE_ICC;
     case GfxColorSpaceMode::csIndexed:
-        return SPLASH_IMAGE_COLORSPACE_INDEXED;
+        return NTSPLASH_IMAGE_COLORSPACE_INDEXED;
     case GfxColorSpaceMode::csPattern:
-        return SPLASH_IMAGE_COLORSPACE_PATTERN;
+        return NTSPLASH_IMAGE_COLORSPACE_PATTERN;
     case GfxColorSpaceMode::csSeparation:
-        return SPLASH_IMAGE_COLORSPACE_SEPARATION;
+        return NTSPLASH_IMAGE_COLORSPACE_SEPARATION;
     case GfxColorSpaceMode::csDeviceN:
-        return SPLASH_IMAGE_COLORSPACE_DEVICEN;
+        return NTSPLASH_IMAGE_COLORSPACE_DEVICEN;
     default:
-        return SPLASH_IMAGE_COLORSPACE_UNKNOWN;
+        return NTSPLASH_IMAGE_COLORSPACE_UNKNOWN;
     }
 }
 
@@ -179,8 +179,8 @@ struct NTSplashCollectedImage {
     uint32_t page_number = 0;
     double_t dpi_x = 0;
     double_t dpi_y = 0;
-    ntsplash_image_type_t image_type = SPLASH_IMAGE_TYPE_UNKNOWN;
-    ntsplash_image_colorspace_t colorspace = SPLASH_IMAGE_COLORSPACE_UNKNOWN;
+    ntsplash_image_type_t image_type = NTSPLASH_IMAGE_TYPE_UNKNOWN;
+    ntsplash_image_colorspace_t colorspace = NTSPLASH_IMAGE_COLORSPACE_UNKNOWN;
     double ctm[6] = {1.0, 0.0, 0.0, 1.0, 0.0, 0.0}; // Default is identity matrix
     const void *color_space_handle = nullptr;
 };
@@ -238,7 +238,7 @@ class NTSplashImageCollector final : public OutputDev
         (void)inlineImg;
         (void)interpolate;
         total_objects_++;
-        add_image(width, height, color_map, ref, state, SPLASH_IMAGE_TYPE_IMAGE);
+        add_image(width, height, color_map, ref, state, NTSPLASH_IMAGE_TYPE_IMAGE);
     }
 
     void drawImageMask(GfxState *state, Object *ref, Stream *str, int width, int height,
@@ -267,8 +267,8 @@ class NTSplashImageCollector final : public OutputDev
         (void)maskInterpolate;
         (void)interpolate;
         total_objects_++;
-        add_image(width, height, color_map, ref, state, SPLASH_IMAGE_TYPE_IMAGE);
-        add_image(maskWidth, maskHeight, nullptr, ref, state, SPLASH_IMAGE_TYPE_MASK);
+        add_image(width, height, color_map, ref, state, NTSPLASH_IMAGE_TYPE_IMAGE);
+        add_image(maskWidth, maskHeight, nullptr, ref, state, NTSPLASH_IMAGE_TYPE_MASK);
     }
 
     void drawSoftMaskedImage(GfxState *state, Object *ref, Stream *str, int width, int height,
@@ -285,8 +285,8 @@ class NTSplashImageCollector final : public OutputDev
         (void)maskInterpolate;
         (void)interpolate;
         total_objects_++;
-        add_image(width, height, color_map, ref, state, SPLASH_IMAGE_TYPE_IMAGE);
-        add_image(maskWidth, maskHeight, maskColorMap, ref, state, SPLASH_IMAGE_TYPE_SOFT_MASK);
+        add_image(width, height, color_map, ref, state, NTSPLASH_IMAGE_TYPE_IMAGE);
+        add_image(maskWidth, maskHeight, maskColorMap, ref, state, NTSPLASH_IMAGE_TYPE_SOFT_MASK);
         is_pdf_a_compatible_ =
             false; // since a soft mask was drawn, this page cannot be PDF/A compliant
     }
@@ -397,7 +397,7 @@ class NTSplashImageCollector final : public OutputDev
         {
             info.components = 1;
             info.bits_per_component = 1;
-            info.colorspace = SPLASH_IMAGE_COLORSPACE_DEVICE_GRAY;
+            info.colorspace = NTSPLASH_IMAGE_COLORSPACE_DEVICE_GRAY;
             info.color_space_handle = nullptr;
         }
 
@@ -433,7 +433,7 @@ class NTSplashImageCollector final : public OutputDev
 
         NTSplashCollectedImage info;
         info.page_number = current_page_;
-        info.image_type = SPLASH_IMAGE_TYPE_STENCIL;
+        info.image_type = NTSPLASH_IMAGE_TYPE_STENCIL;
         if (width > 0)
         {
             info.width = static_cast<uint32_t>(width);
@@ -444,7 +444,7 @@ class NTSplashImageCollector final : public OutputDev
         }
         info.components = 1;
         info.bits_per_component = 1;
-        info.colorspace = SPLASH_IMAGE_COLORSPACE_DEVICE_GRAY;
+        info.colorspace = NTSPLASH_IMAGE_COLORSPACE_DEVICE_GRAY;
         info.color_space_handle = nullptr;
         if (ref && ref->isRef())
         {
@@ -597,12 +597,12 @@ int ntsplash_renderer_render_page(ntsplash_renderer_t *renderer, uint32_t page_i
     Page *page = renderer->doc->getPage(page_number); // Preload page to set up crop boxes, etc.
 
     const double clamped_dpi = dpi > 0.0 ? dpi : 72.0;
-    bool use_media_box = crop_mode == SPLASH_CROP_MODE_MEDIA_BOX;
+    bool use_media_box = crop_mode == NTSPLASH_CROP_MODE_MEDIA_BOX;
 
     const SplashColorMode requested_mode = *maybe_mode;
     const SplashZeroWidthLineMode requested_zero_width_line_mode = *maybe_zero_width_line_mode;
     const bool enable_overprint =
-        color_mode == SPLASH_COLOR_MODE_CMYK8 || color_mode == SPLASH_COLOR_MODE_DEVICEN8;
+        color_mode == NTSPLASH_COLOR_MODE_CMYK8 || color_mode == NTSPLASH_COLOR_MODE_DEVICEN8;
 
     SplashColor paper_color;
     if (enable_overprint)
@@ -839,7 +839,7 @@ void ntsplash_renderer_free_image(ntsplash_image_t *image)
     image->height = 0;
     image->stride = 0;
     image->components = 0;
-    image->color_mode = SPLASH_COLOR_MODE_RGB8;
+    image->color_mode = NTSPLASH_COLOR_MODE_RGB8;
     image->bits_per_component = 0;
 }
 

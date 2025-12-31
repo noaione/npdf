@@ -36,15 +36,15 @@ NTImageOutputDev::NTImageType ntsplash_upconvert_type(nt_image_export_type_t typ
 {
     switch (type)
     {
-    case IMAGE_EXPORT_TYPE_STENCIL:
-        return NTImageOutputDev::imgStencil;
-    case IMAGE_EXPORT_TYPE_MASK:
-        return NTImageOutputDev::imgMask;
-    case IMAGE_EXPORT_TYPE_SOFT_MASK:
-        return NTImageOutputDev::imgSmask;
-    case IMAGE_EXPORT_TYPE_IMAGE:
+    case NTIMAGE_EXPORT_TYPE_STENCIL:
+        return NTImageOutputDev::ntImgStencil;
+    case NTIMAGE_EXPORT_TYPE_MASK:
+        return NTImageOutputDev::ntImgMask;
+    case NTIMAGE_EXPORT_TYPE_SOFT_MASK:
+        return NTImageOutputDev::ntImgSmask;
+    case NTIMAGE_EXPORT_TYPE_IMAGE:
     default:
-        return NTImageOutputDev::imgImage;
+        return NTImageOutputDev::ntImgImage;
     }
 }
 
@@ -56,8 +56,8 @@ bool ntsplash_validate_export_params(const nt_image_export_params_t *params, cha
         return false;
     }
 
-    const bool match_by_ref = params->match_mode == IMAGE_EXPORT_MATCH_BY_REF;
-    const bool match_by_occurrence = params->match_mode == IMAGE_EXPORT_MATCH_BY_OCCURRENCE;
+    const bool match_by_ref = params->match_mode == NTIMAGE_EXPORT_MATCH_BY_REF;
+    const bool match_by_occurrence = params->match_mode == NTIMAGE_EXPORT_MATCH_BY_OCCURRENCE;
     if (!match_by_ref && !match_by_occurrence)
     {
         ntsplash_set_error(error_out, "unsupported image match mode");
@@ -142,14 +142,14 @@ int ntsplash_exporer_extract_page(ntsplash_renderer_t *renderer,
     target_ref.num = params->xref_object;
     target_ref.gen = params->xref_generation;
 
-    const bool match_by_ref = params->match_mode == IMAGE_EXPORT_MATCH_BY_REF;
+    const bool match_by_ref = params->match_mode == NTIMAGE_EXPORT_MATCH_BY_REF;
     if (!match_by_ref)
     {
         target_ref.num = 0;
         target_ref.gen = 0;
     }
 
-    const bool match_by_occurrence = params->match_mode == IMAGE_EXPORT_MATCH_BY_OCCURRENCE;
+    const bool match_by_occurrence = params->match_mode == NTIMAGE_EXPORT_MATCH_BY_OCCURRENCE;
     NTImageOutputDev output_dev(&captured, target_ref, match_by_ref,
                                 ntsplash_upconvert_type(params->target_type), match_by_occurrence,
                                 params->occurrence_index);

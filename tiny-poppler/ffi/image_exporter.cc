@@ -58,7 +58,7 @@ NTImageOutputDev::NTImageFormat determineFormat(GfxImageColorMap *colorMap)
 {
     if (!colorMap)
     {
-        return NTImageOutputDev::imgMonochrome;
+        return NTImageOutputDev::ntImgMonochrome;
     }
 
     const int comps = colorMap->getNumPixelComps();
@@ -66,26 +66,26 @@ NTImageOutputDev::NTImageFormat determineFormat(GfxImageColorMap *colorMap)
 
     if (comps == 4)
     {
-        return NTImageOutputDev::imgCMYK;
+        return NTImageOutputDev::ntImgCMYK;
     }
 
     if (comps == 3)
     {
-        return bits > 8 ? NTImageOutputDev::imgRGB48 : NTImageOutputDev::imgRGB;
+        return bits > 8 ? NTImageOutputDev::ntImgRGB48 : NTImageOutputDev::ntImgRGB;
     }
 
     if (comps == 1)
     {
-        return bits == 1 ? NTImageOutputDev::imgMonochrome : NTImageOutputDev::imgGray;
+        return bits == 1 ? NTImageOutputDev::ntImgMonochrome : NTImageOutputDev::ntImgGray;
     }
 
-    return NTImageOutputDev::imgRGB;
+    return NTImageOutputDev::ntImgRGB;
 }
 
 NTImageOutputDev::NTImageExtension defaultExtension(NTImageOutputDev::NTImageFormat format)
 {
-    return format == NTImageOutputDev::imgCMYK ? NTImageOutputDev::extTiff
-                                               : NTImageOutputDev::extPng;
+    return format == NTImageOutputDev::ntImgCMYK ? NTImageOutputDev::ntExtTiff
+                                                 : NTImageOutputDev::ntExtPng;
 }
 
 constexpr double kDefaultImageDPI = 72.0;
@@ -276,7 +276,7 @@ void NTImageOutputDev::writeRawImage(Stream *str, NTImageExtension ext, NTImageT
     std::vector<uint8_t> buffer;
     if (describeOnly)
     {
-        storeResult(buffer, imgUnknown, ext, type, w, h, 0, comps, bpc, widthDPI, heightDPI,
+        storeResult(buffer, ntImgUnknown, ext, type, w, h, 0, comps, bpc, widthDPI, heightDPI,
                     jbig2Globals, ccittParams);
         if (dataStream)
         {
@@ -293,7 +293,7 @@ void NTImageOutputDev::writeRawImage(Stream *str, NTImageExtension ext, NTImageT
     }
 
     dataStream->close();
-    storeResult(buffer, imgUnknown, ext, type, w, h, 0, comps, bpc, widthDPI, heightDPI,
+    storeResult(buffer, ntImgUnknown, ext, type, w, h, 0, comps, bpc, widthDPI, heightDPI,
                 jbig2Globals, ccittParams);
 }
 
@@ -307,7 +307,7 @@ void NTImageOutputDev::writeImageFile(Stream *str, NTImageFormat format, NTImage
     }
 
     ImageStream *imgStr = nullptr;
-    if (format != imgMonochrome)
+    if (format != ntImgMonochrome)
     {
         if (!colorMap)
         {
@@ -339,29 +339,29 @@ void NTImageOutputDev::writeImageFile(Stream *str, NTImageFormat format, NTImage
     uint32_t bitsPerComponent = 8;
     switch (format)
     {
-    case imgRGB:
+    case ntImgRGB:
         components = 3;
         stride = width * components;
         break;
-    case imgRGB48:
+    case ntImgRGB48:
         components = 3;
         bitsPerComponent = 16;
         stride = width * components * 2;
         break;
-    case imgCMYK:
+    case ntImgCMYK:
         components = 4;
         stride = width * components;
         break;
-    case imgGray:
+    case ntImgGray:
         components = 1;
         stride = width;
         break;
-    case imgMonochrome:
+    case ntImgMonochrome:
         components = 1;
         bitsPerComponent = 1;
         stride = (width + 7) / 8;
         break;
-    case imgUnknown:
+    case ntImgUnknown:
         components = 0;
         stride = 0;
         break;
@@ -369,7 +369,7 @@ void NTImageOutputDev::writeImageFile(Stream *str, NTImageFormat format, NTImage
 
     if (describeOnly)
     {
-        if (format != imgMonochrome)
+        if (format != ntImgMonochrome)
         {
             imgStr->close();
             delete imgStr;
@@ -397,7 +397,7 @@ void NTImageOutputDev::writeImageFile(Stream *str, NTImageFormat format, NTImage
     unsigned char zero[gfxColorMaxComps];
     int invert_bits = 0xff;
 
-    if (format == imgMonochrome)
+    if (format == ntImgMonochrome)
     {
         if (colorMap)
         {
@@ -431,7 +431,7 @@ void NTImageOutputDev::writeImageFile(Stream *str, NTImageFormat format, NTImage
         unsigned char *dest = raster.data() + static_cast<size_t>(stride) * y;
         switch (format)
         {
-        case imgRGB: {
+        case ntImgRGB: {
             unsigned char *rowp = row;
             unsigned char *p = imgStr->getLine();
             for (int x = 0; x < width; ++x)
@@ -454,7 +454,7 @@ void NTImageOutputDev::writeImageFile(Stream *str, NTImageFormat format, NTImage
             memcpy(dest, row, stride);
             break;
         }
-        case imgRGB48: {
+        case ntImgRGB48: {
             auto *row16 = reinterpret_cast<unsigned short *>(row);
             unsigned char *p = imgStr->getLine();
             for (int x = 0; x < width; ++x)
@@ -477,7 +477,7 @@ void NTImageOutputDev::writeImageFile(Stream *str, NTImageFormat format, NTImage
             memcpy(dest, row, stride);
             break;
         }
-        case imgCMYK: {
+        case ntImgCMYK: {
             unsigned char *rowp = row;
             unsigned char *p = imgStr->getLine();
             for (int x = 0; x < width; ++x)
@@ -502,7 +502,7 @@ void NTImageOutputDev::writeImageFile(Stream *str, NTImageFormat format, NTImage
             memcpy(dest, row, stride);
             break;
         }
-        case imgGray: {
+        case ntImgGray: {
             unsigned char *rowp = row;
             unsigned char *p = imgStr->getLine();
             for (int x = 0; x < width; ++x)
@@ -521,7 +521,7 @@ void NTImageOutputDev::writeImageFile(Stream *str, NTImageFormat format, NTImage
             memcpy(dest, row, stride);
             break;
         }
-        case imgMonochrome: {
+        case ntImgMonochrome: {
             const int size = (width + 7) / 8;
             for (int x = 0; x < size; ++x)
             {
@@ -529,7 +529,7 @@ void NTImageOutputDev::writeImageFile(Stream *str, NTImageFormat format, NTImage
             }
             break;
         }
-        case imgUnknown:
+        case ntImgUnknown:
             break;
         }
     }
@@ -539,7 +539,7 @@ void NTImageOutputDev::writeImageFile(Stream *str, NTImageFormat format, NTImage
         gfree(row);
     }
 
-    if (format != imgMonochrome)
+    if (format != ntImgMonochrome)
     {
         imgStr->close();
         delete imgStr;
@@ -569,21 +569,22 @@ void NTImageOutputDev::writeImage(GfxState *state, Object *ref, Stream *str, int
     }
 
     const int components = colorMap ? colorMap->getNumPixelComps()
-                                    : (imageType == imgMask || imageType == imgStencil ? 1 : 0);
+                                    : (imageType == ntImgMask || imageType == ntImgStencil ? 1 : 0);
     const int bitsPerComponent =
-        colorMap ? colorMap->getBits() : (imageType == imgMask || imageType == imgStencil ? 1 : 0);
+        colorMap ? colorMap->getBits()
+                 : (imageType == ntImgMask || imageType == ntImgStencil ? 1 : 0);
 
     const StreamKind kind = str->getKind();
     if (kind == strDCT)
     {
-        writeRawImage(str, extJpg, imageType, width, height, components, bitsPerComponent, widthDPI,
-                      heightDPI, nullptr, nullptr);
+        writeRawImage(str, ntExtJpg, imageType, width, height, components, bitsPerComponent,
+                      widthDPI, heightDPI, nullptr, nullptr);
         return;
     }
     if (kind == strJPX && !inlineImg)
     {
-        writeRawImage(str, extJp2, imageType, width, height, components, bitsPerComponent, widthDPI,
-                      heightDPI, nullptr, nullptr);
+        writeRawImage(str, ntExtJp2, imageType, width, height, components, bitsPerComponent,
+                      widthDPI, heightDPI, nullptr, nullptr);
         return;
     }
     if (kind == strJBIG2 && !inlineImg)
@@ -607,7 +608,7 @@ void NTImageOutputDev::writeImage(GfxState *state, Object *ref, Stream *str, int
                 globalsObj->streamClose();
             }
         }
-        writeRawImage(str, extJb2e, imageType, width, height, components, bitsPerComponent,
+        writeRawImage(str, ntExtJb2e, imageType, width, height, components, bitsPerComponent,
                       widthDPI, heightDPI, &globals, nullptr);
         return;
     }
@@ -627,7 +628,7 @@ void NTImageOutputDev::writeImage(GfxState *state, Object *ref, Stream *str, int
             params.damagedRowsBeforeError = ccitt->getDamagedRowsBeforeError();
             paramsPtr = &params;
         }
-        writeRawImage(str, extCcitt, imageType, width, height, 1, 1, widthDPI, heightDPI, nullptr,
+        writeRawImage(str, ntExtCcitt, imageType, width, height, 1, 1, widthDPI, heightDPI, nullptr,
                       paramsPtr);
         return;
     }
@@ -659,14 +660,14 @@ void NTImageOutputDev::drawImageMask(GfxState *state, Object *ref, Stream *str, 
                                      int height, bool invert [[maybe_unused]],
                                      bool interpolate [[maybe_unused]], bool inlineImg)
 {
-    writeImage(state, ref, str, width, height, nullptr, inlineImg, imgStencil);
+    writeImage(state, ref, str, width, height, nullptr, inlineImg, ntImgStencil);
 }
 
 void NTImageOutputDev::drawImage(GfxState *state, Object *ref, Stream *str, int width, int height,
                                  GfxImageColorMap *colorMap, bool interpolate [[maybe_unused]],
                                  const int *maskColors [[maybe_unused]], bool inlineImg)
 {
-    writeImage(state, ref, str, width, height, colorMap, inlineImg, imgImage);
+    writeImage(state, ref, str, width, height, colorMap, inlineImg, ntImgImage);
 }
 
 void NTImageOutputDev::drawMaskedImage(GfxState *state, Object *ref, Stream *str, int width,
@@ -676,8 +677,8 @@ void NTImageOutputDev::drawMaskedImage(GfxState *state, Object *ref, Stream *str
                                        bool maskInvert [[maybe_unused]],
                                        bool maskInterpolate [[maybe_unused]])
 {
-    writeImage(state, ref, str, width, height, colorMap, false, imgImage);
-    writeImage(state, ref, maskStr, maskWidth, maskHeight, nullptr, false, imgMask);
+    writeImage(state, ref, str, width, height, colorMap, false, ntImgImage);
+    writeImage(state, ref, maskStr, maskWidth, maskHeight, nullptr, false, ntImgMask);
 }
 
 void NTImageOutputDev::drawSoftMaskedImage(GfxState *state, Object *ref, Stream *str, int width,
@@ -687,6 +688,6 @@ void NTImageOutputDev::drawSoftMaskedImage(GfxState *state, Object *ref, Stream 
                                            GfxImageColorMap *maskColorMap,
                                            bool maskInterpolate [[maybe_unused]])
 {
-    writeImage(state, ref, str, width, height, colorMap, false, imgImage);
-    writeImage(state, ref, maskStr, maskWidth, maskHeight, maskColorMap, false, imgSmask);
+    writeImage(state, ref, str, width, height, colorMap, false, ntImgImage);
+    writeImage(state, ref, maskStr, maskWidth, maskHeight, maskColorMap, false, ntImgSmask);
 }

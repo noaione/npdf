@@ -55,29 +55,29 @@ class NTImageOutputDev : public OutputDev
   public:
     enum NTImageType
     {
-        imgImage,
-        imgStencil,
-        imgMask,
-        imgSmask
+        ntImgImage,
+        ntImgStencil,
+        ntImgMask,
+        ntImgSmask
     };
     enum NTImageFormat
     {
-        imgUnknown,
-        imgRGB,
-        imgRGB48,
-        imgGray,
-        imgMonochrome,
-        imgCMYK
+        ntImgUnknown,
+        ntImgRGB,
+        ntImgRGB48,
+        ntImgGray,
+        ntImgMonochrome,
+        ntImgCMYK
     };
     enum NTImageExtension
     {
-        extJpg,   // JPEG
-        extJp2,   // JPEG 2000
-        extJb2e,  // JBIG2 embedded
-        extCcitt, // CCITT Group 4
-        extPng,   // PNG
-        extTiff,  // TIFF
-        extPnm,   // PNM (PBM/PGM/PPM) - Use ppm if RGB, else pbm
+        ntExtJpg,   // JPEG
+        ntExtJp2,   // JPEG 2000
+        ntExtJb2e,  // JBIG2 embedded
+        ntExtCcitt, // CCITT Group 4
+        ntExtPng,   // PNG
+        ntExtTiff,  // TIFF
+        ntExtPnm,   // PNM (PBM/PGM/PPM) - Use ppm if RGB, else pbm
     };
 
     struct NTCcittParams {
