@@ -3,9 +3,9 @@
 
 #include <setjmp.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
-#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -16,7 +16,8 @@ extern "C" {
 // A fixed-size buffer for error messages to avoid malloc complexity during crashes
 #define JPEGLI_ERR_MSG_LEN 256
 
-typedef enum simple_jpegli_colorspace {
+typedef enum simple_jpegli_colorspace
+{
     GRAYSCALE = 0,
     RGB = 1,
     YCbCr = 2,
@@ -35,7 +36,8 @@ typedef enum simple_jpegli_colorspace {
     RGB565 = 15
 } simple_jpegli_colorspace_t;
 
-typedef enum simple_jpegli_subsampling {
+typedef enum simple_jpegli_subsampling
+{
     SUBSAMP_NONE = 0,
     SUBSAMP_AUTO = 1,
     SUBSAMP_S420 = 2,
@@ -45,10 +47,10 @@ typedef enum simple_jpegli_subsampling {
 } simple_jpegli_subsampling_t;
 
 typedef struct {
-    unsigned char* data;      // Pointer to the JPEG bytes
-    size_t size;              // Size of the JPEG bytes
-    int success;              // 1 = true, 0 = false
-    int error_code;           // libjpeg error code
+    unsigned char *data; // Pointer to the JPEG bytes
+    size_t size;         // Size of the JPEG bytes
+    int success;         // 1 = true, 0 = false
+    int error_code;      // libjpeg error code
     char error_message[JPEGLI_ERR_MSG_LEN];
 } simple_jpegli_enc_result;
 
@@ -67,10 +69,8 @@ typedef struct {
     bool optimize_coding;
 } simple_jpegli_enc_config;
 
-simple_jpegli_enc_result sjpegli_encode_pixels(
-    const unsigned char* pixels,
-    const simple_jpegli_enc_config* config
-);
+simple_jpegli_enc_result sjpegli_encode_pixels(const unsigned char *pixels,
+                                               const simple_jpegli_enc_config *config);
 
 // Frees the buffer allocated by libjpeg
 void sjpegli_free_result(simple_jpegli_enc_result result);
@@ -88,4 +88,4 @@ void sjpegli_get_version(simple_jpegli_version_t *out_version);
 }
 #endif
 
-#endif  // SIMPLE_JPEGLI_ENC_BRIDGE_H
+#endif // SIMPLE_JPEGLI_ENC_BRIDGE_H

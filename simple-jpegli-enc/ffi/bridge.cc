@@ -1,14 +1,14 @@
 #include "bridge.h"
 
-#include <cstdio>
+#include <csetjmp>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <csetjmp>
 
 #include <jpeglib.h>
-#include <version.h>
 #include <lib/jpegli/encode.h>
+#include <version.h>
 
 #define SJPEGLI_BAD_COLORSPACE 10 // Based on libjpeg error codes
 #define SJPEGLI_BAD_INPUT 90      // Custom error code for bad input
@@ -17,255 +17,249 @@
 #define SJPEGLI_ERROR 0
 #define SJPEGLI_SUCCESS 1
 
-namespace
+namespace {
+constexpr int kDisableProgressive = 0;
+constexpr int kDefaultProgressiveLevel = 2;
+
+struct JpegliErrorManager {
+    struct jpeg_error_mgr pub;
+    jmp_buf jump_buffer;
+    char last_error_msg[JPEGLI_ERR_MSG_LEN];
+};
+
+void sjpegli_error_exit(j_common_ptr cinfo)
 {
-    constexpr int kDisableProgressive = 0;
-    constexpr int kDefaultProgressiveLevel = 2;
+    auto *myerr = reinterpret_cast<JpegliErrorManager *>(cinfo->err);
+    (*cinfo->err->format_message)(cinfo, myerr->last_error_msg);
+    longjmp(myerr->jump_buffer, 1); // jump to exit point
+}
 
-    struct JpegliErrorManager
+J_COLOR_SPACE sjpegli_convert_colorspace(simple_jpegli_colorspace_t colorspace)
+{
+    switch (colorspace)
     {
-        struct jpeg_error_mgr pub;
-        jmp_buf jump_buffer;
-        char last_error_msg[JPEGLI_ERR_MSG_LEN];
-    };
+    case GRAYSCALE:
+        return JCS_GRAYSCALE;
+    case RGB:
+        return JCS_RGB;
+    case YCbCr:
+        return JCS_YCbCr;
+    case CMYK:
+        return JCS_CMYK;
+    case YCCK:
+        return JCS_YCCK;
+    case EXT_RGB:
+        return JCS_EXT_RGB;
+    case EXT_RGBX:
+        return JCS_EXT_RGBX;
+    case EXT_BGR:
+        return JCS_EXT_BGR;
+    case EXT_BGRX:
+        return JCS_EXT_BGRX;
+    case EXT_XBGR:
+        return JCS_EXT_XBGR;
+    case EXT_XRGB:
+        return JCS_EXT_XRGB;
+    case EXT_RGBA:
+        return JCS_EXT_RGBA;
+    case EXT_BGRA:
+        return JCS_EXT_BGRA;
+    case EXT_ABGR:
+        return JCS_EXT_ABGR;
+    case EXT_ARGB:
+        return JCS_EXT_ARGB;
+    case RGB565:
+        return JCS_RGB565;
+    default:
+        return JCS_UNKNOWN;
+    }
+}
 
-    void sjpegli_error_exit(j_common_ptr cinfo)
+int sjpegli_get_input_comps(J_COLOR_SPACE colorspace, int width)
+{
+    switch (colorspace)
     {
-        auto *myerr = reinterpret_cast<JpegliErrorManager *>(cinfo->err);
-        (*cinfo->err->format_message)(cinfo, myerr->last_error_msg);
-        longjmp(myerr->jump_buffer, 1); // jump to exit point
+    case JCS_GRAYSCALE:
+        return 1;
+    case JCS_RGB:
+    case JCS_YCbCr:
+        return 3;
+    case JCS_CMYK:
+    case JCS_YCCK:
+        return 4;
+    case JCS_EXT_RGB:
+    case JCS_EXT_BGR:
+        return 3;
+    case JCS_EXT_RGBX:
+    case JCS_EXT_BGRX:
+    case JCS_EXT_XBGR:
+    case JCS_EXT_XRGB:
+        return 4;
+    case JCS_EXT_RGBA:
+    case JCS_EXT_BGRA:
+    case JCS_EXT_ABGR:
+    case JCS_EXT_ARGB:
+        return 4;
+    case JCS_RGB565:
+        return 2;
+    default:
+        return 0; // Unknown colorspace
+    }
+}
+
+void sjpegli_auto_subsampling_factors(j_compress_ptr cinfo, J_COLOR_SPACE colorspace, int quality)
+{
+    if (cinfo == nullptr || cinfo->comp_info == nullptr)
+    {
+        return;
     }
 
-    J_COLOR_SPACE sjpegli_convert_colorspace(simple_jpegli_colorspace_t colorspace)
+    int clamped_quality = quality;
+    if (clamped_quality < 1)
     {
-        switch (colorspace)
-        {
-        case GRAYSCALE:
-            return JCS_GRAYSCALE;
-        case RGB:
-            return JCS_RGB;
-        case YCbCr:
-            return JCS_YCbCr;
-        case CMYK:
-            return JCS_CMYK;
-        case YCCK:
-            return JCS_YCCK;
-        case EXT_RGB:
-            return JCS_EXT_RGB;
-        case EXT_RGBX:
-            return JCS_EXT_RGBX;
-        case EXT_BGR:
-            return JCS_EXT_BGR;
-        case EXT_BGRX:
-            return JCS_EXT_BGRX;
-        case EXT_XBGR:
-            return JCS_EXT_XBGR;
-        case EXT_XRGB:
-            return JCS_EXT_XRGB;
-        case EXT_RGBA:
-            return JCS_EXT_RGBA;
-        case EXT_BGRA:
-            return JCS_EXT_BGRA;
-        case EXT_ABGR:
-            return JCS_EXT_ABGR;
-        case EXT_ARGB:
-            return JCS_EXT_ARGB;
-        case RGB565:
-            return JCS_RGB565;
-        default:
-            return JCS_UNKNOWN;
-        }
+        clamped_quality = 1;
+    }
+    else if (clamped_quality > 100)
+    {
+        clamped_quality = 100;
     }
 
-    int sjpegli_get_input_comps(J_COLOR_SPACE colorspace, int width)
+    for (int comp = 0; comp < cinfo->num_components; ++comp)
     {
-        switch (colorspace)
-        {
-        case JCS_GRAYSCALE:
-            return 1;
-        case JCS_RGB:
-        case JCS_YCbCr:
-            return 3;
-        case JCS_CMYK:
-        case JCS_YCCK:
-            return 4;
-        case JCS_EXT_RGB:
-        case JCS_EXT_BGR:
-            return 3;
-        case JCS_EXT_RGBX:
-        case JCS_EXT_BGRX:
-        case JCS_EXT_XBGR:
-        case JCS_EXT_XRGB:
-            return 4;
-        case JCS_EXT_RGBA:
-        case JCS_EXT_BGRA:
-        case JCS_EXT_ABGR:
-        case JCS_EXT_ARGB:
-            return 4;
-        case JCS_RGB565:
-            return 2;
-        default:
-            return 0; // Unknown colorspace
-        }
+        cinfo->comp_info[comp].h_samp_factor = 1;
+        cinfo->comp_info[comp].v_samp_factor = 1;
     }
 
-    void sjpegli_auto_subsampling_factors(
-        j_compress_ptr cinfo,
-        J_COLOR_SPACE colorspace,
-        int quality)
-    {
-        if (cinfo == nullptr || cinfo->comp_info == nullptr)
-        {
-            return;
-        }
-
-        int clamped_quality = quality;
-        if (clamped_quality < 1)
-        {
-            clamped_quality = 1;
-        }
-        else if (clamped_quality > 100)
-        {
-            clamped_quality = 100;
-        }
-
+    auto recompute_max_sampling = [&]() {
+        int max_h = 1;
+        int max_v = 1;
         for (int comp = 0; comp < cinfo->num_components; ++comp)
         {
-            cinfo->comp_info[comp].h_samp_factor = 1;
-            cinfo->comp_info[comp].v_samp_factor = 1;
+            if (cinfo->comp_info[comp].h_samp_factor > max_h)
+            {
+                max_h = cinfo->comp_info[comp].h_samp_factor;
+            }
+            if (cinfo->comp_info[comp].v_samp_factor > max_v)
+            {
+                max_v = cinfo->comp_info[comp].v_samp_factor;
+            }
         }
 
-        auto recompute_max_sampling = [&]()
-        {
-            int max_h = 1;
-            int max_v = 1;
-            for (int comp = 0; comp < cinfo->num_components; ++comp)
-            {
-                if (cinfo->comp_info[comp].h_samp_factor > max_h)
-                {
-                    max_h = cinfo->comp_info[comp].h_samp_factor;
-                }
-                if (cinfo->comp_info[comp].v_samp_factor > max_v)
-                {
-                    max_v = cinfo->comp_info[comp].v_samp_factor;
-                }
-            }
+        cinfo->max_h_samp_factor = max_h;
+        cinfo->max_v_samp_factor = max_v;
+    };
 
-            cinfo->max_h_samp_factor = max_h;
-            cinfo->max_v_samp_factor = max_v;
-        };
-
-        auto set_luma_sampling = [&](int h_factor, int v_factor)
+    auto set_luma_sampling = [&](int h_factor, int v_factor) {
+        if (cinfo->num_components == 0)
         {
-            if (cinfo->num_components == 0)
-            {
-                return;
-            }
-            cinfo->comp_info[0].h_samp_factor = h_factor;
-            cinfo->comp_info[0].v_samp_factor = v_factor;
-            recompute_max_sampling();
-        };
-
-        // YCbCr and YCCK benefit the most from chroma subsampling.
-        if (colorspace == JCS_YCbCr)
-        {
-            if (clamped_quality >= 90)
-            {
-                // High quality keeps full 4:4:4 sampling.
-                recompute_max_sampling();
-                return;
-            }
-            if (clamped_quality >= 70)
-            {
-                // Middle quality prefers 4:2:2 to reduce size without destroying detail.
-                set_luma_sampling(2, 1);
-                return;
-            }
-            // Low quality falls back to 4:2:0 for maximum size reduction.
-            set_luma_sampling(2, 2);
             return;
         }
-
-        if (colorspace == JCS_YCCK)
-        {
-            if (clamped_quality >= 85)
-            {
-                recompute_max_sampling();
-                return;
-            }
-            if (clamped_quality >= 65)
-            {
-                set_luma_sampling(2, 1);
-                return;
-            }
-            set_luma_sampling(2, 2);
-            return;
-        }
-
-        // Everything else (RGB, CMYK, extended RGB/alpha inputs, grayscale, RGB565, etc.)
-        // keeps full resolution to avoid channel mismatch artifacts.
+        cinfo->comp_info[0].h_samp_factor = h_factor;
+        cinfo->comp_info[0].v_samp_factor = v_factor;
         recompute_max_sampling();
-    }
+    };
 
-    void sjpegli_set_subsampling_factors(
-        j_compress_ptr cinfo,
-        J_COLOR_SPACE colorspace,
-        simple_jpegli_subsampling_t subsampling,
-        int quality)
+    // YCbCr and YCCK benefit the most from chroma subsampling.
+    if (colorspace == JCS_YCbCr)
     {
-        switch (subsampling)
+        if (clamped_quality >= 90)
         {
-        case SUBSAMP_S420:
-            cinfo->comp_info[0].h_samp_factor = 2;
-            cinfo->comp_info[0].v_samp_factor = 2;
-            return;
-        case SUBSAMP_S422:
-            cinfo->comp_info[0].h_samp_factor = 2;
-            cinfo->comp_info[0].v_samp_factor = 1;
-            return;
-        case SUBSAMP_S440:
-            cinfo->comp_info[0].h_samp_factor = 1;
-            cinfo->comp_info[0].v_samp_factor = 2;
-            return;
-        case SUBSAMP_S444:
-            cinfo->comp_info[0].h_samp_factor = 1;
-            cinfo->comp_info[0].v_samp_factor = 1;
-            return;
-        case SUBSAMP_NONE:
-            // Keep original sampling factors
-            return;
-        case SUBSAMP_AUTO:
-        default:
-            sjpegli_auto_subsampling_factors(cinfo, colorspace, quality);
+            // High quality keeps full 4:4:4 sampling.
+            recompute_max_sampling();
             return;
         }
+        if (clamped_quality >= 70)
+        {
+            // Middle quality prefers 4:2:2 to reduce size without destroying detail.
+            set_luma_sampling(2, 1);
+            return;
+        }
+        // Low quality falls back to 4:2:0 for maximum size reduction.
+        set_luma_sampling(2, 2);
+        return;
     }
 
-    /**
-     * Safe-er string copy without strcopy/strncpy pitfalls
-     *
-     * Similar to curlx_strcopy from curl
-     * (c) cURL contributors, licensed under cURL license.
-     */
-    void sjpegli_strcopy(char *dest, const char *src, size_t dest_size)
+    if (colorspace == JCS_YCCK)
     {
-        if (dest_size == 0)
+        if (clamped_quality >= 85)
         {
+            recompute_max_sampling();
             return;
         }
-
-        size_t src_len = std::strlen(src);
-        if (src_len < dest_size) {
-            memcpy(dest, src, src_len);
-            dest[src_len] = '\0';
-        } else if (dest_size) {
-            // fail-safe, don't copy anything if it won't fit
-            dest[0] = '\0';
+        if (clamped_quality >= 65)
+        {
+            set_luma_sampling(2, 1);
+            return;
         }
+        set_luma_sampling(2, 2);
+        return;
     }
+
+    // Everything else (RGB, CMYK, extended RGB/alpha inputs, grayscale, RGB565, etc.)
+    // keeps full resolution to avoid channel mismatch artifacts.
+    recompute_max_sampling();
+}
+
+void sjpegli_set_subsampling_factors(j_compress_ptr cinfo, J_COLOR_SPACE colorspace,
+                                     simple_jpegli_subsampling_t subsampling, int quality)
+{
+    switch (subsampling)
+    {
+    case SUBSAMP_S420:
+        cinfo->comp_info[0].h_samp_factor = 2;
+        cinfo->comp_info[0].v_samp_factor = 2;
+        return;
+    case SUBSAMP_S422:
+        cinfo->comp_info[0].h_samp_factor = 2;
+        cinfo->comp_info[0].v_samp_factor = 1;
+        return;
+    case SUBSAMP_S440:
+        cinfo->comp_info[0].h_samp_factor = 1;
+        cinfo->comp_info[0].v_samp_factor = 2;
+        return;
+    case SUBSAMP_S444:
+        cinfo->comp_info[0].h_samp_factor = 1;
+        cinfo->comp_info[0].v_samp_factor = 1;
+        return;
+    case SUBSAMP_NONE:
+        // Keep original sampling factors
+        return;
+    case SUBSAMP_AUTO:
+    default:
+        sjpegli_auto_subsampling_factors(cinfo, colorspace, quality);
+        return;
+    }
+}
+
+/**
+ * Safe-er string copy without strcopy/strncpy pitfalls
+ *
+ * Similar to curlx_strcopy from curl
+ * (c) cURL contributors, licensed under cURL license.
+ */
+void sjpegli_strcopy(char *dest, const char *src, size_t dest_size)
+{
+    if (dest_size == 0)
+    {
+        return;
+    }
+
+    size_t src_len = std::strlen(src);
+    if (src_len < dest_size)
+    {
+        memcpy(dest, src, src_len);
+        dest[src_len] = '\0';
+    }
+    else if (dest_size)
+    {
+        // fail-safe, don't copy anything if it won't fit
+        dest[0] = '\0';
+    }
+}
 } // namespace
 
-simple_jpegli_enc_result sjpegli_encode_pixels(const unsigned char *pixels, const simple_jpegli_enc_config *config)
+simple_jpegli_enc_result sjpegli_encode_pixels(const unsigned char *pixels,
+                                               const simple_jpegli_enc_config *config)
 {
     // safe default to avoid UB
     simple_jpegli_enc_result result;
@@ -320,7 +314,8 @@ simple_jpegli_enc_result sjpegli_encode_pixels(const unsigned char *pixels, cons
     {
         result.success = SJPEGLI_ERROR;
         result.error_code = SJPEGLI_BAD_DPI;
-        sjpegli_strcopy(result.error_message, "DPI values must be between 0 and 65535", JPEGLI_ERR_MSG_LEN);
+        sjpegli_strcopy(result.error_message, "DPI values must be between 0 and 65535",
+                        JPEGLI_ERR_MSG_LEN);
         return result;
     }
 
@@ -345,7 +340,8 @@ simple_jpegli_enc_result sjpegli_encode_pixels(const unsigned char *pixels, cons
         // cleanup
         jpegli_destroy_compress(&cinfo);
 
-        // free output buffer if it was allocated, only happens if we jumped here after starting compression
+        // free output buffer if it was allocated, only happens if we jumped here after starting
+        // compression
         if (outbuffer)
         {
             std::free(outbuffer);
@@ -386,11 +382,8 @@ simple_jpegli_enc_result sjpegli_encode_pixels(const unsigned char *pixels, cons
     jpegli_enable_adaptive_quantization(&cinfo, config->adaptive_quantize);
     sjpegli_set_subsampling_factors(&cinfo, colorspace_t, subsampling, quality);
     cinfo.write_Adobe_marker =
-        (colorspace_t == JCS_CMYK ||
-         colorspace_t == JCS_YCCK ||
-         colorspace_t == JCS_RGB)
-            ? TRUE
-            : FALSE;
+        (colorspace_t == JCS_CMYK || colorspace_t == JCS_YCCK || colorspace_t == JCS_RGB) ? TRUE
+                                                                                          : FALSE;
 
     cinfo.arith_code = FALSE; // disable arithmetic coding
     cinfo.write_JFIF_header = TRUE;
@@ -406,8 +399,7 @@ simple_jpegli_enc_result sjpegli_encode_pixels(const unsigned char *pixels, cons
     while (cinfo.next_scanline < cinfo.image_height)
     {
         // const_cast is necessary because libjpeg legacy API expects non-const JSAMPROW
-        JSAMPROW row_pointer[1] = {
-            const_cast<JSAMPROW>(&pixels[cinfo.next_scanline * row_stride])};
+        JSAMPROW row_pointer[1] = {const_cast<JSAMPROW>(&pixels[cinfo.next_scanline * row_stride])};
         jpegli_write_scanlines(&cinfo, row_pointer, 1);
     }
 
