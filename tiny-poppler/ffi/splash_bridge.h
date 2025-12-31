@@ -1,10 +1,10 @@
 #ifndef TINY_POPPLER_SPLASH_BRIDGE_H
 #define TINY_POPPLER_SPLASH_BRIDGE_H
 
+#include <GfxState.h>
+#include <math.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <math.h>
-#include <GfxState.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -12,7 +12,8 @@ extern "C" {
 
 typedef struct ntsplash_renderer ntsplash_renderer_t;
 
-typedef enum ntsplash_color_mode {
+typedef enum ntsplash_color_mode
+{
     SPLASH_COLOR_MODE_MONO1 = 0,
     SPLASH_COLOR_MODE_MONO8 = 1,
     SPLASH_COLOR_MODE_RGB8 = 2,
@@ -22,7 +23,8 @@ typedef enum ntsplash_color_mode {
     SPLASH_COLOR_MODE_DEVICEN8 = 6,
 } ntsplash_color_mode_t;
 
-typedef enum ntsplash_image_colorspace {
+typedef enum ntsplash_image_colorspace
+{
     SPLASH_IMAGE_COLORSPACE_UNKNOWN = 0,
     SPLASH_IMAGE_COLORSPACE_DEVICE_GRAY = 1,
     SPLASH_IMAGE_COLORSPACE_DEVICE_RGB = 2,
@@ -35,7 +37,8 @@ typedef enum ntsplash_image_colorspace {
     SPLASH_IMAGE_COLORSPACE_DEVICEN = 9,
 } ntsplash_image_colorspace_t;
 
-typedef enum ntsplash_image_type {
+typedef enum ntsplash_image_type
+{
     SPLASH_IMAGE_TYPE_UNKNOWN = 0,
     SPLASH_IMAGE_TYPE_IMAGE = 1,
     SPLASH_IMAGE_TYPE_STENCIL = 2,
@@ -43,7 +46,8 @@ typedef enum ntsplash_image_type {
     SPLASH_IMAGE_TYPE_SOFT_MASK = 4,
 } ntsplash_image_type_t;
 
-typedef enum ntsplash_crop_mode {
+typedef enum ntsplash_crop_mode
+{
     SPLASH_CROP_MODE_MEDIA_BOX = 0,
     SPLASH_CROP_MODE_CROP_BOX = 1,
     // SPLASH_CROP_MODE_BLEED_BOX = 2,
@@ -51,7 +55,8 @@ typedef enum ntsplash_crop_mode {
     // SPLASH_CROP_MODE_ART_BOX = 4,
 } ntsplash_crop_mode_t;
 
-typedef enum ntsplash_zero_width_line_mode {
+typedef enum ntsplash_zero_width_line_mode
+{
     SPLASH_ZERO_WIDTH_LINE_DEFAULT = 0,  // use default behavior
     SPLASH_ZERO_WIDTH_LINE_HAIRLINE = 1, // draw zero-width lines as
     SPLASH_ZERO_WIDTH_LINE_NOTHING = 2   // do not draw zero-width lines
@@ -109,32 +114,23 @@ typedef struct ntsplash_version {
     uint32_t patch;
 } ntsplash_version_t;
 
-int ntsplash_renderer_create(const char *path,
-                             const char *owner_password,
-                             const char *user_password,
-                             ntsplash_renderer_t **out_renderer,
+int ntsplash_renderer_create(const char *path, const char *owner_password,
+                             const char *user_password, ntsplash_renderer_t **out_renderer,
                              char **error_out);
 void ntsplash_renderer_destroy(ntsplash_renderer_t *renderer);
 
-int ntsplash_renderer_page_count(ntsplash_renderer_t *renderer, uint32_t *out_count, char **error_out);
+int ntsplash_renderer_page_count(ntsplash_renderer_t *renderer, uint32_t *out_count,
+                                 char **error_out);
 
-int ntsplash_renderer_render_page(ntsplash_renderer_t *renderer,
-                                  uint32_t page_index,
-                                  double dpi,
-                                  ntsplash_color_mode_t color_mode,
-                                  ntsplash_crop_mode_t crop_mode,
+int ntsplash_renderer_render_page(ntsplash_renderer_t *renderer, uint32_t page_index, double dpi,
+                                  ntsplash_color_mode_t color_mode, ntsplash_crop_mode_t crop_mode,
                                   ntsplash_zero_width_line_mode_t zero_width_line_mode,
-                                  ntsplash_image_t *out_image,
-                                  char **error_out);
+                                  ntsplash_image_t *out_image, char **error_out);
 
 int ntsplash_renderer_collect_images(ntsplash_renderer_t *renderer,
-                                     ntsplash_image_info_t **out_images,
-                                     size_t *out_image_len,
-                                     ntsplash_page_info_t **out_pages,
-                                     size_t *out_page_len,
-                                     uint32_t page_start,
-                                     uint32_t page_end,
-                                     char **error_out);
+                                     ntsplash_image_info_t **out_images, size_t *out_image_len,
+                                     ntsplash_page_info_t **out_pages, size_t *out_page_len,
+                                     uint32_t page_start, uint32_t page_end, char **error_out);
 
 void ntsplash_renderer_free_image(ntsplash_image_t *image);
 void ntsplash_renderer_free_cstr(char *message);
@@ -161,8 +157,8 @@ bool ntgfxcs_get_separation_info(const void *cs_ptr, ntcolorspaces_separation_in
 
 typedef struct {
     uint32_t count;
-    const char **names;       // char*[count]
-    const void *alternate;    // child colorspace
+    const char **names;    // char*[count]
+    const void *alternate; // child colorspace
 } ntcolorspaces_devicen_info_t;
 
 bool ntgfxcs_get_devicen_info(const void *cs_ptr, ntcolorspaces_devicen_info_t *out);

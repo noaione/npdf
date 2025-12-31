@@ -36,13 +36,13 @@
 
 #include "poppler/poppler-config.h"
 
+#include "Object.h"
+#include "OutputDev.h"
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <vector>
-#include "OutputDev.h"
-#include "Object.h"
 
 class GfxState;
 
@@ -52,7 +52,7 @@ class GfxState;
 
 class NTImageOutputDev : public OutputDev
 {
-public:
+  public:
     enum NTImageType
     {
         imgImage,
@@ -71,13 +71,13 @@ public:
     };
     enum NTImageExtension
     {
-        extJpg, // JPEG
-        extJp2, // JPEG 2000
-        extJb2e, // JBIG2 embedded
+        extJpg,   // JPEG
+        extJp2,   // JPEG 2000
+        extJb2e,  // JBIG2 embedded
         extCcitt, // CCITT Group 4
-        extPng, // PNG
-        extTiff, // TIFF
-        extPnm, // PNM (PBM/PGM/PPM) - Use ppm if RGB, else pbm
+        extPng,   // PNG
+        extTiff,  // TIFF
+        extPnm,   // PNM (PBM/PGM/PPM) - Use ppm if RGB, else pbm
     };
 
     struct NTCcittParams {
@@ -113,12 +113,8 @@ public:
 
     // Create an extractor targeting a specific image reference. If matchRef is false,
     // the first image of the requested type will be captured.
-    NTImageOutputDev(NTImageOutput *outputBuffer,
-                   const Ref &targetRef,
-                   bool matchRef,
-                   NTImageType targetType,
-                   bool matchOccurrence,
-                   uint32_t occurrenceIndex);
+    NTImageOutputDev(NTImageOutput *outputBuffer, const Ref &targetRef, bool matchRef,
+                     NTImageType targetType, bool matchOccurrence, uint32_t occurrenceIndex);
 
     // Destructor.
     ~NTImageOutputDev() override;
@@ -139,12 +135,18 @@ public:
     void setDescribeOnly(bool describeOnlyA) { describeOnly = describeOnlyA; }
 
     // Get the error code
-    // 0 = No error, 1 = Error opening a PDF file, 2 = Error opening an output file, 3 = Error related to PDF permissions, 99 = Other error.
+    // 0 = No error, 1 = Error opening a PDF file, 2 = Error opening an output file, 3 = Error
+    // related to PDF permissions, 99 = Other error.
     int getErrorCode() const { return errorCode; }
     bool hasCaptured() const { return captured; }
 
     // Start a page
-    void startPage(int pageNumA, GfxState *state, XRef *xref) override { (void)pageNumA; (void)state; (void)xref; }
+    void startPage(int pageNumA, GfxState *state, XRef *xref) override
+    {
+        (void)pageNumA;
+        (void)state;
+        (void)xref;
+    }
 
     //---- get info about output device
 
@@ -156,69 +158,52 @@ public:
     bool useDrawChar() override { return false; }
 
     //----- path painting
-    bool tilingPatternFill(GfxState *state, Gfx *gfx, Catalog *cat, GfxTilingPattern *tPat, const std::array<double, 6> &mat, int x0, int y0, int x1, int y1, double xStep, double yStep) override;
+    bool tilingPatternFill(GfxState *state, Gfx *gfx, Catalog *cat, GfxTilingPattern *tPat,
+                           const std::array<double, 6> &mat, int x0, int y0, int x1, int y1,
+                           double xStep, double yStep) override;
 
     //----- image drawing
-    void drawImageMask(GfxState *state, Object *ref, Stream *str, int width, int height, bool invert, bool interpolate, bool inlineImg) override;
-    void drawImage(GfxState *state, Object *ref, Stream *str, int width, int height, GfxImageColorMap *colorMap, bool interpolate, const int *maskColors, bool inlineImg) override;
-    void drawMaskedImage(GfxState *state, Object *ref, Stream *str, int width, int height, GfxImageColorMap *colorMap, bool interpolate, Stream *maskStr, int maskWidth, int maskHeight, bool maskInvert, bool maskInterpolate) override;
-    void drawSoftMaskedImage(GfxState *state, Object *ref, Stream *str, int width, int height, GfxImageColorMap *colorMap, bool interpolate, Stream *maskStr, int maskWidth, int maskHeight, GfxImageColorMap *maskColorMap,
+    void drawImageMask(GfxState *state, Object *ref, Stream *str, int width, int height,
+                       bool invert, bool interpolate, bool inlineImg) override;
+    void drawImage(GfxState *state, Object *ref, Stream *str, int width, int height,
+                   GfxImageColorMap *colorMap, bool interpolate, const int *maskColors,
+                   bool inlineImg) override;
+    void drawMaskedImage(GfxState *state, Object *ref, Stream *str, int width, int height,
+                         GfxImageColorMap *colorMap, bool interpolate, Stream *maskStr,
+                         int maskWidth, int maskHeight, bool maskInvert,
+                         bool maskInterpolate) override;
+    void drawSoftMaskedImage(GfxState *state, Object *ref, Stream *str, int width, int height,
+                             GfxImageColorMap *colorMap, bool interpolate, Stream *maskStr,
+                             int maskWidth, int maskHeight, GfxImageColorMap *maskColorMap,
                              bool maskInterpolate) override;
 
-private:
-    void writeImage(GfxState *state,
-                    Object *ref,
-                    Stream *str,
-                    int width,
-                    int height,
-                    GfxImageColorMap *colorMap,
-                    bool inlineImg,
-                    NTImageType imageType);
-    void writeRawImage(Stream *str,
-                      NTImageExtension ext,
-                      NTImageType type,
-                      int width,
-                      int height,
-                      int components,
-                      int bitsPerComponent,
-                      double widthDPI,
-                      double heightDPI,
-                      const std::vector<uint8_t> *jbig2Globals,
-                      const NTCcittParams *ccittParams);
-    void writeImageFile(Stream *str,
-                        NTImageFormat format,
-                        NTImageExtension ext,
-                        NTImageType type,
-                        int width,
-                        int height,
-                        GfxImageColorMap *colorMap,
-                        double widthDPI,
+  private:
+    void writeImage(GfxState *state, Object *ref, Stream *str, int width, int height,
+                    GfxImageColorMap *colorMap, bool inlineImg, NTImageType imageType);
+    void writeRawImage(Stream *str, NTImageExtension ext, NTImageType type, int width, int height,
+                       int components, int bitsPerComponent, double widthDPI, double heightDPI,
+                       const std::vector<uint8_t> *jbig2Globals, const NTCcittParams *ccittParams);
+    void writeImageFile(Stream *str, NTImageFormat format, NTImageExtension ext, NTImageType type,
+                        int width, int height, GfxImageColorMap *colorMap, double widthDPI,
                         double heightDPI);
     long getInlineImageLength(Stream *str, int width, int height, GfxImageColorMap *colorMap);
     bool matchesTarget(Object *ref, bool inlineImg, NTImageType imageType) const;
-    void storeResult(const std::vector<uint8_t> &buffer,
-                     NTImageFormat format,
-                     NTImageExtension ext,
-                     NTImageType type,
-                     uint32_t width,
-                     uint32_t height,
-                     uint32_t stride,
-                     uint32_t components,
-                     uint32_t bitsPerComponent,
-                     double widthDPI,
-                     double heightDPI,
-                     const std::vector<uint8_t> *jbig2Globals,
+    void storeResult(const std::vector<uint8_t> &buffer, NTImageFormat format, NTImageExtension ext,
+                     NTImageType type, uint32_t width, uint32_t height, uint32_t stride,
+                     uint32_t components, uint32_t bitsPerComponent, double widthDPI,
+                     double heightDPI, const std::vector<uint8_t> *jbig2Globals,
                      const NTCcittParams *ccittParams);
 
-    Ref targetRef; // reference to match
-    bool matchByRef = true; // match by object reference
+    Ref targetRef;                  // reference to match
+    bool matchByRef = true;         // match by object reference
     bool matchByOccurrence = false; // capture nth occurrence of requested type
-    NTImageType requestedType; // requested image type when matching by occurrence
-    uint32_t targetOccurrence = 0; // specific occurrence index to capture when matching by occurrence
-    mutable uint32_t seenOccurrences = 0; // number of matched images observed so far
-    bool captured = false; // true once an image has been extracted
+    NTImageType requestedType;      // requested image type when matching by occurrence
+    uint32_t targetOccurrence =
+        0; // specific occurrence index to capture when matching by occurrence
+    mutable uint32_t seenOccurrences = 0;  // number of matched images observed so far
+    bool captured = false;                 // true once an image has been extracted
     NTImageOutput *outputBuffer = nullptr; // output buffer for images
-    int errorCode; // code for any error creating the output files
+    int errorCode;                         // code for any error creating the output files
     bool describeOnly = false;
 };
 

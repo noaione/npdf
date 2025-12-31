@@ -11,13 +11,15 @@ struct ntsplash_renderer {
 
 void ntsplash_set_error(char **error_out, const std::string &message)
 {
-    if (!error_out) {
+    if (!error_out)
+    {
         return;
     }
     *error_out = nullptr;
     const size_t len = message.size();
     char *buffer = static_cast<char *>(std::malloc(len + 1));
-    if (!buffer) {
+    if (!buffer)
+    {
         return;
     }
     std::memcpy(buffer, message.c_str(), len);
@@ -27,7 +29,8 @@ void ntsplash_set_error(char **error_out, const std::string &message)
 
 std::string ntsplash_stringify_error_code(int error_code)
 {
-    switch (error_code) {
+    switch (error_code)
+    {
     case errNone:
         return "ok";
     case errOpenFile:
