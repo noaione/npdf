@@ -34,3 +34,4 @@ ubsan = ["simple-jpegli-enc/ubsan"]
 cc.workspace = true
 cmake.workspace = true
 walkdir.workspace = true
+glob.workspace = true

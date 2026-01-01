@@ -117,11 +117,8 @@ impl Sanitizer {
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
-    println!("cargo:rerun-if-changed=ffi/splash_bridge.cc");
     println!("cargo:rerun-if-changed=ffi/splash_bridge.h");
-    println!("cargo:rerun-if-changed=ffi/exporter_bridge.cc");
     println!("cargo:rerun-if-changed=ffi/exporter_bridge.h");
-    println!("cargo:rerun-if-changed=ffi/image_exporter.cc");
     println!("cargo:rerun-if-changed=ffi/image_exporter.h");
     println!("cargo:rerun-if-changed=ffi/splash_renderer_internal.h");
 
@@ -312,13 +309,21 @@ fn compile_bridge(
         .split(',')
         .any(|f| f == "crt-static");
 
+    // Find all CC files to compile
+    let cc_files = glob::glob("ffi/*.cc")
+        .expect("Invalid pattern")
+        .filter_map(Result::ok)
+        .collect::<Vec<_>>();
+
+    for file in &cc_files {
+        println!("cargo:rerun-if-changed={}", file.display());
+    }
+
     let mut build = cc::Build::new();
     build
         .cpp(true)
         .debug(false)
-        .file(manifest_dir.join("ffi/splash_bridge.cc"))
-        .file(manifest_dir.join("ffi/exporter_bridge.cc"))
-        .file(manifest_dir.join("ffi/image_exporter.cc"))
+        .files(cc_files)
         .include(manifest_dir.join("ffi"))
         .include(&include_dir)
         .include(&include_dir_poppler)
