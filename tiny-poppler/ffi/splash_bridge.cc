@@ -26,10 +26,10 @@
 #define VERSION_MAJOR POPP
 
 namespace {
-constexpr int kTSplashBitmapRowPad = 4;
-constexpr bool kTSplashReverseVideo = false;
-constexpr bool kTSplashTopDownBitmap = true;
-constexpr SplashThinLineMode kTSplashThinLineMode = splashThinLineDefault;
+constexpr int kNTSplashBitmapRowPad = 4;
+constexpr bool kNTSplashReverseVideo = false;
+constexpr bool kNTSplashTopDownBitmap = true;
+constexpr SplashThinLineMode kNTSplashThinLineMode = splashThinLineDefault;
 
 // This flag handles the synchronization state
 static std::once_flag kTSplashInitFlag;
@@ -560,9 +560,8 @@ int ntsplash_renderer_page_count(ntsplash_renderer_t *renderer, uint32_t *out_co
     return errNone;
 }
 
-int ntsplash_renderer_render_page(ntsplash_renderer_t *renderer, uint32_t page_index, double dpi,
-                                  ntsplash_color_mode_t color_mode, ntsplash_crop_mode_t crop_mode,
-                                  ntsplash_zero_width_line_mode_t zero_width_line_mode,
+int ntsplash_renderer_render_page(ntsplash_renderer_t *renderer, uint32_t page_index,
+                                  const ntsplash_render_params_t *params,
                                   ntsplash_image_t *out_image, char **error_out)
 {
     if (!renderer || !out_image)
@@ -579,29 +578,47 @@ int ntsplash_renderer_render_page(ntsplash_renderer_t *renderer, uint32_t page_i
         return errBadPageNum;
     }
 
-    auto maybe_mode = ntsplash_upconvert_color_mode(color_mode);
+    if (!params)
+    {
+        ntsplash_set_error(error_out, "render parameters cannot be null");
+        return errInternal;
+    }
+
+    auto maybe_mode = ntsplash_upconvert_color_mode(params->color_mode);
     if (!maybe_mode)
     {
         ntsplash_set_error(error_out, "unsupported Splash color mode requested");
         return errInternal;
     }
 
-    auto maybe_zero_width_line_mode = ntsplash_upconvert_zwl_mode(zero_width_line_mode);
+    auto maybe_zero_width_line_mode = ntsplash_upconvert_zwl_mode(params->zero_width_line_mode);
     if (!maybe_zero_width_line_mode)
     {
         ntsplash_set_error(error_out, "unsupported Splash zero-width line mode requested");
         return errInternal;
     }
 
+    if (!params->dpi || params->dpi <= 0.0)
+    {
+        ntsplash_set_error(error_out, "DPI must be a positive number");
+        return errInternal;
+    }
+
+    if (!params->crop_mode)
+    {
+        ntsplash_set_error(error_out, "invalid crop mode specified");
+        return errInternal;
+    }
+
     Page *page = renderer->doc->getPage(page_number); // Preload page to set up crop boxes, etc.
 
-    const double clamped_dpi = dpi > 0.0 ? dpi : 72.0;
-    bool use_media_box = crop_mode == NTSPLASH_CROP_MODE_MEDIA_BOX;
+    const double clamped_dpi = params->dpi > 0.0 ? params->dpi : 72.0;
+    bool use_media_box = params->crop_mode == NTSPLASH_CROP_MODE_MEDIA_BOX;
 
     const SplashColorMode requested_mode = *maybe_mode;
     const SplashZeroWidthLineMode requested_zero_width_line_mode = *maybe_zero_width_line_mode;
     const bool enable_overprint =
-        color_mode == NTSPLASH_COLOR_MODE_CMYK8 || color_mode == NTSPLASH_COLOR_MODE_DEVICEN8;
+        requested_mode == splashModeCMYK8 || requested_mode == splashModeDeviceN8;
 
     SplashColor paper_color;
     if (enable_overprint)
@@ -616,8 +633,8 @@ int ntsplash_renderer_render_page(ntsplash_renderer_t *renderer, uint32_t page_i
         // paper_color[3] = 255;
     }
 
-    SplashOutputDev output_dev(requested_mode, kTSplashBitmapRowPad, kTSplashReverseVideo,
-                               paper_color, kTSplashTopDownBitmap, kTSplashThinLineMode,
+    SplashOutputDev output_dev(requested_mode, kNTSplashBitmapRowPad, kNTSplashReverseVideo,
+                               paper_color, kNTSplashTopDownBitmap, kNTSplashThinLineMode,
                                enable_overprint);
     output_dev.setVectorAntialias(true);
     output_dev.setFontAntialias(true);

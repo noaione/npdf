@@ -244,6 +244,14 @@ struct VersionInfo {
     patch: u32,
 }
 
+#[repr(C)]
+struct ImageRenderParams {
+    dpi: c_double,
+    color_mode: ColorMode,
+    crop_mode: PdfCropMode,
+    zero_width_line_mode: ZeroWidthLineMode,
+}
+
 unsafe extern "C" {
     fn ntsplash_renderer_create(
         path: *const c_char,
@@ -261,10 +269,7 @@ unsafe extern "C" {
     fn ntsplash_renderer_render_page(
         renderer: *mut SplashRenderer,
         page_index: c_uint,
-        dpi: c_double,
-        color_mode: ColorMode,
-        crop_mode: PdfCropMode,
-        zero_width_line_mode: ZeroWidthLineMode,
+        params: *const ImageRenderParams,
         out_image: *mut SplashImage,
         error_out: *mut *mut c_char,
     ) -> i32;
@@ -467,18 +472,15 @@ impl Renderer {
             color_mode: ColorMode::Rgb8,
             bits_per_component: 0,
         };
+        let params = ImageRenderParams {
+            dpi,
+            color_mode,
+            crop_mode,
+            zero_width_line_mode,
+        };
         let mut error = ptr::null_mut();
         let status = unsafe {
-            ntsplash_renderer_render_page(
-                self.raw,
-                page_index,
-                dpi,
-                color_mode,
-                crop_mode,
-                zero_width_line_mode,
-                &mut image,
-                &mut error,
-            )
+            ntsplash_renderer_render_page(self.raw, page_index, &params, &mut image, &mut error)
         };
         if status != 0 {
             return Err(take_error(error));

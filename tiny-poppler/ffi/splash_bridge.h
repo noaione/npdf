@@ -114,6 +114,13 @@ typedef struct ntsplash_version {
     uint32_t patch;
 } ntsplash_version_t;
 
+typedef struct ntsplash_render_params {
+    double dpi;
+    ntsplash_color_mode_t color_mode;
+    ntsplash_crop_mode_t crop_mode;
+    ntsplash_zero_width_line_mode_t zero_width_line_mode;
+} ntsplash_render_params_t;
+
 int ntsplash_renderer_create(const char *path, const char *owner_password,
                              const char *user_password, ntsplash_renderer_t **out_renderer,
                              char **error_out);
@@ -122,9 +129,8 @@ void ntsplash_renderer_destroy(ntsplash_renderer_t *renderer);
 int ntsplash_renderer_page_count(ntsplash_renderer_t *renderer, uint32_t *out_count,
                                  char **error_out);
 
-int ntsplash_renderer_render_page(ntsplash_renderer_t *renderer, uint32_t page_index, double dpi,
-                                  ntsplash_color_mode_t color_mode, ntsplash_crop_mode_t crop_mode,
-                                  ntsplash_zero_width_line_mode_t zero_width_line_mode,
+int ntsplash_renderer_render_page(ntsplash_renderer_t *renderer, uint32_t page_index,
+                                  const ntsplash_render_params_t *params,
                                   ntsplash_image_t *out_image, char **error_out);
 
 int ntsplash_renderer_collect_images(ntsplash_renderer_t *renderer,

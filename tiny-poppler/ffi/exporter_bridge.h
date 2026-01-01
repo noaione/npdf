@@ -87,8 +87,9 @@ typedef struct nt_image_export_image {
 } nt_image_export_image_t;
 
 int ntsplash_exporer_extract_page(
-    ntsplash_renderer_t *renderer, const nt_image_export_params_t *params,
-    nt_image_export_image_t *out_image,
+    ntsplash_renderer_t *renderer,          // renderer from internal
+    const nt_image_export_params_t *params, // export parameters
+    nt_image_export_image_t *out_image,     // output image buffer
     bool describe_only, // This parameter would not actually "extract" anything when true, this will
                         // keep the buffer empty
     char **error_out);
