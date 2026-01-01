@@ -13,12 +13,12 @@ void ntsplash_set_error(char **error_out, const std::string &message)
     }
     *error_out = nullptr;
     const size_t len = message.size();
-    char *buffer = static_cast<char *>(malloc(len + 1));
+    char *buffer = static_cast<char *>(std::malloc(len + 1));
     if (!buffer)
     {
         return;
     }
-    memcpy(buffer, message.c_str(), len);
+    std::memcpy(buffer, message.c_str(), len);
     buffer[len] = '\0';
     *error_out = buffer;
 }
