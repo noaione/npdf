@@ -1,6 +1,7 @@
 #include "splash_renderer_internal.h"
 
 #include <cstdlib>
+#include <cstring>
 #include <memory>
 #include <string>
 
