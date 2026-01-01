@@ -50,6 +50,11 @@ jobs:
           # # Windows 11 ARM (ARM64)
           # - [windows-11-arm, aarch64-pc-windows-msvc]
 
+    permissions:
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+
     env:
       CARGO_TERM_COLOR: always
 
@@ -168,9 +173,16 @@ jobs:
           MATRIX_NAME: ${{ matrix.os[1] }}
 
       - name: Upload artifact
+        id: upload
         uses: actions/upload-artifact@v5
         with:
           name: npdf-${{ matrix.os[1] }}
           path: |
             npdf-${{ matrix.os[1] }}.zip
             npdf-${{ matrix.os[1] }}.tar.gz
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-name: npdf-${{ matrix.os[1] }}
+          subject-digest: sha256:${{ steps.upload.outputs.artifact-digest }}
