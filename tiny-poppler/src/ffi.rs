@@ -110,6 +110,7 @@ struct SplashPageInfo {
     is_pdf_a_compatible: u8,
     cropbox: [f64; 4],
     mediabox: [f64; 4],
+    color_space_handle: *const c_void,
 }
 
 /// Colorspace related
@@ -747,7 +748,7 @@ pub struct ImageExportRequest {
     pub describe_only: bool,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct PageInfo {
     pub page: u32,
     pub image_count: u32,
@@ -755,6 +756,7 @@ pub struct PageInfo {
     pub is_pdf_a_compatible: bool,
     pub mediabox: Option<PdfRect>,
     pub cropbox: Option<PdfRect>,
+    pub colorspace: Option<PdfImageColorSpace>,
 }
 
 impl PartialEq for PageInfo {
@@ -981,6 +983,12 @@ impl From<SplashPageInfo> for PageInfo {
             None
         };
 
+        let colorspace = if !value.color_space_handle.is_null() {
+            Some(convert_colorspace(value.color_space_handle))
+        } else {
+            None
+        };
+
         Self {
             page: value.page_number,
             image_count: value.image_count,
@@ -988,6 +996,7 @@ impl From<SplashPageInfo> for PageInfo {
             is_pdf_a_compatible: value.is_pdf_a_compatible == 1,
             mediabox,
             cropbox,
+            colorspace,
         }
     }
 }

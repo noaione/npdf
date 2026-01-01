@@ -106,6 +106,8 @@ typedef struct ntsplash_page_info {
     // If all 0's, then not set
     double cropbox[4];
     double mediabox[4];
+
+    const void *cs_handle; // opaque pointer to GfxColorSpace*
 } ntsplash_page_info_t;
 
 typedef struct ntsplash_version {

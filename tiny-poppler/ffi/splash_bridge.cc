@@ -193,6 +193,8 @@ struct NTSplashCollectedPage {
     // If all 0's, then not set
     double cropbox[4] = {0.0, 0.0, 0.0, 0.0};
     double mediabox[4] = {0.0, 0.0, 0.0, 0.0};
+
+    const void *cs_handle = nullptr;
 };
 
 const void *ntsplash_copy_color_space(const GfxColorSpace *space)
@@ -217,9 +219,10 @@ class NTSplashImageCollector final : public OutputDev
     bool useDrawChar() override { return false; }
     bool interpretType3Chars() override { return false; }
 
-    void reset_for_page(uint32_t page_number)
+    void reset_for_page(Page *page, uint32_t page_number)
     {
-        current_page_ = page_number;
+
+        cur_page_idx = page_number;
         total_objects_ = 0;          // reset object count for new page
         is_pdf_a_compatible_ = true; // we start assuming true for each page
     }
@@ -250,6 +253,7 @@ class NTSplashImageCollector final : public OutputDev
         (void)inlineImg;
         total_objects_++;
         add_mask(width, height, ref, state);
+        is_pdf_a_compatible_ = false; // stencil is technically not allowed
     }
 
     void drawMaskedImage(GfxState *state, Object *ref, Stream *str, int width, int height,
@@ -268,6 +272,8 @@ class NTSplashImageCollector final : public OutputDev
         total_objects_++;
         add_image(width, height, color_map, ref, state, NTSPLASH_IMAGE_TYPE_IMAGE);
         add_image(maskWidth, maskHeight, nullptr, ref, state, NTSPLASH_IMAGE_TYPE_MASK);
+        is_pdf_a_compatible_ =
+            false; // since a masked image was drawn, this page cannot be PDF/A compliant
     }
 
     void drawSoftMaskedImage(GfxState *state, Object *ref, Stream *str, int width, int height,
@@ -363,6 +369,32 @@ class NTSplashImageCollector final : public OutputDev
             false; // since a PostScript XObject was drawn, this page cannot be PDF/A compliant
     }
 
+    // Extract page colorspace information
+    std::unique_ptr<GfxColorSpace> extractPageColorspaces()
+    {
+        if (!cur_page)
+        {
+            return nullptr;
+        }
+
+        Dict *res_dict = cur_page->getResourceDict();
+        if (!res_dict)
+        {
+            return nullptr;
+        }
+
+        Object cs_obj = res_dict->lookup("ColorSpace");
+        if (cs_obj.isNull())
+        {
+            return nullptr;
+        }
+
+        std::unique_ptr<GfxColorSpace> color_space =
+            GfxColorSpace::parse(nullptr, &cs_obj, this, nullptr);
+
+        return color_space;
+    }
+
   private:
     void add_image(int width, int height, GfxImageColorMap *color_map, Object *ref, GfxState *state,
                    ntsplash_image_type_t image_type)
@@ -373,7 +405,7 @@ class NTSplashImageCollector final : public OutputDev
         }
 
         NTSplashCollectedImage info;
-        info.page_number = current_page_;
+        info.page_number = cur_page_idx;
         if (width > 0)
         {
             info.width = static_cast<uint32_t>(width);
@@ -431,7 +463,7 @@ class NTSplashImageCollector final : public OutputDev
         }
 
         NTSplashCollectedImage info;
-        info.page_number = current_page_;
+        info.page_number = cur_page_idx;
         info.image_type = NTSPLASH_IMAGE_TYPE_STENCIL;
         if (width > 0)
         {
@@ -483,7 +515,8 @@ class NTSplashImageCollector final : public OutputDev
     }
 
     std::vector<NTSplashCollectedImage> *images_ = nullptr;
-    uint32_t current_page_ = 0;
+    Page *cur_page = nullptr;
+    uint32_t cur_page_idx = 0;
     uint64_t total_objects_ = 0;
     bool is_pdf_a_compatible_ = false;
 };
@@ -706,9 +739,9 @@ int ntsplash_renderer_collect_images(ntsplash_renderer_t *renderer,
 
     for (uint32_t page_number = start_page; page_number <= end_page; ++page_number)
     {
-        collector.reset_for_page(page_number);
         const size_t before = collected.size();
         Page *page = renderer->doc->getPage(static_cast<int>(page_number));
+        collector.reset_for_page(page, page_number);
         page->display(&collector, 72.0, 72.0, 0, true, true, false);
         const size_t after = collected.size();
 
@@ -720,6 +753,11 @@ int ntsplash_renderer_collect_images(ntsplash_renderer_t *renderer,
         summary.image_count = static_cast<uint32_t>(after - before);
         summary.object_count = collector.get_total_objects();
         summary.is_pdf_a_compatible = collector.is_pdf_a_compatible() ? 1 : 0;
+        std::unique_ptr<GfxColorSpace> page_colorspace = collector.extractPageColorspaces();
+        if (!page_colorspace)
+        {
+            summary.cs_handle = ntsplash_copy_color_space(page_colorspace.get());
+        }
 
         if (cropbox)
         {
@@ -821,6 +859,7 @@ int ntsplash_renderer_collect_images(ntsplash_renderer_t *renderer,
             page_buffer[i].image_count = page_summaries[i].image_count;
             page_buffer[i].object_count = page_summaries[i].object_count;
             page_buffer[i].is_pdf_a_compatible = page_summaries[i].is_pdf_a_compatible ? 1 : 0;
+            page_buffer[i].cs_handle = page_summaries[i].cs_handle;
 
             for (int j = 0; j < 4; ++j)
             {
