@@ -193,6 +193,9 @@ struct NTSplashCollectedPage {
     // If all 0's, then not set
     double cropbox[4] = {0.0, 0.0, 0.0, 0.0};
     double mediabox[4] = {0.0, 0.0, 0.0, 0.0};
+
+    ntsplash_page_colorspace_entry_t *colorspaces = nullptr;
+    uint32_t colorspace_count = 0;
 };
 
 const void *ntsplash_copy_color_space(const GfxColorSpace *space)
@@ -208,7 +211,7 @@ const void *ntsplash_copy_color_space(const GfxColorSpace *space)
 
 class NTSplashImageCollector final : public OutputDev
 {
-  public:
+public:
     explicit NTSplashImageCollector(std::vector<NTSplashCollectedImage> *images) : images_(images)
     {
     }
@@ -217,9 +220,10 @@ class NTSplashImageCollector final : public OutputDev
     bool useDrawChar() override { return false; }
     bool interpretType3Chars() override { return false; }
 
-    void reset_for_page(uint32_t page_number)
+    void reset_for_page(Page *page, uint32_t page_number)
     {
-        current_page_ = page_number;
+        cur_page = page;
+        cur_page_idx = page_number;
         total_objects_ = 0;          // reset object count for new page
         is_pdf_a_compatible_ = true; // we start assuming true for each page
     }
@@ -250,6 +254,7 @@ class NTSplashImageCollector final : public OutputDev
         (void)inlineImg;
         total_objects_++;
         add_mask(width, height, ref, state);
+        is_pdf_a_compatible_ = false; // stencil is technically not allowed
     }
 
     void drawMaskedImage(GfxState *state, Object *ref, Stream *str, int width, int height,
@@ -268,6 +273,8 @@ class NTSplashImageCollector final : public OutputDev
         total_objects_++;
         add_image(width, height, color_map, ref, state, NTSPLASH_IMAGE_TYPE_IMAGE);
         add_image(maskWidth, maskHeight, nullptr, ref, state, NTSPLASH_IMAGE_TYPE_MASK);
+        is_pdf_a_compatible_ =
+            false; // since a masked image was drawn, this page cannot be PDF/A compliant
     }
 
     void drawSoftMaskedImage(GfxState *state, Object *ref, Stream *str, int width, int height,
@@ -363,7 +370,62 @@ class NTSplashImageCollector final : public OutputDev
             false; // since a PostScript XObject was drawn, this page cannot be PDF/A compliant
     }
 
-  private:
+    // Extract page colorspace dictionary (/Resources/ColorSpace).
+    //
+    // Returns a list of (resource name -> parsed colorspace).
+    std::vector<std::pair<std::string, std::unique_ptr<GfxColorSpace>>> extractPageColorspaces()
+    {
+        std::vector<std::pair<std::string, std::unique_ptr<GfxColorSpace>>> result;
+
+        if (!cur_page)
+        {
+            return result;
+        }
+
+        Dict *res_dict = cur_page->getResourceDict();
+        if (!res_dict)
+        {
+            return result;
+        }
+
+        Object cs_obj = res_dict->lookup("ColorSpace");
+        if (!cs_obj.isDict())
+        {
+            return result;
+        }
+
+        // get the colorspace dictionary
+        Dict *cs_dict = cs_obj.getDict();
+
+        // make dummy state for parsing
+        const PDFRectangle *rect = cur_page->getMediaBox();
+        std::unique_ptr<GfxState> state(new GfxState(72.0, 72.0, rect, 0, this->upsideDown()));
+
+        for (int i = 0; i < cs_dict->getLength(); ++i)
+        {
+            const char *cs_name = cs_dict->getKey(i);
+            // get value for the key
+            Object cs_value = cs_dict->getVal(i);
+            if (cs_value.isNull())
+            {
+                continue;
+            }
+
+            std::unique_ptr<GfxColorSpace> color_space =
+                GfxColorSpace::parse(nullptr, &cs_value, this, state.get());
+            if (!color_space)
+            {
+                continue;
+            }
+
+            result.emplace_back(cs_name ? std::string(cs_name) : std::string(),
+                                std::move(color_space));
+        }
+
+        return result;
+    }
+
+private:
     void add_image(int width, int height, GfxImageColorMap *color_map, Object *ref, GfxState *state,
                    ntsplash_image_type_t image_type)
     {
@@ -373,7 +435,7 @@ class NTSplashImageCollector final : public OutputDev
         }
 
         NTSplashCollectedImage info;
-        info.page_number = current_page_;
+        info.page_number = cur_page_idx;
         if (width > 0)
         {
             info.width = static_cast<uint32_t>(width);
@@ -431,7 +493,7 @@ class NTSplashImageCollector final : public OutputDev
         }
 
         NTSplashCollectedImage info;
-        info.page_number = current_page_;
+        info.page_number = cur_page_idx;
         info.image_type = NTSPLASH_IMAGE_TYPE_STENCIL;
         if (width > 0)
         {
@@ -483,7 +545,8 @@ class NTSplashImageCollector final : public OutputDev
     }
 
     std::vector<NTSplashCollectedImage> *images_ = nullptr;
-    uint32_t current_page_ = 0;
+    Page *cur_page = nullptr;
+    uint32_t cur_page_idx = 0;
     uint64_t total_objects_ = 0;
     bool is_pdf_a_compatible_ = false;
 };
@@ -706,9 +769,9 @@ int ntsplash_renderer_collect_images(ntsplash_renderer_t *renderer,
 
     for (uint32_t page_number = start_page; page_number <= end_page; ++page_number)
     {
-        collector.reset_for_page(page_number);
         const size_t before = collected.size();
         Page *page = renderer->doc->getPage(static_cast<int>(page_number));
+        collector.reset_for_page(page, page_number);
         page->display(&collector, 72.0, 72.0, 0, true, true, false);
         const size_t after = collected.size();
 
@@ -719,7 +782,73 @@ int ntsplash_renderer_collect_images(ntsplash_renderer_t *renderer,
         summary.page_number = page_number;
         summary.image_count = static_cast<uint32_t>(after - before);
         summary.object_count = collector.get_total_objects();
-        summary.is_pdf_a_compatible = collector.is_pdf_a_compatible() ? 1 : 0;
+        summary.is_pdf_a_compatible = collector.is_pdf_a_compatible();
+
+        // Collect page /Resources/ColorSpace dictionary into owned entries.
+        auto page_colorspaces = collector.extractPageColorspaces();
+        if (!page_colorspaces.empty())
+        {
+            const size_t allocation_count = page_colorspaces.size();
+            const size_t header_size = sizeof(size_t);
+            const size_t payload_size = allocation_count * sizeof(ntsplash_page_colorspace_entry_t);
+            void *raw = std::malloc(header_size + payload_size);
+            if (!raw)
+            {
+                // Cleanup any previously allocated page colorspaces.
+                for (auto &existing : page_summaries)
+                {
+                    if (existing.colorspaces)
+                    {
+                        ntsplash_renderer_free_page_colorspaces(existing.colorspaces);
+                        existing.colorspaces = nullptr;
+                        existing.colorspace_count = 0;
+                    }
+                }
+                ntsplash_set_error(error_out, "unable to allocate colorspace dictionary buffer");
+                return errInternal;
+            }
+
+            auto *header = static_cast<size_t *>(raw);
+            *header = allocation_count;
+            auto *entries = reinterpret_cast<ntsplash_page_colorspace_entry_t *>(header + 1);
+            for (size_t i = 0; i < allocation_count; ++i)
+            {
+                entries[i].name = nullptr;
+                entries[i].color_space_handle = nullptr;
+            }
+
+            bool ok = true;
+            for (size_t i = 0; i < allocation_count; ++i)
+            {
+                entries[i].name = strdup(page_colorspaces[i].first.c_str());
+                entries[i].color_space_handle =
+                    static_cast<const void *>(page_colorspaces[i].second.release());
+                if (!entries[i].name || !entries[i].color_space_handle)
+                {
+                    ok = false;
+                    break;
+                }
+            }
+
+            if (!ok)
+            {
+                ntsplash_renderer_free_page_colorspaces(entries);
+                for (auto &existing : page_summaries)
+                {
+                    if (existing.colorspaces)
+                    {
+                        ntsplash_renderer_free_page_colorspaces(existing.colorspaces);
+                        existing.colorspaces = nullptr;
+                        existing.colorspace_count = 0;
+                    }
+                }
+                ntsplash_set_error(error_out, "unable to allocate colorspace dictionary entry");
+                return errInternal;
+            }
+
+            summary.colorspaces = entries;
+            summary.colorspace_count = static_cast<uint32_t>(allocation_count);
+        }
 
         if (cropbox)
         {
@@ -796,6 +925,15 @@ int ntsplash_renderer_collect_images(ntsplash_renderer_t *renderer,
             {
                 ntsplash_renderer_free_image_info(image_buffer);
             }
+            for (auto &existing : page_summaries)
+            {
+                if (existing.colorspaces)
+                {
+                    ntsplash_renderer_free_page_colorspaces(existing.colorspaces);
+                    existing.colorspaces = nullptr;
+                    existing.colorspace_count = 0;
+                }
+            }
             ntsplash_set_error(error_out, "unable to allocate page metadata buffer");
             return errInternal;
         }
@@ -811,6 +949,15 @@ int ntsplash_renderer_collect_images(ntsplash_renderer_t *renderer,
             {
                 ntsplash_renderer_free_image_info(image_buffer);
             }
+            for (auto &existing : page_summaries)
+            {
+                if (existing.colorspaces)
+                {
+                    ntsplash_renderer_free_page_colorspaces(existing.colorspaces);
+                    existing.colorspaces = nullptr;
+                    existing.colorspace_count = 0;
+                }
+            }
             ntsplash_set_error(error_out, "unable to allocate page metadata buffer");
             return errInternal;
         }
@@ -821,6 +968,8 @@ int ntsplash_renderer_collect_images(ntsplash_renderer_t *renderer,
             page_buffer[i].image_count = page_summaries[i].image_count;
             page_buffer[i].object_count = page_summaries[i].object_count;
             page_buffer[i].is_pdf_a_compatible = page_summaries[i].is_pdf_a_compatible ? 1 : 0;
+            page_buffer[i].colorspaces = page_summaries[i].colorspaces;
+            page_buffer[i].colorspace_count = page_summaries[i].colorspace_count;
 
             for (int j = 0; j < 4; ++j)
             {
@@ -893,6 +1042,48 @@ void ntsplash_renderer_free_page_info(ntsplash_page_info_t *pages)
     }
 
     auto *header = reinterpret_cast<size_t *>(pages) - 1;
+    const size_t len = *header;
+
+    for (size_t i = 0; i < len; ++i)
+    {
+        if (pages[i].colorspaces)
+        {
+            ntsplash_renderer_free_page_colorspaces(
+                const_cast<ntsplash_page_colorspace_entry_t *>(pages[i].colorspaces));
+            pages[i].colorspaces = nullptr;
+            pages[i].colorspace_count = 0;
+        }
+    }
+
+    std::free(header);
+}
+
+void ntsplash_renderer_free_page_colorspaces(ntsplash_page_colorspace_entry_t *entries)
+{
+    if (!entries)
+    {
+        return;
+    }
+
+    auto *header = reinterpret_cast<size_t *>(entries) - 1;
+    const size_t len = *header;
+
+    for (size_t i = 0; i < len; ++i)
+    {
+        if (entries[i].name)
+        {
+            std::free(const_cast<char *>(entries[i].name));
+            entries[i].name = nullptr;
+        }
+        if (entries[i].color_space_handle)
+        {
+            auto *space =
+                static_cast<GfxColorSpace *>(const_cast<void *>(entries[i].color_space_handle));
+            delete space;
+            entries[i].color_space_handle = nullptr;
+        }
+    }
+
     std::free(header);
 }
 

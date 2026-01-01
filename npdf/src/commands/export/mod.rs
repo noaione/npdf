@@ -271,9 +271,9 @@ fn pair_page_images(pages: &[PageInfo], images: &[ImageInfo]) -> PagePairings {
     let mut paired: PagePairings = PagePairings::new();
     for page in pages {
         if let Some(images) = image_map.get(&page.page) {
-            paired.insert(*page, images.clone());
+            paired.insert(page.clone(), images.clone());
         } else {
-            paired.insert(*page, Vec::new());
+            paired.insert(page.clone(), Vec::new());
         }
     }
 

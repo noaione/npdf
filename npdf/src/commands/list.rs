@@ -1,5 +1,5 @@
 use clap::Args;
-use color_print::cprintln;
+use color_print::{cformat, cprintln};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use tiny_poppler::{Document, ImageInfo, ImageType, PdfImageColorSpace, PdfPasswords};
@@ -8,6 +8,9 @@ use tiny_poppler::{Document, ImageInfo, ImageType, PdfImageColorSpace, PdfPasswo
 pub struct ListArgs {
     /// Path to the PDF file to inspect.
     pub pdf: PathBuf,
+    /// Dump page info too
+    #[clap(short, long)]
+    pub page_info: bool,
 }
 
 pub fn run(args: ListArgs, passwords: Option<&PdfPasswords>) -> Result<(), String> {
@@ -19,6 +22,7 @@ pub fn run(args: ListArgs, passwords: Option<&PdfPasswords>) -> Result<(), Strin
         Document::open_with_passwords(&args.pdf, passwords).map_err(|err| err.to_string())?;
     let page_count = document.page_count().map_err(|err| err.to_string())?;
     let images = document.images().map_err(|err| err.to_string())?;
+    let pages_infos = document.page_info().map_err(|err| err.to_string())?;
 
     cprintln!("<magenta,bold>PDF</>: {}", args.pdf.display());
     cprintln!("<magenta,bold>Pages</>: {page_count}");
@@ -96,6 +100,79 @@ pub fn run(args: ListArgs, passwords: Option<&PdfPasswords>) -> Result<(), Strin
                 page = page_cell,
                 note = "(no embedded images)"
             );
+        }
+    }
+
+    // Dump page info
+    if args.page_info {
+        cprintln!("\n<magenta,bold>Page Info</>:\n");
+
+        let (max_mediabox_len, max_cropbox_len) = test_longest_rectbox(&pages_infos);
+
+        let header = format!(
+            "  {page:>6} ┆ {idx:>4} ┆ {img_count:>7} ┆ {obj_count:>8} ┆ {mediabox}{mb_space} ┆ {cropbox}{cb_space} ┆ {color:<20}",
+            page = "Page",
+            idx = "#",
+            img_count = "Image #",
+            obj_count = "Object #",
+            mediabox = "MediaBox",
+            mb_space = " ".repeat(max_mediabox_len.saturating_sub(8) as usize),
+            cb_space = " ".repeat(max_cropbox_len.saturating_sub(7) as usize),
+            cropbox = "CropBox",
+            color = "Colorspace",
+        );
+        println!("{header}");
+        println!("  {}", "-".repeat(header.len().saturating_sub(2)));
+
+        for page_info in &pages_infos {
+            // Since colorspace can be multiple entries, we just need to repeat the row for each colorspace
+            // If no colorspace, just print one row with "None"
+            let mb_info = describe_rectbox(&page_info.mediabox);
+            let cb_info = describe_rectbox(&page_info.cropbox);
+            let mb_space =
+                " ".repeat(max_mediabox_len.saturating_sub(mb_info.len() as u32) as usize);
+            let cb_space =
+                " ".repeat(max_cropbox_len.saturating_sub(cb_info.len() as u32) as usize);
+
+            if page_info.colorspaces.is_empty() {
+                cprintln!(
+                    "  <bold><cyan>{page}</cyan></bold> ┆ {idx:>4} ┆ {img_count:>7} ┆ {obj_count:>8} ┆ {mediabox}{mb_space} ┆ {cropbox}{cb_space} ┆ {color:<20}",
+                    page = format!("{:>6}", page_info.page),
+                    idx = 1,
+                    img_count = page_info.image_count,
+                    obj_count = page_info.object_count,
+                    mediabox = &mb_info,
+                    mb_space = &mb_space,
+                    cropbox = &cb_info,
+                    cb_space = &cb_space,
+                    color = "None",
+                );
+            } else {
+                for (idx, (name, space)) in page_info.colorspaces.iter().enumerate() {
+                    let color = cformat!("<y,s>{}</y,s>: {}", name, describe_colorspace(space));
+                    if idx == 0 {
+                        cprintln!(
+                            "  <bold><cyan>{page}</cyan></bold> ┆ {idx:>4} ┆ {img_count:>7} ┆ {obj_count:>8} ┆ {mediabox}{mb_space} ┆ {cropbox}{cb_space} ┆ {color:<20}",
+                            page = format!("{:>6}", page_info.page),
+                            idx = idx + 1,
+                            img_count = page_info.image_count,
+                            obj_count = page_info.object_count,
+                            mediabox = &mb_info,
+                            mb_space = &mb_space,
+                            cropbox = &cb_info,
+                            cb_space = &cb_space,
+                            color = color,
+                        );
+                    } else {
+                        println!(
+                            "  {page:>6} ┆ {idx:>4} ┆ {color:<20}",
+                            page = format!("{:>6}", page_info.page),
+                            idx = idx + 1,
+                            color = color,
+                        );
+                    }
+                }
+            }
         }
     }
 
@@ -182,4 +259,32 @@ fn fmt_dpi(num: f64) -> String {
         }
         formatted_str
     }
+}
+
+fn describe_rectbox(box_opt: &Option<tiny_poppler::PdfRect>) -> String {
+    match box_opt {
+        Some(rect) => format!(
+            "[{:.2}, {:.2}, {:.2}, {:.2}]",
+            rect.x1, rect.x2, rect.y1, rect.y2
+        ),
+        None => "None".to_string(),
+    }
+}
+
+fn test_longest_rectbox(boxes: &[tiny_poppler::PageInfo]) -> (u32, u32) {
+    let mut max_mediabox = 20u32;
+    let mut max_cropbox = 20u32;
+
+    for page in boxes {
+        let mb_desc = describe_rectbox(&page.mediabox);
+        if mb_desc.len() as u32 > max_mediabox {
+            max_mediabox = mb_desc.len() as u32;
+        }
+        let cb_desc = describe_rectbox(&page.cropbox);
+        if cb_desc.len() as u32 > max_cropbox {
+            max_cropbox = cb_desc.len() as u32;
+        }
+    }
+
+    (max_mediabox, max_cropbox)
 }
