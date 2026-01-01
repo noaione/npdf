@@ -52,7 +52,7 @@ class GfxState;
 
 class NTImageOutputDev : public OutputDev
 {
-  public:
+public:
     enum NTImageType
     {
         ntImgImage,
@@ -177,7 +177,7 @@ class NTImageOutputDev : public OutputDev
                              int maskWidth, int maskHeight, GfxImageColorMap *maskColorMap,
                              bool maskInterpolate) override;
 
-  private:
+private:
     void writeImage(GfxState *state, Object *ref, Stream *str, int width, int height,
                     GfxImageColorMap *colorMap, bool inlineImg, NTImageType imageType);
     void writeRawImage(Stream *str, NTImageExtension ext, NTImageType type, int width, int height,

@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::ffi::{CStr, CString, c_void};
 use std::mem::MaybeUninit;
 use std::os::raw::{c_char, c_double, c_uint};
@@ -26,9 +27,8 @@ pub enum ColorMode {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug)]
-#[expect(dead_code)]
-enum ImageColorSpace {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ImageColorSpace {
     Unknown = 0,
     DeviceGray = 1,
     DeviceRgb = 2,
@@ -110,6 +110,14 @@ struct SplashPageInfo {
     is_pdf_a_compatible: u8,
     cropbox: [f64; 4],
     mediabox: [f64; 4],
+    colorspaces: *const SplashPageColorspaceEntry,
+    colorspace_count: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+struct SplashPageColorspaceEntry {
+    name: *const c_char,
     color_space_handle: *const c_void,
 }
 
@@ -288,6 +296,7 @@ unsafe extern "C" {
     ) -> i32;
     fn ntsplash_renderer_free_image_info(images: *mut SplashImageInfo);
     fn ntsplash_renderer_free_page_info(pages: *mut SplashPageInfo);
+
     fn ntsplash_get_version(out_version: *mut VersionInfo);
 
     /// Colorspace related
@@ -756,7 +765,7 @@ pub struct PageInfo {
     pub is_pdf_a_compatible: bool,
     pub mediabox: Option<PdfRect>,
     pub cropbox: Option<PdfRect>,
-    pub colorspace: Option<PdfImageColorSpace>,
+    pub colorspaces: HashMap<String, PdfImageColorSpace>,
 }
 
 impl PartialEq for PageInfo {
@@ -825,6 +834,24 @@ pub enum PdfImageColorSpace {
         names: Vec<String>,
         alternate: Box<PdfImageColorSpace>,
     },
+}
+
+impl PdfImageColorSpace {
+    /// Get the basic colorspace type
+    pub fn get_type(&self) -> ImageColorSpace {
+        match self {
+            PdfImageColorSpace::Unknown => ImageColorSpace::Unknown,
+            PdfImageColorSpace::DeviceGray => ImageColorSpace::DeviceGray,
+            PdfImageColorSpace::DeviceRGB => ImageColorSpace::DeviceRgb,
+            PdfImageColorSpace::DeviceCMYK => ImageColorSpace::DeviceCmyk,
+            PdfImageColorSpace::Lab { .. } => ImageColorSpace::Lab,
+            PdfImageColorSpace::ICC { .. } => ImageColorSpace::Icc,
+            PdfImageColorSpace::Indexed { .. } => ImageColorSpace::Indexed,
+            PdfImageColorSpace::Pattern => ImageColorSpace::Pattern,
+            PdfImageColorSpace::Separation { .. } => ImageColorSpace::Separation,
+            PdfImageColorSpace::DeviceN { .. } => ImageColorSpace::DeviceN,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -983,11 +1010,23 @@ impl From<SplashPageInfo> for PageInfo {
             None
         };
 
-        let colorspace = if !value.color_space_handle.is_null() {
-            Some(convert_colorspace(value.color_space_handle))
-        } else {
-            None
-        };
+        let mut colorspaces = HashMap::new();
+        if !value.colorspaces.is_null() && value.colorspace_count > 0 {
+            let slice = unsafe {
+                slice::from_raw_parts(value.colorspaces, value.colorspace_count as usize)
+            };
+            for entry in slice {
+                let name = if entry.name.is_null() {
+                    String::new()
+                } else {
+                    unsafe { CStr::from_ptr(entry.name) }
+                        .to_string_lossy()
+                        .into_owned()
+                };
+                let colorspace = convert_colorspace(entry.color_space_handle);
+                colorspaces.insert(name, colorspace);
+            }
+        }
 
         Self {
             page: value.page_number,
@@ -996,7 +1035,7 @@ impl From<SplashPageInfo> for PageInfo {
             is_pdf_a_compatible: value.is_pdf_a_compatible == 1,
             mediabox,
             cropbox,
-            colorspace,
+            colorspaces,
         }
     }
 }

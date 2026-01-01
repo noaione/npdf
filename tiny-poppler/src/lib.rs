@@ -10,9 +10,10 @@ mod sink;
 
 use ffi::get_poppler_version;
 pub use ffi::{
-    CcittParams, ColorMode, ExportedImage, ImageExportExtension, ImageExportFormat,
-    ImageExportRequest, ImageExportSelector, ImageExportType, ImageInfo, ImageType, PageInfo,
-    PdfCropMode, PdfImageColorSpace, PdfMatrix, PdfPoint, PdfRect, ZeroWidthLineMode,
+    CcittParams, ColorMode, ExportedImage, ImageColorSpace, ImageExportExtension,
+    ImageExportFormat, ImageExportRequest, ImageExportSelector, ImageExportType, ImageInfo,
+    ImageType, PageInfo, PdfCropMode, PdfImageColorSpace, PdfMatrix, PdfPoint, PdfRect,
+    ZeroWidthLineMode,
 };
 use png::Encoder;
 pub use png::{BitDepth as PngBitDepth, ColorType as PngColorType};

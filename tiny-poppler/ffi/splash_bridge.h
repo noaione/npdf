@@ -107,8 +107,22 @@ typedef struct ntsplash_page_info {
     double cropbox[4];
     double mediabox[4];
 
-    const void *cs_handle; // opaque pointer to GfxColorSpace*
+    // Page /Resources/ColorSpace dictionary entries.
+    //
+    // `colorspaces` is an owned pointer that must be freed by `ntsplash_renderer_free_page_info`.
+    // Each entry contains an owned colorspace handle.
+    const struct ntsplash_page_colorspace_entry *colorspaces;
+    uint32_t colorspace_count;
 } ntsplash_page_info_t;
+
+// Page colorspace dictionary entry (from page resources /ColorSpace dict).
+//
+// `color_space_handle` is an owned pointer to a `GfxColorSpace` instance that must be
+// freed via `ntsplash_renderer_free_page_colorspaces`.
+typedef struct ntsplash_page_colorspace_entry {
+    const char *name;
+    const void *color_space_handle; // opaque pointer to GfxColorSpace*
+} ntsplash_page_colorspace_entry_t;
 
 typedef struct ntsplash_version {
     uint32_t major;
@@ -140,10 +154,15 @@ int ntsplash_renderer_collect_images(ntsplash_renderer_t *renderer,
                                      ntsplash_page_info_t **out_pages, size_t *out_page_len,
                                      uint32_t page_start, uint32_t page_end, char **error_out);
 
+// Extract the page /ColorSpace resource dictionary entries.
+//
+// This returns a list of (name -> colorspace handle) pairs.
+// If the page has no colorspace dictionary, this succeeds with an empty list.
 void ntsplash_renderer_free_image(ntsplash_image_t *image);
 void ntsplash_renderer_free_cstr(char *message);
 void ntsplash_renderer_free_image_info(ntsplash_image_info_t *images);
 void ntsplash_renderer_free_page_info(ntsplash_page_info_t *pages);
+void ntsplash_renderer_free_page_colorspaces(ntsplash_page_colorspace_entry_t *entries);
 
 void ntsplash_get_version(ntsplash_version_t *out_version);
 
