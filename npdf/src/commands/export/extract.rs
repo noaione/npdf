@@ -419,6 +419,7 @@ pub(super) fn process_job(document: &mut Document, job: &ExtractPagePlan) -> Res
 
 pub(super) fn prepare_job(
     page: u32,
+    output_page: u32,
     images: &[ImageInfo],
     args: &ExportArgs,
     output_path: Option<&PathBuf>,
@@ -444,7 +445,7 @@ pub(super) fn prepare_job(
 
         for (component_suffix, entry) in group.into_components() {
             queue_job(ExtractPagePlan {
-                page,
+                page: output_page,
                 slot: slot_display,
                 slot_suffix: slot_suffix.clone(),
                 component_suffix,

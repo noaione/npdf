@@ -209,7 +209,7 @@ pub(super) fn process_job(document: &mut Document, job: &RenderPagePlan) -> Resu
 }
 
 pub(super) fn prepare_job(
-    page: u32,
+    output_page: u32,
     page_info: &PageInfo,
     images: &[ImageInfo],
     args: &ExportArgs,
@@ -265,12 +265,12 @@ pub(super) fn prepare_job(
         options.dpi = guessed.dpi;
     }
 
-    let file_name = format!("page-{page:04}");
+    let file_name = format!("page-{output_page:04}");
     let with_output_path = output_path.as_ref().map(|o| o.join(&file_name));
 
     queue_job(RenderPagePlan {
-        page_number: page,
-        zero_index_page: page - 1,
+        page_number: page_info.page,
+        zero_index_page: page_info.page - 1,
         total_pages: factory.page_count(),
         output_path: with_output_path,
         request_color: *color,

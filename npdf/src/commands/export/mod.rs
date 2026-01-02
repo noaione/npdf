@@ -150,24 +150,33 @@ pub fn run(args: ExportArgs, passwords: Option<&PdfPasswords>) -> Result<(), Str
     let page_pairings = pair_page_images(&page_stats, &images_metadata);
 
     println!("Starting export...");
+    let pages_ranges = 1..=page_count;
     let pages: Vec<u32> = if reverse {
-        (first_page..=last_page).rev().collect()
+        pages_ranges
+            .rev()
+            .skip((first_page - 1) as usize)
+            .take((last_page - first_page + 1) as usize)
+            .collect()
     } else {
-        (first_page..=last_page).collect()
+        pages_ranges
+            .skip((first_page - 1) as usize)
+            .take((last_page - first_page + 1) as usize)
+            .collect()
     };
 
     let mut jobs: Vec<PagePlanJob> = Vec::new();
-    for page in pages {
-        if let Some((page_info, images)) = page_pairings.get_key_value(&page) {
+    for (pg_idx, page) in pages.iter().enumerate() {
+        if let Some((page_info, images)) = page_pairings.get_key_value(page) {
             let should_extract = should_be_extracted(page_info, images, extract);
+            let output_page = (pg_idx as u32) + first_page;
 
             if should_extract {
-                extract::prepare_job(page, images, &args, output, &mut |job_plan| {
+                extract::prepare_job(*page, output_page, images, &args, output, &mut |job_plan| {
                     jobs.push(PagePlanJob::Extract(job_plan))
                 });
             } else {
                 render::prepare_job(
-                    page,
+                    output_page,
                     page_info,
                     images,
                     &args,
