@@ -10,6 +10,7 @@
 - `sjpegli`: re-prefix all enum values with `SJ_` to avoid name conflicts
 - `npdf`: adjust the text when rendering pages
 - `npdf`: fix export page numbering still wrong when in reversed order mode
+- `npdf`: fix colorspace fixing command to not messed up color on `SCN` operator
 
 ### Build
 - Change `opt-level` to `s` instead of `z` for better performance with *similar* binary size

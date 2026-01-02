@@ -24,9 +24,6 @@ pub struct FixColorspaceArgs {
     /// Output file path to save the fixed PDF.
     #[arg(short = 'o', long)]
     pub output: PathBuf,
-    /// Experimental way to replace colorspaces
-    #[arg(long)]
-    pub experimental: bool,
 }
 
 pub fn run(args: FixColorspaceArgs, passwords: Option<&PdfPasswords>) -> Result<(), String> {
@@ -66,7 +63,7 @@ pub fn run(args: FixColorspaceArgs, passwords: Option<&PdfPasswords>) -> Result<
                 page_num
             );
 
-            inplace_fix_colorspace(&mut doc, object_id, &separation_cs_array, args.experimental)
+            inplace_fix_colorspace(&mut doc, object_id, &separation_cs_array)
                 .map_err(|err| err.to_string())?;
         } else {
             cprintln!(
@@ -158,7 +155,6 @@ fn inplace_fix_colorspace(
     doc: &mut Document,
     page_id: ObjectId,
     colorspace: &Object,
-    experimental: bool,
 ) -> Result<(), lopdf::Error> {
     {
         // Scope the mutable borrow so it is dropped before we need other borrows of `doc`.
@@ -221,14 +217,12 @@ fn inplace_fix_colorspace(
             // Replace the operand with correct tint value
             if !is_before_cs {
                 new_operations.push(op);
-                // XXX: EXPERIMENTAL: mark as not before cs to avoid weird changes
-                if experimental {
-                    is_before_cs = false;
-                }
                 continue; // only modify if preceded by cs/CS
             }
 
-            let new_op = Operation::new(&op.operator, vec![Object::Real(1.0)]); // Black is the default
+            let scn_value: f32 = if op.operator == "scn" { 1.0 } else { 0.0 };
+
+            let new_op = Operation::new(&op.operator, vec![Object::Real(scn_value)]); // Black is the default
             new_operations.push(new_op);
             is_before_cs = false;
         } else {
