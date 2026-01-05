@@ -1,10 +1,11 @@
 use clap::{Args, ValueEnum};
+use color_eyre::{Result, eyre::Context};
 use color_print::{cformat, cprintln};
 use lopdf::{Document, Object, ObjectId};
 use std::path::PathBuf;
 use tiny_poppler::PdfPasswords;
 
-use crate::common::{ensure_pdf_output, unlock_pdf};
+use crate::common::{NpdfError, ensure_pdf_output, unlock_pdf};
 
 #[derive(Args)]
 pub struct RecropArgs {
@@ -20,9 +21,9 @@ pub struct RecropArgs {
     pub describe: bool,
 }
 
-pub fn run(args: RecropArgs, passwords: Option<&PdfPasswords>) -> Result<(), String> {
+pub fn run(args: RecropArgs, passwords: Option<&PdfPasswords>) -> Result<()> {
     if !args.pdf.exists() {
-        return Err(format!("PDF file does not exist: {}", args.pdf.display()));
+        return Err(NpdfError::MissingPdfFile(args.pdf.display().to_string()).into());
     }
 
     let output = match (args.output, args.describe) {
@@ -31,18 +32,19 @@ pub fn run(args: RecropArgs, passwords: Option<&PdfPasswords>) -> Result<(), Str
             Some(path)
         }
         (None, true) => None,
-        (None, false) => return Err("--output is required when not using --describe".into()),
+        (None, false) => {
+            return Err(NpdfError::RequireArgumentWhen("--output", "--describe").into());
+        }
     };
 
     cprintln!("<magenta,bold>Loading PDF</>: {}", args.pdf.display());
-    let mut doc = Document::load(args.pdf).map_err(|err| err.to_string())?;
+    let mut doc = Document::load(args.pdf)?;
 
     unlock_pdf(&doc, passwords)?;
 
     cprintln!("<magenta,bold>Processing pages</>...");
     for (page_num, object_id) in doc.get_pages() {
-        let page_box = get_page_box(&doc, object_id)
-            .map_err(|err| format!("Failed to get page box for page {}: {}", page_num, err))?;
+        let page_box = get_page_box(&doc, object_id).context(format!("page {}", page_num))?;
 
         if args.describe {
             cprintln!(
@@ -60,9 +62,8 @@ pub fn run(args: RecropArgs, passwords: Option<&PdfPasswords>) -> Result<(), Str
 
         match page_box.get_box(args.bounding) {
             Some(new_box) => {
-                set_new_crop_box(&mut doc, object_id, new_box).map_err(|err| {
-                    format!("Failed to set new crop box for page {}: {}", page_num, err)
-                })?;
+                set_new_crop_box(&mut doc, object_id, new_box)
+                    .context(format!("page {}", page_num))?;
                 cprintln!("<green>Recropped page</> {} to {:?}", page_num, new_box);
             }
             None => {
@@ -79,16 +80,13 @@ pub fn run(args: RecropArgs, passwords: Option<&PdfPasswords>) -> Result<(), Str
         return Ok(());
     }
 
-    let output_path = output
-        .as_ref()
-        .ok_or_else(|| "output path not set for non-describe mode".to_string())?;
+    let output_path = output.as_ref().ok_or(NpdfError::OutputNotSet)?;
 
     cprintln!(
         "<magenta,bold>Saving output PDF</>: {}",
         output_path.display()
     );
-    doc.save(output_path)
-        .map_err(|err| format!("Failed to save output PDF: {}", err))?;
+    doc.save(output_path)?;
 
     cprintln!("<green,bold>Done!</>");
     Ok(())

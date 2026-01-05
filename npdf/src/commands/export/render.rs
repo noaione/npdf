@@ -1,15 +1,15 @@
 use clap::ValueEnum;
+use color_eyre::{Result, eyre::Context};
 use color_print::cprintln;
 use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 use std::fs;
 use std::path::PathBuf;
 use tiny_poppler::{
     ColorMode, Document, DocumentFactory, ImageInfo, ImageType, PageInfo, PdfCropMode,
-    PdfImageColorSpace, PdfMatrix, PdfRect, RenderError, RenderOptions, ZeroWidthLineMode,
-    cmyk2gray, cmyk2rgb,
+    PdfImageColorSpace, PdfMatrix, PdfRect, RenderOptions, ZeroWidthLineMode, cmyk2gray, cmyk2rgb,
 };
 
-use crate::commands::ExportArgs;
+use crate::{commands::ExportArgs, common::NpdfError};
 
 #[derive(Clone, Copy, Debug, PartialEq, ValueEnum)]
 pub enum ColorChoice {
@@ -56,15 +56,12 @@ pub(super) struct RenderPagePlan {
     pub options: RenderOptions,
 }
 
-pub(super) fn process_job(document: &mut Document, job: &RenderPagePlan) -> Result<(), String> {
-    let output_path = job
-        .output_path
-        .as_ref()
-        .ok_or_else(|| "output path not set for non-describe mode".to_string())?;
+pub(super) fn process_job(document: &mut Document, job: &RenderPagePlan) -> Result<()> {
+    let output_path = job.output_path.as_ref().ok_or(NpdfError::OutputNotSet)?;
 
     let encoded = document
         .render_page_image_bytes(job.zero_index_page, &job.options)
-        .map_err(|err| format!("failed to export page {}: {err}", job.page_number))?;
+        .context(format!("page {}", job.page_number))?;
 
     let (bytes_data, extension) = match encoded.format {
         tiny_poppler::ImageFormat::Png => (encoded.bytes, "png"),
@@ -91,7 +88,7 @@ pub(super) fn process_job(document: &mut Document, job: &RenderPagePlan) -> Resu
                         encoded.dpi.round().clamp(72.0, u16::MAX as f64) as usize;
                     let dpi_u16: u16 = dpi_usize
                         .try_into()
-                        .map_err(|_| RenderError::InvalidDpiValue(encoded.dpi).to_string())?;
+                        .context(format!("page {}, clamp u16", job.page_number))?;
 
                     let jpeg = tiny_poppler::encode_jpeg(
                         &inverted_payload,
@@ -101,12 +98,7 @@ pub(super) fn process_job(document: &mut Document, job: &RenderPagePlan) -> Resu
                         job.options.jpeg_quality.unwrap_or(95),
                         dpi_u16,
                     )
-                    .map_err(|err| {
-                        format!(
-                            "failed to encode JPEG for page {}: {}",
-                            job.page_number, err
-                        )
-                    })?;
+                    .context(format!("page {}, encode JPEG", job.page_number))?;
                     (jpeg, "jpg")
                 }
                 ColorMode::Mono1 | ColorMode::Mono8 => {
@@ -125,12 +117,8 @@ pub(super) fn process_job(document: &mut Document, job: &RenderPagePlan) -> Resu
                         )
                     };
 
-                    let as_gray = cmyk2gray(&encoded.bytes).map_err(|err| {
-                        format!(
-                            "failed to convert CMYK to Grayscale for page {}: {}",
-                            job.page_number, err
-                        )
-                    })?;
+                    let as_gray = cmyk2gray(&encoded.bytes)
+                        .context(format!("page {}, cmyk2gray", job.page_number))?;
 
                     let png = tiny_poppler::encode_png(
                         &as_gray,
@@ -141,20 +129,14 @@ pub(super) fn process_job(document: &mut Document, job: &RenderPagePlan) -> Resu
                         depth,
                         palette,
                     )
-                    .map_err(|err| {
-                        format!("failed to encode PNG for page {}: {}", job.page_number, err)
-                    })?;
+                    .context(format!("page {}, encode PNG", job.page_number))?;
 
                     (png, "png")
                 }
                 other => {
                     // Export as PNG, convert to RGB first
-                    let rgb_data = cmyk2rgb(&encoded.bytes).map_err(|err| {
-                        format!(
-                            "failed to convert CMYK to RGB for page {}: {}",
-                            job.page_number, err
-                        )
-                    })?;
+                    let rgb_data = cmyk2rgb(&encoded.bytes)
+                        .context(format!("page {}, cmyk2rgb", job.page_number))?;
 
                     let (adjusted_rgb, colorspace) = if other == ColorMode::Xbgr8 {
                         let mut rgba = Vec::with_capacity(encoded.width * encoded.height * 4);
@@ -179,9 +161,7 @@ pub(super) fn process_job(document: &mut Document, job: &RenderPagePlan) -> Resu
                         tiny_poppler::PngBitDepth::Eight,
                         None,
                     )
-                    .map_err(|err| {
-                        format!("failed to encode PNG for page {}: {}", job.page_number, err)
-                    })?;
+                    .context(format!("page {}, encode PNG", job.page_number))?;
 
                     (png, "png")
                 }
@@ -190,8 +170,7 @@ pub(super) fn process_job(document: &mut Document, job: &RenderPagePlan) -> Resu
     };
 
     let output_path_with_ext = output_path.with_extension(extension);
-    fs::write(output_path_with_ext, &bytes_data)
-        .map_err(|err| format!("failed to write {}: {err}", output_path.display()))?;
+    fs::write(output_path_with_ext, &bytes_data).context(format!("page {}", job.page_number))?;
 
     // pad page number depending on total pages
     let total_page = job.total_pages.to_string().len();

@@ -4,13 +4,14 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use color_eyre::{Result, eyre::Context};
 use color_print::{cformat, cprintln};
 use tiny_poppler::{
     Document, EncodedExportedImage, ExportedImage, ImageExportRequest, ImageExportSelector,
     ImageExportType, ImageInfo, ImageSinkOptions, ImageType, sink_exported_image,
 };
 
-use crate::commands::ExportArgs;
+use crate::{commands::ExportArgs, common::NpdfError};
 
 #[derive(Clone)]
 pub(super) struct ExtractPagePlan {
@@ -257,7 +258,7 @@ pub(super) fn export_image_entry(
     document: &mut Document,
     entry: &ImageEntry,
     describe: bool,
-) -> Result<ExportedImage, String> {
+) -> Result<ExportedImage> {
     let selector = entry.selector.to_request();
     let request = ImageExportRequest {
         page_index: entry.info.page.saturating_sub(1),
@@ -266,9 +267,10 @@ pub(super) fn export_image_entry(
         describe_only: describe,
     };
 
-    document
+    let res = document
         .export_image(request)
-        .map_err(|err| format!("failed to extract {:?}: {err}", entry.info.image_type))
+        .context(format!("page {}", entry.info.page))?;
+    Ok(res)
 }
 
 pub(super) fn describe_component(
@@ -326,19 +328,16 @@ fn persist_encoded(
     component_suffix: &str,
     info: &TinyImageInfo,
     image: &EncodedExportedImage,
-) -> Result<(), String> {
+) -> Result<()> {
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|err| format!("failed to create {}: {err}", parent.display()))?;
+        fs::create_dir_all(parent).context(format!("page {}", page))?;
     }
 
-    fs::write(path, &image.bytes)
-        .map_err(|err| format!("failed to write {}: {err}", path.display()))?;
+    fs::write(path, &image.bytes).context(format!("page {}", page))?;
 
     if let Some(globals) = image.jbig2_globals.as_ref() {
         let global_path = path.with_extension("jb2g");
-        fs::write(&global_path, globals)
-            .map_err(|err| format!("failed to write {}: {err}", global_path.display()))?;
+        fs::write(&global_path, globals).context(format!("page {}", page))?;
     }
     if let Some(ccit_params) = image.ccitt_params.as_ref() {
         let mut params = String::new();
@@ -364,8 +363,7 @@ fn persist_encoded(
         }
         params.push_str("-M\n"); // PDF uses MSB first
         let ccitt_params_path = path.with_extension(format!("{}.params", image.file_extension()));
-        fs::write(&ccitt_params_path, params)
-            .map_err(|err| format!("failed to write {}: {err}", ccitt_params_path.display()))?;
+        fs::write(&ccitt_params_path, params).context(format!("page {}", page))?;
     }
 
     let slot_fragment = slot
@@ -383,14 +381,14 @@ fn persist_encoded(
     Ok(())
 }
 
-pub(super) fn process_job(document: &mut Document, job: &ExtractPagePlan) -> Result<(), String> {
-    let exported = export_image_entry(document, &job.entry, false)
-        .map_err(|err| format!("{} (page {})", err, job.entry.info.page))?;
+pub(super) fn process_job(document: &mut Document, job: &ExtractPagePlan) -> Result<()> {
+    let exported = export_image_entry(document, &job.entry, false)?;
 
     let root = job
         .output_path
         .clone()
-        .ok_or_else(|| "missing output directory for extraction".to_string())?;
+        .ok_or(NpdfError::OutputNotSet)
+        .context(format!("page {}", job.page))?;
     let encoded = sink_exported_image(
         exported,
         ImageSinkOptions {
@@ -398,7 +396,7 @@ pub(super) fn process_job(document: &mut Document, job: &ExtractPagePlan) -> Res
             ..Default::default()
         },
     )
-    .map_err(|err| format!("failed to encode image: {err}"))?;
+    .context(format!("page {}", job.page))?;
     let extension = encoded.file_extension();
     let path = build_output_path(
         &root,

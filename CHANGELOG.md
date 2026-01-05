@@ -11,6 +11,7 @@
 - `npdf`: adjust the text when rendering pages
 - `npdf`: fix export page numbering still wrong when in reversed order mode
 - `npdf`: fix colorspace fixing command to not messed up color on `SCN` operator
+- `npdf`: use `color-eyre`'s for error handling with better context and backtrace support
 
 ### Build
 - Change `opt-level` to `s` instead of `z` for better performance with *similar* binary size

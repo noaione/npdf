@@ -1,4 +1,5 @@
 use clap::Args;
+use color_eyre::{Result, eyre::Context};
 use color_print::cprintln;
 use lopdf::{Dictionary, Document, Object, ObjectId};
 use sha2::{Digest, Sha256};
@@ -8,7 +9,7 @@ use std::{
 };
 use tiny_poppler::PdfPasswords;
 
-use crate::common::{ensure_pdf_output, unlock_pdf};
+use crate::common::{NpdfError, ensure_pdf_output, unlock_pdf};
 
 #[derive(Args)]
 pub struct UnwatermarkArgs {
@@ -19,15 +20,15 @@ pub struct UnwatermarkArgs {
     pub output: PathBuf,
 }
 
-pub fn run(args: UnwatermarkArgs, passwords: Option<&PdfPasswords>) -> Result<(), String> {
+pub fn run(args: UnwatermarkArgs, passwords: Option<&PdfPasswords>) -> Result<()> {
     if !args.pdf.exists() {
-        return Err(format!("PDF file does not exist: {}", args.pdf.display()));
+        return Err(NpdfError::MissingPdfFile(args.pdf.display().to_string()).into());
     }
 
     ensure_pdf_output(&args.output)?;
 
     cprintln!("<magenta,bold>Loading PDF</>: {}", args.pdf.display());
-    let doc = Document::load(args.pdf).map_err(|err| err.to_string())?;
+    let doc = Document::load(args.pdf)?;
 
     unlock_pdf(&doc, passwords)?;
 
@@ -35,8 +36,8 @@ pub fn run(args: UnwatermarkArgs, passwords: Option<&PdfPasswords>) -> Result<()
     let pages = doc.get_pages();
     let mut similar_hashes = HashMap::new();
     for (page_num, object_id) in pages {
-        let collected_images = collect_images_deep(&doc, object_id)
-            .map_err(|err| format!("Error collecting images on page {}: {}", page_num, err))?;
+        let collected_images =
+            collect_images_deep(&doc, object_id).context(format!("page {}", page_num))?;
         cprintln!(
             "<cyan>Page {}</>: Found {} images.",
             page_num,
@@ -95,7 +96,10 @@ pub fn run(args: UnwatermarkArgs, passwords: Option<&PdfPasswords>) -> Result<()
                 cprintln!("<green>Skipped deletion for this set.</>");
             }
             Err(err) => {
-                return Err(format!("Error during confirmation prompt: {}", err));
+                return Err(color_eyre::eyre::eyre!(
+                    "Failed to read confirmation input: {}",
+                    err
+                ));
             }
         }
     }
@@ -118,8 +122,7 @@ pub fn run(args: UnwatermarkArgs, passwords: Option<&PdfPasswords>) -> Result<()
     }
     doc.prune_objects();
 
-    doc.save(&args.output)
-        .map_err(|err| format!("Error saving PDF: {}", err))?;
+    doc.save(&args.output)?;
 
     Ok(())
 }

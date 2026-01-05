@@ -17,6 +17,8 @@ inquire.workspace = true
 crossbeam-channel.workspace = true
 num_cpus.workspace = true
 color-print.workspace = true
+color-eyre.workspace = true
+thiserror.workspace = true
 
 tiny-poppler = { path = "../tiny-poppler" }
 simple-jpegli-enc = { path = "../simple-jpegli-enc" }

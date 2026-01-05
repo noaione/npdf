@@ -1,4 +1,5 @@
 use clap::Args;
+use color_eyre::{Result, eyre::Context};
 use color_print::cprintln;
 use flate2::Compression;
 use flate2::write::ZlibEncoder;
@@ -10,7 +11,7 @@ use lopdf::{
 use std::{collections::HashSet, path::PathBuf};
 use tiny_poppler::PdfPasswords;
 
-use crate::common::{ensure_pdf_output, unlock_pdf};
+use crate::common::{NpdfError, ensure_pdf_output, unlock_pdf};
 
 const CS_NAME: &[u8; 11] = b"PureBlackCS";
 const CS_SEP_BASE: &str = "Separation";
@@ -30,15 +31,15 @@ pub struct FixColorspaceArgs {
     pub output: PathBuf,
 }
 
-pub fn run(args: FixColorspaceArgs, passwords: Option<&PdfPasswords>) -> Result<(), String> {
+pub fn run(args: FixColorspaceArgs, passwords: Option<&PdfPasswords>) -> Result<()> {
     if !args.pdf.exists() {
-        return Err(format!("PDF file does not exist: {}", args.pdf.display()));
+        return Err(NpdfError::MissingPdfFile(args.pdf.display().to_string()).into());
     }
 
     ensure_pdf_output(&args.output)?;
 
     cprintln!("<magenta,bold>Loading PDF</>: {}", args.pdf.display());
-    let mut doc = Document::load(args.pdf).map_err(|err| err.to_string())?;
+    let mut doc = Document::load(args.pdf)?;
 
     unlock_pdf(&doc, passwords)?;
 
@@ -61,14 +62,14 @@ pub fn run(args: FixColorspaceArgs, passwords: Option<&PdfPasswords>) -> Result<
     cprintln!("<magenta,bold>Processing pages</>...");
     let pages = doc.get_pages();
     for (page_num, object_id) in pages {
-        if is_page_pure_stencil(&doc, object_id).map_err(|err| err.to_string())? {
+        if is_page_pure_stencil(&doc, object_id).context(format!("page {}", page_num))? {
             cprintln!(
                 "<cyan>Page <bold>{}</bold></cyan>: Pure stencil page detected, applying fix...",
                 page_num
             );
 
             inplace_fix_colorspace(&mut doc, object_id, &separation_cs_array)
-                .map_err(|err| err.to_string())?;
+                .context(format!("page {}", page_num))?;
         } else {
             cprintln!(
                 "<cyan>Page <bold>{}</bold></cyan>: No pure stencil detected, skipping.",
@@ -81,8 +82,7 @@ pub fn run(args: FixColorspaceArgs, passwords: Option<&PdfPasswords>) -> Result<
         "<magenta,bold>Saving output PDF</>: {}",
         args.output.display()
     );
-    doc.save(args.output)
-        .map_err(|err| format!("Failed to save output PDF: {}", err))?;
+    doc.save(args.output)?;
 
     Ok(())
 }
@@ -259,7 +259,7 @@ fn inplace_fix_colorspace(
             let components = op
                 .operands
                 .iter()
-                .map(|obj| resolve_to_real(obj))
+                .map(resolve_to_real)
                 .collect::<Result<Vec<f32>, lopdf::Error>>()?;
 
             let scn_value = normalize_scn_to_spot_black(&components, input_cs)?;

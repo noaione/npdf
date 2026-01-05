@@ -8,6 +8,7 @@ use clap::{
         styling::{AnsiColor, Effects},
     },
 };
+use color_eyre::Result;
 use color_print::cprintln;
 use commands::{
     ExportArgs, FixColorspaceArgs, ListArgs, RecropArgs, UnwatermarkArgs, export, fix_color, list,
@@ -15,15 +16,16 @@ use commands::{
 };
 use tiny_poppler::PdfPasswords;
 
-fn main() {
+fn main() -> Result<(), color_eyre::Report> {
+    color_eyre::install()?;
     let cli = Cli::parse();
-    if let Err(err) = execute(cli) {
-        eprintln!("Error: {err}");
-        std::process::exit(1);
-    }
+
+    execute(cli)?;
+
+    Ok(())
 }
 
-fn execute(cli: Cli) -> Result<(), String> {
+fn execute(cli: Cli) -> Result<()> {
     let Cli {
         command,
         user_password,
@@ -97,7 +99,7 @@ fn build_passwords(
     }
 }
 
-fn cmd_show_version_info() -> Result<(), String> {
+fn cmd_show_version_info() -> Result<()> {
     let poppler_version = tiny_poppler::get_version();
     cprintln!("<s>npdf</s> version: {}", env!("CARGO_PKG_VERSION"));
     if let Some(sha_commit) = poppler_version.git_sha() {

@@ -1,8 +1,11 @@
 use clap::Args;
+use color_eyre::Result;
 use color_print::{cformat, cprintln};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use tiny_poppler::{Document, ImageInfo, ImageType, PdfImageColorSpace, PdfPasswords};
+
+use crate::common::NpdfError;
 
 #[derive(Args)]
 pub struct ListArgs {
@@ -13,16 +16,15 @@ pub struct ListArgs {
     pub page_info: bool,
 }
 
-pub fn run(args: ListArgs, passwords: Option<&PdfPasswords>) -> Result<(), String> {
+pub fn run(args: ListArgs, passwords: Option<&PdfPasswords>) -> Result<()> {
     if !args.pdf.exists() {
-        return Err(format!("PDF file does not exist: {}", args.pdf.display()));
+        return Err(NpdfError::MissingPdfFile(args.pdf.display().to_string()).into());
     }
 
-    let mut document =
-        Document::open_with_passwords(&args.pdf, passwords).map_err(|err| err.to_string())?;
-    let page_count = document.page_count().map_err(|err| err.to_string())?;
-    let images = document.images().map_err(|err| err.to_string())?;
-    let pages_infos = document.page_info().map_err(|err| err.to_string())?;
+    let mut document = Document::open_with_passwords(&args.pdf, passwords)?;
+    let page_count = document.page_count()?;
+    let images = document.images()?;
+    let pages_infos = document.page_info()?;
 
     cprintln!("<magenta,bold>PDF</>: {}", args.pdf.display());
     cprintln!("<magenta,bold>Pages</>: {page_count}");

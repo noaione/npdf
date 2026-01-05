@@ -1,5 +1,7 @@
 use clap::{Args, ValueEnum};
-use color_print::{cformat, cprintln};
+use color_eyre::Result;
+use color_eyre::eyre::Context;
+use color_print::cprintln;
 use crossbeam_channel::unbounded;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
@@ -15,6 +17,7 @@ mod render;
 use crate::commands::export::extract::{ExtractPagePlan, describe_component};
 use crate::commands::export::render::ZeroWidthLineChoice;
 use crate::commands::export::render::{AutoDPIDirection, ColorChoice, CropChoice, RenderPagePlan};
+use crate::common::NpdfError;
 
 pub type PagePairings = HashMap<PageInfo, Vec<ImageInfo>>;
 
@@ -85,13 +88,13 @@ pub struct ExportArgs {
     pub zero_width_line: ZeroWidthLineChoice,
 }
 
-pub fn run(args: ExportArgs, passwords: Option<&PdfPasswords>) -> Result<(), String> {
+pub fn run(args: ExportArgs, passwords: Option<&PdfPasswords>) -> Result<()> {
     if args.dpi <= 0.0 {
-        return Err("dpi must be a positive number".into());
+        return Err(NpdfError::InvalidDpi(args.dpi).into());
     }
 
     if !args.pdf.exists() {
-        return Err(format!("PDF file does not exist: {}", args.pdf.display()));
+        return Err(NpdfError::MissingPdfFile(args.pdf.display().to_string()).into());
     }
 
     let ExportArgs {
@@ -107,31 +110,34 @@ pub fn run(args: ExportArgs, passwords: Option<&PdfPasswords>) -> Result<(), Str
     let output = match (&args.output, describe) {
         (Some(path), _) => Some(path),
         (None, true) => None,
-        (None, false) => return Err("--output is required when not using --describe".into()),
+        (None, false) => {
+            return Err(NpdfError::RequireArgumentWhen("--output", "--describe").into());
+        }
     };
 
     cprintln!("Loading PDF: <m,s>{:#?}</m,s>", &args.pdf);
-    let factory = DocumentFactory::with_images_with_passwords(&args.pdf, passwords.cloned())
-        .map_err(|err| err.to_string())?;
+    let factory = DocumentFactory::with_images_with_passwords(&args.pdf, passwords.cloned())?;
     let page_count = factory.page_count();
 
     let first_page = first.unwrap_or(1);
     if first_page == 0 || first_page > page_count {
-        return Err(format!("first page must be between 1 and {page_count}"));
+        return Err(NpdfError::MustBetween("first page", 1, page_count as usize).into());
     }
 
     let last_page = last.unwrap_or(page_count);
     if last_page == 0 || last_page > page_count {
-        return Err(format!("last page must be between 1 and {page_count}"));
+        return Err(NpdfError::MustBetween("last page", 1, page_count as usize).into());
     }
     if last_page < first_page {
-        return Err("last page must be greater than or equal to first page".into());
+        return Err(
+            NpdfError::MustBetween("last page", first_page as usize, page_count as usize).into(),
+        );
     }
 
     if let Some(output_path) = output
         && let Err(err) = fs::create_dir_all(output_path)
     {
-        return Err(format!("failed to create output directory: {err}"));
+        return Err(NpdfError::CreateOutputDirError(err).into());
     }
 
     println!("Preloading images...");
@@ -143,8 +149,8 @@ pub fn run(args: ExportArgs, passwords: Option<&PdfPasswords>) -> Result<(), Str
     let page_stats = if let Some(pages) = factory.pages() {
         pages.to_vec()
     } else {
-        let mut document = factory.open().map_err(|err| err.to_string())?;
-        document.page_info().map_err(|err| err.to_string())?
+        let mut document = factory.open()?;
+        document.page_info()?
     };
 
     let page_pairings = pair_page_images(&page_stats, &images_metadata);
@@ -189,7 +195,7 @@ pub fn run(args: ExportArgs, passwords: Option<&PdfPasswords>) -> Result<(), Str
     }
 
     if describe {
-        let mut document = factory.open().map_err(|err| err.to_string())?;
+        let mut document = factory.open()?;
         for job in &jobs {
             job.describe(&mut document);
         }
@@ -203,7 +209,7 @@ fn run_export_jobs(
     factory: DocumentFactory,
     jobs: Vec<PagePlanJob>,
     threads: Option<usize>,
-) -> Result<(), String> {
+) -> Result<()> {
     if jobs.is_empty() {
         return Ok(());
     }
@@ -225,15 +231,12 @@ fn run_export_jobs(
     for worker_index in 0..worker_count {
         let rx = receiver.clone();
         let factory = factory.clone();
-        handles.push(thread::spawn(move || -> Result<(), String> {
-            let mut document = factory.open().map_err(|err| {
-                cformat!(
-                    "worker <c,s>{}</c,s> failed to open PDF: <m,s>{err}</m,s>",
-                    worker_index + 1
-                )
-            })?;
+        handles.push(thread::spawn(move || -> Result<()> {
+            let mut document = factory.open().context(format!("worker {}", worker_index))?;
             while let Ok(job) = rx.recv() {
-                process_job(&mut document, job)?;
+                let pg_num = job.page_num();
+                process_job(&mut document, job)
+                    .context(format!("page {}, worker {}", pg_num, worker_index))?;
             }
             Ok(())
         }));
@@ -242,9 +245,7 @@ fn run_export_jobs(
     drop(receiver);
 
     for job in jobs {
-        sender
-            .send(job)
-            .map_err(|_| "render queue closed unexpectedly".to_string())?;
+        sender.send(job)?;
     }
     drop(sender);
 
@@ -252,14 +253,18 @@ fn run_export_jobs(
         match handle.join() {
             Ok(Ok(())) => {}
             Ok(Err(err)) => return Err(err),
-            Err(_) => return Err("worker thread panicked".into()),
+            Err(_) => {
+                return Err(color_eyre::eyre::eyre!(
+                    "A worker thread panicked during exporting job."
+                ));
+            }
         }
     }
 
     Ok(())
 }
 
-fn process_job(document: &mut Document, job: PagePlanJob) -> Result<(), String> {
+fn process_job(document: &mut Document, job: PagePlanJob) -> Result<()> {
     match job {
         PagePlanJob::Render(render_job) => {
             crate::commands::export::render::process_job(document, &render_job)
@@ -334,6 +339,13 @@ enum PagePlanJob {
 }
 
 impl PagePlanJob {
+    fn page_num(&self) -> u32 {
+        match self {
+            PagePlanJob::Render(render_job) => render_job.page_number,
+            PagePlanJob::Extract(extract_job) => extract_job.page,
+        }
+    }
+
     fn describe(&self, document: &mut Document) {
         match self {
             PagePlanJob::Render(render_job) => {
