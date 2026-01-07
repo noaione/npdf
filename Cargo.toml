@@ -21,7 +21,7 @@ sha2 = "0.10.9"  # for hashing purposes
 
 # PDF and images
 png = { version = "0.18.0" }
-tiff = { version = "0.10.3", default-features = false, features = ["deflate", "lzw"] }
+tiff = { version = "0.11.0", default-features = false, features = ["deflate", "lzw"] }
 lopdf = { version = "0.38.0", default-features = false, features = ["rayon"] }
 flate2 = "1.1.5" # for recompressing PDF stream
 
