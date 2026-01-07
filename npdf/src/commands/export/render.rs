@@ -291,12 +291,43 @@ fn determine_page_colorspace(
 ) -> ColorMode {
     if images.is_empty() {
         match page_info {
-            Some(info) if info.object_count > 0 => ColorMode::Mono8,
+            Some(info) => determine_from_page_info(info, with_cmyk),
             _ => ColorMode::Mono1,
         }
     } else if images.iter().any(image_has_color) {
         if with_cmyk && images.iter().any(image_has_cmyk) {
             ColorMode::Cmyk8
+        } else {
+            ColorMode::Rgb8
+        }
+    } else {
+        ColorMode::Mono8
+    }
+}
+
+fn determine_from_page_info(page_info: &PageInfo, with_cmyk: bool) -> ColorMode {
+    if page_info.object_count == 0 {
+        // Early return for empty pages
+        return ColorMode::Mono1;
+    }
+
+    // Detect via existing colorspace
+    let has_color = page_info
+        .colorspaces
+        .iter()
+        .any(|(_, space)| colorspace_is_color(space));
+
+    if has_color {
+        if with_cmyk {
+            let has_cmyk = page_info
+                .colorspaces
+                .iter()
+                .any(|(_, space)| colorspace_contains_cmyk(space, 4));
+            if has_cmyk {
+                ColorMode::Cmyk8
+            } else {
+                ColorMode::Rgb8
+            }
         } else {
             ColorMode::Rgb8
         }
@@ -371,7 +402,10 @@ fn image_has_color(image: &ImageInfo) -> bool {
     if !matches!(image.image_type, ImageType::Image | ImageType::Stencil) {
         return false;
     }
-    colorspace_contains_color(&image.colorspace, image.components)
+    if matches!(image.colorspace, PdfImageColorSpace::Unknown) && image.components > 1 {
+        return true;
+    }
+    colorspace_is_color(&image.colorspace)
 }
 
 fn image_has_cmyk(image: &ImageInfo) -> bool {
@@ -400,23 +434,42 @@ fn colorspace_contains_cmyk(space: &PdfImageColorSpace, components: u32) -> bool
     }
 }
 
-fn colorspace_contains_color(space: &PdfImageColorSpace, components: u32) -> bool {
+fn colorspace_is_color(space: &PdfImageColorSpace) -> bool {
     match space {
         PdfImageColorSpace::DeviceGray => false,
-        PdfImageColorSpace::Unknown => components > 1,
         PdfImageColorSpace::DeviceRGB
         | PdfImageColorSpace::DeviceCMYK
         | PdfImageColorSpace::Lab { .. }
         | PdfImageColorSpace::ICC { .. }
         | PdfImageColorSpace::Pattern => true,
-        PdfImageColorSpace::Indexed { base, .. } => colorspace_contains_color(base, components),
-        PdfImageColorSpace::Separation { alternate, .. } => {
-            colorspace_contains_color(alternate, components)
+        PdfImageColorSpace::Unknown => false, // Default to non-color
+        PdfImageColorSpace::Indexed { base, .. } => colorspace_is_color(base),
+        PdfImageColorSpace::Separation {
+            name, alternate, ..
+        } => {
+            let is_color = colorspace_is_color(alternate);
+            let is_achromatic = is_achromatic_color_name(name);
+
+            // Sometimes it fallback to DeviceCMYK but only has achromatic name
+            is_color && !is_achromatic
         }
-        PdfImageColorSpace::DeviceN { alternate, .. } => {
-            colorspace_contains_color(alternate, components)
+        PdfImageColorSpace::DeviceN {
+            names, alternate, ..
+        } => {
+            let is_color = colorspace_is_color(alternate);
+            let all_achromatic = names.iter().all(|name| is_achromatic_color_name(name));
+
+            // Sometimes it fallback to DeviceCMYK but only has achromatic names
+            is_color && !all_achromatic
         }
     }
+}
+
+fn is_achromatic_color_name(name: &str) -> bool {
+    matches!(
+        name.to_lowercase().as_str(),
+        "black" | "gray" | "grey" | "darkgray" | "darkgrey" | "lightgray" | "lightgrey"
+    )
 }
 
 fn image_intersecting_with_page(

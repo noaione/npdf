@@ -12,6 +12,7 @@
 - `npdf`: fix export page numbering still wrong when in reversed order mode
 - `npdf`: fix colorspace fixing command to not messed up color on `SCN` operator
 - `npdf`: use `color-eyre`'s for error handling with better context and backtrace support
+- `npdf`: make sure we check page colorspace information when doing auto color render/export
 - third-party: update `poppler` to `956c68d0261969a79654a191de7ba3b13713706d` (v26.1.99 or 26.1.0)
 
 ### Build
