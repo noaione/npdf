@@ -34,7 +34,7 @@
 // Copyright (C) 2024 Fernando Herrera <fherrera@onirica.com>
 // Copyright (C) 2024 Sebastian J. Bronner <waschtl@sbronner.com>
 // Copyright (C) 2025 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
-// Copyright (C) 2025 noaione <noaione@n4o.xyz>
+// Copyright (C) 2025, 2026 noaione <noaione@n4o.xyz>
 //
 //========================================================================
 
@@ -109,7 +109,7 @@ long NTImageOutputDev::getInlineImageLength(Stream *str, int width, int height,
     if (colorMap)
     {
         ImageStream imgStr(str, width, colorMap->getNumPixelComps(), colorMap->getBits());
-        if (!imgStr.reset())
+        if (!imgStr.rewind())
         {
             imgStr.close();
             return 0;
@@ -122,7 +122,7 @@ long NTImageOutputDev::getInlineImageLength(Stream *str, int width, int height,
     }
     else
     {
-        if (!str->reset())
+        if (!str->rewind())
         {
             return 0;
         }
@@ -137,7 +137,7 @@ long NTImageOutputDev::getInlineImageLength(Stream *str, int width, int height,
     }
 
     EmbedStream *embedStr = (EmbedStream *)(str->getBaseStream());
-    if (!embedStr->reset())
+    if (!embedStr->rewind())
     {
         return 0;
     }
@@ -261,9 +261,9 @@ void NTImageOutputDev::writeRawImage(Stream *str, NTImageExtension ext, NTImageT
     }
 
     Stream *dataStream = str->getNextStream();
-    if (!dataStream->reset())
+    if (!dataStream->rewind())
     {
-        error(errIO, -1, "Couldn't reset image stream");
+        error(errIO, -1, "Couldn't rewind image stream");
         errorCode = 2;
         return;
     }
@@ -316,9 +316,9 @@ void NTImageOutputDev::writeImageFile(Stream *str, NTImageFormat format, NTImage
             return;
         }
         imgStr = new ImageStream(str, width, colorMap->getNumPixelComps(), colorMap->getBits());
-        if (!imgStr->reset())
+        if (!imgStr->rewind())
         {
-            error(errIO, -1, "Stream reset failed");
+            error(errIO, -1, "Stream rewind failed");
             errorCode = 3;
             delete imgStr;
             return;
@@ -326,9 +326,9 @@ void NTImageOutputDev::writeImageFile(Stream *str, NTImageFormat format, NTImage
     }
     else
     {
-        if (!str->reset())
+        if (!str->rewind())
         {
-            error(errIO, -1, "Stream reset failed");
+            error(errIO, -1, "Stream rewind failed");
             errorCode = 3;
             return;
         }
@@ -596,7 +596,7 @@ void NTImageOutputDev::writeImage(GfxState *state, Object *ref, Stream *str, int
                 globalsObj && globalsObj->isStream())
             {
                 Stream *globalsStream = globalsObj->getStream();
-                if (globalsStream && globalsStream->reset())
+                if (globalsStream && globalsStream->rewind())
                 {
                     int c;
                     while ((c = globalsStream->getChar()) != EOF)
