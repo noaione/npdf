@@ -27,7 +27,6 @@
 
 namespace {
 constexpr int kNTSplashBitmapRowPad = 4;
-constexpr bool kNTSplashReverseVideo = false;
 constexpr bool kNTSplashTopDownBitmap = true;
 constexpr SplashThinLineMode kNTSplashThinLineMode = splashThinLineDefault;
 
@@ -475,10 +474,11 @@ private:
             info.dpi_x = static_cast<double_t>(dpi.first);
             info.dpi_y = static_cast<double_t>(dpi.second);
 
-            const double *ctm = state->getCTM();
-            if (ctm)
+            const std::array<double, 6> ctm = state->getCTM();
+            if (ctm.size() == 6)
             {
-                std::memcpy(info.ctm, ctm, 6 * sizeof(double));
+                // copy std::array<double, 6> to double[6] style
+                std::memcpy(info.ctm, ctm.data(), 6 * sizeof(double));
             }
         }
 
@@ -518,20 +518,26 @@ private:
             std::pair<double, double> dpi = calculate_image_dpi(state->getCTM(), width, height);
             info.dpi_x = static_cast<double_t>(dpi.first);
             info.dpi_y = static_cast<double_t>(dpi.second);
-            const double *ctm = state->getCTM();
-            if (ctm)
+            std::array<double, 6> ctm = state->getCTM();
+            if (ctm.size() == 6)
             {
-                std::memcpy(info.ctm, ctm, 6 * sizeof(double));
+                std::memcpy(info.ctm, ctm.data(), 6 * sizeof(double));
             }
         }
         images_->push_back(info);
     }
 
-    std::pair<double, double> calculate_image_dpi(const double *ctm, int width, int height)
+    std::pair<double, double> calculate_image_dpi(const std::array<double, 6> ctm, int width,
+                                                  int height)
     {
-        if (!ctm)
+        if (ctm.empty() || width <= 0 || height <= 0)
         {
             return {0.0, 0.0};
+        }
+        if (ctm.size() != 6)
+        {
+            // copy std::array<double, 6> to double[6] style
+            return {0.0, 0.0}; // Invalid CTM size
         }
 
         // Calculate the scaling factors from the CTM
@@ -696,9 +702,8 @@ int ntsplash_renderer_render_page(ntsplash_renderer_t *renderer, uint32_t page_i
         // paper_color[3] = 255;
     }
 
-    SplashOutputDev output_dev(requested_mode, kNTSplashBitmapRowPad, kNTSplashReverseVideo,
-                               paper_color, kNTSplashTopDownBitmap, kNTSplashThinLineMode,
-                               enable_overprint);
+    SplashOutputDev output_dev(requested_mode, kNTSplashBitmapRowPad, paper_color,
+                               kNTSplashTopDownBitmap, kNTSplashThinLineMode, enable_overprint);
     output_dev.setVectorAntialias(true);
     output_dev.setFontAntialias(true);
     output_dev.setEnableFreeType(true);
