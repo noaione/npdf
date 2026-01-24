@@ -282,7 +282,9 @@ fn configure_and_build_poppler(
             cfg.define("VCPKG_TARGET_TRIPLET", triplet);
         }
 
-        cfg.cxxflag("-DWIN32_LEAN_AND_MEAN").cxxflag("-DNOMINMAX");
+        cfg.cxxflag("-DWIN32_LEAN_AND_MEAN")
+            .cxxflag("-DNOMINMAX")
+            .cxxflag("/EHsc"); // Enable C++ exception handling for MSVC
     } else {
         cfg.define("FONT_CONFIGURATION", "fontconfig")
             .define("ENABLE_NSS3", "ON");
@@ -335,6 +337,8 @@ fn compile_bridge(
         .define("NOMINMAX", None)
         .flag_if_supported("-std=c++23")
         .flag_if_supported("/std:c++latest") // For MSVC (should be C++23 preview, requires VS 2022 17.14)
+        .flag_if_supported("/EHsc") // Enable C++ exception handling for MSVC
+        .flag_if_supported("/wd4267")
         .flag_if_supported("-Wno-unused-parameter")
         .flag_if_supported("-Wno-unused-variable");
 
