@@ -136,7 +136,7 @@ long NTImageOutputDev::getInlineImageLength(Stream *str, int width, int height,
         }
     }
 
-    EmbedStream *embedStr = (EmbedStream *)(str->getBaseStream());
+    auto *embedStr = (EmbedStream *)(str->getBaseStream());
     if (!embedStr->rewind())
     {
         return 0;

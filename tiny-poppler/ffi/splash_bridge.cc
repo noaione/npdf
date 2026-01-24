@@ -23,8 +23,6 @@
 #include "splash/SplashTypes.h"
 #include "splash_renderer_internal.h"
 
-#define VERSION_MAJOR POPP
-
 namespace {
 constexpr int kNTSplashBitmapRowPad = 4;
 constexpr bool kNTSplashTopDownBitmap = true;
