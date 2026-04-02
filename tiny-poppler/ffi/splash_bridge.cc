@@ -294,7 +294,7 @@ public:
             false; // since a soft mask was drawn, this page cannot be PDF/A compliant
     }
 
-    void drawString(GfxState *state, const GooString *s) override
+    void drawString(GfxState *state, const std::string &s) override
     {
         (void)state;
         (void)s;

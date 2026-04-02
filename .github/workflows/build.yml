@@ -18,9 +18,6 @@ on:
       - '.gitignore'
       - '.vscode/**'
 
-env:
-  POPPLER_VERSION: "25.11.0"
-
 # Do not run concurrent builds
 concurrency:
   group: "build-npdf-${{ github.ref }}"

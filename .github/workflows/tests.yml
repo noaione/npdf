@@ -20,9 +20,6 @@ on:
       - '.gitignore'
       - '.vscode/**'
 
-env:
-  POPPLER_VERSION: "25.11.0"
-
 jobs:
   sanitizer:
     name: sanitizer tests (${{ matrix.os_label }} - ${{ matrix.sanitizer }})
