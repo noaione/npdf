@@ -8,7 +8,6 @@
 
 #include <jpeglib.h>
 #include <lib/jpegli/encode.h>
-#include <version.h>
 
 #define SJPEGLI_BAD_COLORSPACE 10 // Based on libjpeg error codes
 #define SJPEGLI_BAD_INPUT 90      // Custom error code for bad input
@@ -437,8 +436,9 @@ void sjpegli_get_version(simple_jpegli_version_t *out_version)
         return;
     }
 
-    out_version->major = JPEGXL_MAJOR_VERSION;
-    out_version->minor = JPEGXL_MINOR_VERSION;
-    out_version->patch = JPEGXL_PATCH_VERSION;
+    // XXX: Keep in sync with version in CMakeLists.txt
+    out_version->major = 0;
+    out_version->minor = 12;
+    out_version->patch = 0;
     out_version->lib_ver = JPEG_LIB_VERSION;
 }

@@ -1,6 +1,6 @@
 [submodule "third_party/poppler"]
 	path = third_party/poppler
 	url = https://github.com/noaione/poppler_mirror.git
-[submodule "third_party/libjxl"]
-	path = third_party/libjxl
-	url = https://github.com/libjxl/libjxl.git
+[submodule "third_party/jpegli"]
+	path = third_party/jpegli
+	url = https://github.com/google/jpegli.git

@@ -85,10 +85,10 @@ fn main() {
 
     let target = env::var("TARGET").expect("TARGET not set");
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
-    // Adjust path to point to third_party/libjxl from simple-jpegli-enc/
-    let libjxl_src = manifest_dir.join("../third_party/libjxl");
+    // Adjust path to point to third_party/jpegli from simple-jpegli-enc/
+    let jpegli_src = manifest_dir.join("../third_party/jpegli");
 
-    emit_git_sha_version(&libjxl_src);
+    emit_git_sha_version(&jpegli_src);
 
     let sanitizer = Sanitizer::detect(&target)
         .unwrap_or_else(|err| panic!("sanitizer configuration error: {err}"));
@@ -113,7 +113,7 @@ fn main() {
         .split(',')
         .any(|f| f == "crt-static");
 
-    let mut cfg = cmake::Config::new(&libjxl_src);
+    let mut cfg = cmake::Config::new(&jpegli_src);
     cfg.profile(cmake_build_type)
         .define("JPEGXL_ENABLE_JPEGLI", "ON")
         .define("JPEGXL_ENABLE_JPEGLI_LIBJPEG", "ON")
@@ -134,6 +134,7 @@ fn main() {
         .define("BUILD_TESTING", "OFF")
         .define("JPEGLI_LIBJPEG_LIBRARY_SOVERSION", "8")
         .define("JPEGLI_LIBJPEG_LIBRARY_VERSION", "8.2.2")
+        .define("CMAKE_POLICY_VERSION_MINIMUM", "3.5") // sjpeg issue
         .build_target("jpegli-static");
 
     if cfg!(target_os = "windows") {
@@ -185,13 +186,13 @@ fn main() {
     println!("cargo:rustc-link-lib=static=jpegli-static");
     println!("cargo:rustc-link-lib=static=hwy");
 
-    compile_bridge(&manifest_dir, &libjxl_src, &dst, sanitizer);
+    compile_bridge(&manifest_dir, &jpegli_src, &dst, sanitizer);
 }
 
 fn compile_bridge(
     manifest_dir: &Path,
-    libjxl_src: &Path,
-    libjxl_dst: &Path,
+    jpegli_src: &Path,
+    jpegli_dst: &Path,
     sanitizer: Option<Sanitizer>,
 ) {
     // Detect whether Rust itself is requesting a static CRT (Windows MSVC only)
@@ -206,9 +207,9 @@ fn compile_bridge(
         .cpp(true)
         .file(manifest_dir.join("ffi/bridge.cc"))
         .include(manifest_dir.join("ffi"))
-        .include(libjxl_dst.join("build/lib/include/jpegli"))
-        .include(libjxl_dst.join("build/lib/include/jxl"))
-        .include(libjxl_src)
+        .include(jpegli_dst.join("build/lib/include/jpegli"))
+        // .include(jpegli_dst.join("build/lib/include/jxl"))
+        .include(jpegli_src)
         .define("WIN32_LEAN_AND_MEAN", None)
         .define("NOMINMAX", None)
         .flag_if_supported("-std=c++20")
@@ -318,8 +319,8 @@ fn apply_sanitizer_to_cc(build: &mut cc::Build, sanitizer: Sanitizer) {
     }
 }
 
-fn emit_git_sha_version(jxl_src: &Path) {
-    let git_dir = jxl_src.join(".git");
+fn emit_git_sha_version(jpegli_src: &Path) {
+    let git_dir = jpegli_src.join(".git");
     if !git_dir.exists() {
         return;
     }
