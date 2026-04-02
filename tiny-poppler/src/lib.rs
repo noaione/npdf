@@ -121,6 +121,7 @@ pub struct EncodedImage {
     pub width: usize,
     pub height: usize,
     pub dpi: f64,
+    pub components: usize,
 }
 
 impl EncodedImage {
@@ -549,6 +550,7 @@ fn encode_image(
                     width,
                     height,
                     dpi,
+                    components: 1,
                 }),
                 OutputMode::Encoded => {
                     // Poppler represents mono1 scans with 1 bit per pixel; encode using a
@@ -569,6 +571,7 @@ fn encode_image(
                         width,
                         height,
                         dpi,
+                        components: 1,
                     })
                 }
             }
@@ -582,6 +585,7 @@ fn encode_image(
                     width,
                     height,
                     dpi,
+                    components,
                 }),
                 OutputMode::Encoded => {
                     let is_rgb = matches!(image.color_mode, ColorMode::Rgb8);
@@ -604,6 +608,7 @@ fn encode_image(
                         width,
                         height,
                         dpi,
+                        components,
                     })
                 }
             }
@@ -620,6 +625,7 @@ fn encode_image(
                     width,
                     height,
                     dpi,
+                    components,
                 }),
                 OutputMode::Encoded => {
                     let bytes = encode_png(
@@ -637,6 +643,7 @@ fn encode_image(
                         width,
                         height,
                         dpi,
+                        components,
                     })
                 }
             }
@@ -657,6 +664,7 @@ fn encode_image(
                     width,
                     height,
                     dpi,
+                    components,
                 }),
                 OutputMode::Encoded => {
                     let bytes = encode_png(
@@ -674,6 +682,7 @@ fn encode_image(
                         width,
                         height,
                         dpi,
+                        components,
                     })
                 }
             }
@@ -796,6 +805,7 @@ fn encode_cmyk_like(
             width,
             height,
             dpi,
+            components,
         }),
         OutputMode::Encoded => {
             // invert CMYK to match JPEGli expectations
@@ -825,6 +835,7 @@ fn encode_cmyk_like(
                 width,
                 height,
                 dpi,
+                components,
             })
         }
     }
