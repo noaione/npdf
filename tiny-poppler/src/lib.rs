@@ -747,7 +747,8 @@ pub fn encode_png(
     let mut buffer = Vec::new();
     {
         let mut encoder = Encoder::new(&mut buffer, width_u32, height_u32);
-        encoder.set_compression(PngCompression::Fast);
+        encoder.set_filter(png::Filter::Adaptive);
+        encoder.set_deflate_compression(png::DeflateCompression::Level(9));
         encoder.set_color(colorspace);
         encoder.set_depth(depth);
         if let Some(palette_bytes) = palette {
