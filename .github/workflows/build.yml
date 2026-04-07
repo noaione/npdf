@@ -102,8 +102,7 @@ jobs:
             libopenjp2-7-dev \
             liblcms2-dev \
             libnss3-dev \
-            libnspr4-dev \
-            zlib-ng-dev
+            libnspr4-dev
 
       - name: Install system dependencies (macOS)
         if: runner.os == 'macOS'
@@ -125,8 +124,7 @@ jobs:
             openjpeg \
             lcms2 \
             nss \
-            nspr \
-            zlib-ng
+            nspr
 
       - name: Cache vcpkg dependencies
         uses: actions/cache@v4
@@ -144,7 +142,7 @@ jobs:
           .\bootstrap-vcpkg.bat
 
           # Install some pre-dependencies
-          C:\vcpkg\vcpkg.exe install bzip2:x64-windows-static brotli:x64-windows-static liblzma:x64-windows-static zlib-ng:x64-windows-static --clean-after-build
+          C:\vcpkg\vcpkg.exe install bzip2:x64-windows-static brotli:x64-windows-static liblzma:x64-windows-static --clean-after-build
 
           # Install required packages as static libraries
           C:\vcpkg\vcpkg.exe install libpng:x64-windows-static zlib:x64-windows-static libiconv:x64-windows-static freetype:x64-windows-static tiff:x64-windows-static openjpeg:x64-windows-static libjpeg-turbo:x64-windows-static lcms:x64-windows-static --clean-after-build
