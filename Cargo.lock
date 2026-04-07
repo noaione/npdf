@@ -495,7 +495,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "843fba2746e448b37e26a819579957415c8cef339bf08564fe8b7ddbd959573c"
 dependencies = [
  "crc32fast",
- "libz-ng-sys",
  "miniz_oxide",
 ]
 
@@ -659,16 +658,6 @@ name = "libc"
 version = "0.2.177"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2874a2af47a2325c2001a6e6fad9b16a53b802102b528163885171cf92b15976"
-
-[[package]]
-name = "libz-ng-sys"
-version = "1.1.28"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "be734b33b7bc6a42d92d23e25e69758f866cf564a88d0bf80866fcf5a52c2255"
-dependencies = [
- "cmake",
- "libc",
-]
 
 [[package]]
 name = "linux-raw-sys"
@@ -882,7 +871,8 @@ dependencies = [
 [[package]]
 name = "png"
 version = "0.18.1"
-source = "git+https://github.com/noaione/image-png.git?rev=d40e2a0025bc0f593fad1bce8821468e1a44a8d6#d40e2a0025bc0f593fad1bce8821468e1a44a8d6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "60769b8b31b2a9f263dae2776c37b1b28ae246943cf719eb6946a1db05128a61"
 dependencies = [
  "bitflags",
  "crc32fast",
