@@ -21,7 +21,7 @@ use crate::common::NpdfError;
 
 pub type PagePairings = HashMap<PageInfo, Vec<ImageInfo>>;
 
-#[derive(Args)]
+#[derive(Args, Debug, PartialEq)]
 pub struct ExportArgs {
     /// Path to the PDF file to export.
     pub pdf: PathBuf,

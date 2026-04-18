@@ -7,7 +7,7 @@ use tiny_poppler::{Document, ImageInfo, ImageType, PdfImageColorSpace, PdfPasswo
 
 use crate::common::NpdfError;
 
-#[derive(Args)]
+#[derive(Args, Debug, PartialEq)]
 pub struct ListArgs {
     /// Path to the PDF file to inspect.
     pub pdf: PathBuf,

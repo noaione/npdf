@@ -22,7 +22,7 @@ const C0: f32 = 1.0;
 const C1: f32 = 0.0;
 const N: f32 = 1.0;
 
-#[derive(Args)]
+#[derive(Args, Debug, PartialEq)]
 pub struct FixColorspaceArgs {
     /// Path to the PDF file to fix colorspaces.
     pub pdf: PathBuf,

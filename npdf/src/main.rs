@@ -2,12 +2,13 @@ mod commands;
 mod common;
 
 use clap::{
-    Parser, Subcommand,
+    Command, CommandFactory, Parser, Subcommand, ValueEnum,
     builder::{
         Styles,
         styling::{AnsiColor, Effects},
     },
 };
+use clap_complete::{Generator, Shell};
 use color_eyre::Result;
 use color_print::cprintln;
 use commands::{
@@ -17,6 +18,9 @@ use commands::{
 use tiny_poppler::PdfPasswords;
 
 fn main() -> Result<(), color_eyre::Report> {
+    clap_complete::CompleteEnv::with_factory(Cli::command)
+        .completer("exhaustive")
+        .complete();
     color_eyre::install()?;
     let cli = Cli::parse();
 
@@ -41,10 +45,21 @@ fn execute(cli: Cli) -> Result<()> {
         Commands::Recrop(args) => recrop::run(args, passwords.as_ref()),
         Commands::FixColor(args) => fix_color::run(args, passwords.as_ref()),
         Commands::Version => cmd_show_version_info(),
+        Commands::Completions { generator } => {
+            let mut cmd = Cli::command();
+            let gen_value = generator.to_possible_value();
+            cprintln!(
+                "<green>Generating completion file for <cyan,bold>{:?}</cyan,bold></>:",
+                gen_value
+            );
+
+            print_completions(generator, &mut cmd);
+            Ok(())
+        }
     }
 }
 
-#[derive(Parser)]
+#[derive(Parser, Debug, PartialEq)]
 #[command(name = "npdf")]
 #[command(author, version, about, long_about = None, styles = cli_styles())]
 #[command(propagate_version = true, disable_help_subcommand = true)]
@@ -64,20 +79,32 @@ struct Cli {
     command: Commands,
 }
 
-#[derive(Subcommand)]
+#[derive(Subcommand, Debug, PartialEq)]
 enum Commands {
     /// List images embedded in the PDF.
+    #[command(alias = "ls", visible_alias = "ls")]
     List(ListArgs),
     /// Export/extract pages from the PDF to PNG or JPEG files.
+    #[command(alias = "x", visible_alias = "x")]
     Export(ExportArgs),
     /// Remove watermarks from the PDF.
+    #[command(alias = "uw", visible_alias = "uw")]
     Unwatermark(UnwatermarkArgs),
     /// Recrop pages in the PDF based on specified box.
+    #[command(alias = "rc", visible_alias = "rc")]
     Recrop(RecropArgs),
     /// Fix stencil page color issues in the PDF.
+    #[command(alias = "fc", visible_alias = "fc")]
     FixColor(FixColorspaceArgs),
     /// Get version information.
+    #[command(alias = "vv", visible_alias = "vv")]
     Version,
+    /// Create shell completion files for npdf.
+    Completions {
+        /// The shell to generate the completion file for.
+        #[arg(long = "generate", value_enum)]
+        generator: Shell,
+    },
 }
 
 fn cli_styles() -> Styles {
@@ -132,4 +159,13 @@ fn cmd_show_version_info() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn print_completions<G: Generator>(generator: G, cmd: &mut Command) {
+    clap_complete::generate(
+        generator,
+        cmd,
+        cmd.get_name().to_string(),
+        &mut std::io::stdout(),
+    )
 }

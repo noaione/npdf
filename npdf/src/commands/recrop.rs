@@ -7,7 +7,7 @@ use tiny_poppler::PdfPasswords;
 
 use crate::common::{NpdfError, ensure_pdf_output, unlock_pdf};
 
-#[derive(Args)]
+#[derive(Args, Debug, PartialEq)]
 pub struct RecropArgs {
     /// Path to the PDF file to unwatermark.
     pub pdf: PathBuf,

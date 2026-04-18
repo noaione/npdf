@@ -13,6 +13,7 @@ readme = "./README.md"
 
 [dependencies]
 clap.workspace = true
+clap_complete.workspace = true
 inquire.workspace = true
 crossbeam-channel.workspace = true
 num_cpus.workspace = true

@@ -27,6 +27,7 @@ flate2 = "1.1.9" # for recompressing PDF stream
 
 # CLI stuff
 clap = { version = "4.6.1", features = ["derive"] }
+clap_complete = { version = "4.6.2", features = ["unstable-dynamic"] }
 inquire = "0.9.4"
 crossbeam-channel = "0.5.15"
 num_cpus = "1.17.0"
