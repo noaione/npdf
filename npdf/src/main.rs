@@ -2,7 +2,7 @@ mod commands;
 mod common;
 
 use clap::{
-    Command, CommandFactory, Parser, Subcommand, ValueEnum,
+    Command, CommandFactory, Parser, Subcommand,
     builder::{
         Styles,
         styling::{AnsiColor, Effects},
@@ -47,12 +47,6 @@ fn execute(cli: Cli) -> Result<()> {
         Commands::Version => cmd_show_version_info(),
         Commands::Completions { generator } => {
             let mut cmd = Cli::command();
-            let gen_value = generator.to_possible_value();
-            cprintln!(
-                "<green>Generating completion file for <cyan,bold>{:?}</cyan,bold></>:",
-                gen_value
-            );
-
             print_completions(generator, &mut cmd);
             Ok(())
         }
