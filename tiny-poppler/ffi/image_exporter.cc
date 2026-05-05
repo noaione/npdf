@@ -605,7 +605,6 @@ void NTImageOutputDev::writeImage(GfxState *state, Object *ref, Stream *str, int
                     }
                     globalsStream->close();
                 }
-                globalsObj->streamClose();
             }
         }
         writeRawImage(str, ntExtJb2e, imageType, width, height, components, bitsPerComponent,
