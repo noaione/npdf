@@ -426,7 +426,6 @@ fn emit_linker_flags(target: &str, sanitizer: Option<Sanitizer>) {
         }
         println!("cargo:rustc-link-lib=static=lcms2");
         println!("cargo:rustc-link-lib=static=libpng16");
-        println!("cargo:rustc-link-lib=static=zlib");
         println!("cargo:rustc-link-lib=dylib=advapi32");
         println!("cargo:rustc-link-lib=dylib=shell32");
         println!("cargo:rustc-link-lib=dylib=shfolder");
@@ -479,6 +478,10 @@ fn emit_linker_flags(target: &str, sanitizer: Option<Sanitizer>) {
                 .join(triplet)
                 .join("lib");
             println!("cargo:rustc-link-search=native={}", lib_path.display());
+            emit_zlib_stupid_names(&lib_path);
+        } else {
+            // use default zlib
+            println!("cargo:rustc-link-lib=static=zlib");
         }
     } else {
         emit_system_library_hints(target);
@@ -594,6 +597,29 @@ fn emit_homebrew_search_hint(formula: &str) {
             break;
         }
     }
+}
+
+fn emit_zlib_stupid_names(search_path: &PathBuf) {
+    let pattern = ["zs", "zlibstatic", "zlib", "z"];
+
+    for name in pattern {
+        let full_path = search_path.join(format!("{}.lib", name));
+        if full_path.exists() {
+            println!(
+                "cargo:warning=Found zlib library in {}",
+                full_path.display()
+            );
+            println!("cargo:rustc-link-lib=static={}", name);
+            return;
+        }
+    }
+
+    // raise error
+    println!(
+        "cargo:warning=Unable to find zlib library in {:?}",
+        search_path
+    );
+    std::process::exit(1);
 }
 
 fn emit_git_sha_version(poppler_src: &Path) {
