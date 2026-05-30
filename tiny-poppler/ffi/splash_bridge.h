@@ -48,11 +48,12 @@ typedef enum ntsplash_image_type
 
 typedef enum ntsplash_crop_mode
 {
-    NTSPLASH_CROP_MODE_MEDIA_BOX = 0,
-    NTSPLASH_CROP_MODE_CROP_BOX = 1,
-    // NTSPLASH_CROP_MODE_BLEED_BOX = 2,
-    // NTSPLASH_CROP_MODE_TRIM_BOX = 3,
-    // NTSPLASH_CROP_MODE_ART_BOX = 4,
+    NTSPLASH_CROP_MODE_UNKNOWN = 0,
+    NTSPLASH_CROP_MODE_MEDIA_BOX = 1,
+    NTSPLASH_CROP_MODE_CROP_BOX = 2,
+    // NTSPLASH_CROP_MODE_BLEED_BOX = 3,
+    // NTSPLASH_CROP_MODE_TRIM_BOX = 4,
+    // NTSPLASH_CROP_MODE_ART_BOX = 5,
 } ntsplash_crop_mode_t;
 
 typedef enum ntsplash_zero_width_line_mode

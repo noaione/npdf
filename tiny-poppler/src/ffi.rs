@@ -44,12 +44,13 @@ pub enum ImageColorSpace {
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PdfCropMode {
-    MediaBox = 0,
+    Unknown = 0, // you never want to use this
+    MediaBox = 1,
     #[default]
-    CropBox = 1,
-    // BleedBox = 2,
-    // TrimBox = 3,
-    // ArtBox = 4,
+    CropBox = 2,
+    // BleedBox = 3,
+    // TrimBox = 4,
+    // ArtBox = 5,
 }
 
 #[repr(C)]
