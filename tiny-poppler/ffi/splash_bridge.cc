@@ -395,12 +395,12 @@ public:
         Dict *cs_dict = cs_obj.getDict();
 
         // make dummy state for parsing
-        const PDFRectangle *rect = cur_page->getMediaBox();
+        const PDFRectangle &rect = cur_page->getMediaBox();
         std::unique_ptr<GfxState> state(new GfxState(72.0, 72.0, rect, 0, this->upsideDown()));
 
         for (int i = 0; i < cs_dict->getLength(); ++i)
         {
-            const char *cs_name = cs_dict->getKey(i);
+            const std::string &cs_name = cs_dict->getKey(i);
             // get value for the key
             Object cs_value = cs_dict->getVal(i);
             if (cs_value.isNull())
@@ -415,8 +415,7 @@ public:
                 continue;
             }
 
-            result.emplace_back(cs_name ? std::string(cs_name) : std::string(),
-                                std::move(color_space));
+            result.emplace_back(cs_name, std::move(color_space));
         }
 
         return result;
@@ -778,8 +777,8 @@ int ntsplash_renderer_collect_images(ntsplash_renderer_t *renderer,
         page->display(&collector, 72.0, 72.0, 0, true, true, false);
         const size_t after = collected.size();
 
-        const PDFRectangle *cropbox = page->getCropBox();
-        const PDFRectangle *mediabox = page->getMediaBox();
+        const PDFRectangle &cropbox = page->getCropBox();
+        const PDFRectangle &mediabox = page->getMediaBox();
 
         NTSplashCollectedPage summary;
         summary.page_number = page_number;
@@ -853,19 +852,19 @@ int ntsplash_renderer_collect_images(ntsplash_renderer_t *renderer,
             summary.colorspace_count = static_cast<uint32_t>(allocation_count);
         }
 
-        if (cropbox)
+        if (cropbox.isValid())
         {
-            summary.cropbox[0] = cropbox->x1;
-            summary.cropbox[1] = cropbox->y1;
-            summary.cropbox[2] = cropbox->x2;
-            summary.cropbox[3] = cropbox->y2;
+            summary.cropbox[0] = cropbox.x1;
+            summary.cropbox[1] = cropbox.y1;
+            summary.cropbox[2] = cropbox.x2;
+            summary.cropbox[3] = cropbox.y2;
         }
-        if (mediabox)
+        if (mediabox.isValid())
         {
-            summary.mediabox[0] = mediabox->x1;
-            summary.mediabox[1] = mediabox->y1;
-            summary.mediabox[2] = mediabox->x2;
-            summary.mediabox[3] = mediabox->y2;
+            summary.mediabox[0] = mediabox.x1;
+            summary.mediabox[1] = mediabox.y1;
+            summary.mediabox[2] = mediabox.x2;
+            summary.mediabox[3] = mediabox.y2;
         }
         page_summaries.push_back(summary);
     }
