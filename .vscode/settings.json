@@ -41,4 +41,7 @@
         "editor.defaultFormatter": "xaver.clang-format",
         "editor.formatOnSave": true
     },
+    "chat.tools.terminal.autoApprove": {
+        "pip": true
+    },
 }

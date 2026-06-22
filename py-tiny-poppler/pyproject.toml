@@ -1,0 +1,53 @@
+[build-system]
+requires = ["scikit-build-core>=0.10", "nanobind>=2.0"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "tiny-poppler"
+version = "0.1.0"
+description = "Python bindings for tiny-poppler — fast direct C/C++ to Python PDF rendering and image extraction"
+readme = "README.md"
+license = { text = "GPL-3.0-or-later" }
+requires-python = ">=3.11"
+authors = [
+    { name = "noaione", email = "noaione@n4o.xyz" },
+]
+keywords = ["pdf", "poppler", "rendering", "image", "extraction"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "Programming Language :: C++",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+dependencies = [
+    "numpy>=2",
+]
+
+[project.optional-dependencies]
+pillow = ["Pillow>=11.0"]
+dev = ["pytest>=7.0", "Pillow>=11.0", "ruff>=0.15", "nanobind>=2.0"]
+
+[project.urls]
+Homepage = "https://github.com/noaione/npdf"
+Repository = "https://github.com/noaione/npdf"
+Issues = "https://github.com/noaione/npdf/issues"
+
+[tool.scikit-build]
+minimum-version = "0.10"
+build-dir = "build/{wheel_tag}"
+wheel.install-dir = "tiny_poppler"
+wheel.py-api = "cp311"
+wheel.expand-macos-universal-tags = false
+ninja.version = ">=1.10"
+cmake.version = ">=3.28"
+
+cmake.args = [
+    "-DBUILD_POPPLER=ON",
+]
