@@ -546,8 +546,12 @@ class Document
 {
 public:
     ntsplash_renderer_t *renderer = nullptr;
+    std::string path;
 
-    explicit Document(ntsplash_renderer_t *renderer) : renderer(renderer) {}
+    explicit Document(ntsplash_renderer_t *renderer, std::string path)
+        : renderer(renderer), path(std::move(path))
+    {
+    }
 
     ~Document()
     {
@@ -574,7 +578,7 @@ public:
         {
             throw std::runtime_error("poppler returned a null renderer");
         }
-        return new Document(renderer);
+        return new Document(renderer, path);
     }
 
     uint32_t page_count() const
@@ -727,11 +731,17 @@ NB_MODULE(_core, m)
     nb::class_<XYZColor>(m, "XYZColor")
         .def_ro("x", &XYZColor::x)
         .def_ro("y", &XYZColor::y)
-        .def_ro("z", &XYZColor::z);
+        .def_ro("z", &XYZColor::z)
+        .def("__repr__", [](const XYZColor &c) {
+            return nb::str("XYZColor(x={}, y={}, z={})").format(c.x, c.y, c.z);
+        });
 
     nb::class_<MinMaxRange>(m, "MinMaxRange")
         .def_ro("min", &MinMaxRange::min)
-        .def_ro("max", &MinMaxRange::max);
+        .def_ro("max", &MinMaxRange::max)
+        .def("__repr__", [](const MinMaxRange &r) {
+            return nb::str("MinMaxRange(min={}, max={})").format(r.min, r.max);
+        });
 
     nb::class_<ColorSpace>(m, "ColorSpace")
         .def_ro("mode", &ColorSpace::mode)
@@ -742,7 +752,9 @@ NB_MODULE(_core, m)
         .def_ro("lab_black", &ColorSpace::lab_black)
         .def_ro("lab_a", &ColorSpace::lab_a)
         .def_ro("lab_b", &ColorSpace::lab_b)
-        .def_ro("alternate", &ColorSpace::alternate);
+        .def_ro("alternate", &ColorSpace::alternate)
+        .def("__repr__",
+             [](const ColorSpace &cs) { return nb::str("ColorSpace(mode={})").format(cs.mode); });
 
     // ImageInfo
     nb::class_<ImageInfo>(m, "ImageInfo")
@@ -756,7 +768,12 @@ NB_MODULE(_core, m)
         .def_ro("color_space", &ImageInfo::color_space)
         .def("xref", &ImageInfo::xref)
         .def("dpi", &ImageInfo::dpi)
-        .def("matrix", &ImageInfo::matrix);
+        .def("matrix", &ImageInfo::matrix)
+        .def("__repr__", [](const ImageInfo &info) {
+            return nb::str("ImageInfo(page={}, {}x{}, type={}, colorspace={})")
+                .format(info.page_number, info.width, info.height, info.image_type,
+                        info.colorspace);
+        });
 
     // PageInfo
     nb::class_<PageInfo>(m, "PageInfo")
@@ -766,12 +783,20 @@ NB_MODULE(_core, m)
         .def_ro("is_pdf_a_compatible", &PageInfo::is_pdf_a_compatible)
         .def_ro("colorspaces", &PageInfo::colorspaces)
         .def("crop_box", &PageInfo::crop_box)
-        .def("media_box", &PageInfo::media_box);
+        .def("media_box", &PageInfo::media_box)
+        .def("__repr__", [](const PageInfo &p) {
+            return nb::str("PageInfo(page={}, images={}, objects={})")
+                .format(p.page_number, p.image_count, p.object_count);
+        });
 
     // ImageCollection
     nb::class_<ImageCollection>(m, "ImageCollection")
         .def_ro("images", &ImageCollection::images_vec)
-        .def_ro("pages", &ImageCollection::pages_vec);
+        .def_ro("pages", &ImageCollection::pages_vec)
+        .def("__repr__", [](const ImageCollection &coll) {
+            return nb::str("ImageCollection(images={}, pages={})")
+                .format(coll.images_vec.size(), coll.pages_vec.size());
+        });
 
     // RenderedImage
     nb::class_<RenderedImage>(m, "RenderedImage")
@@ -781,7 +806,11 @@ NB_MODULE(_core, m)
         .def_ro("stride", &RenderedImage::stride)
         .def_ro("components", &RenderedImage::components)
         .def_ro("bits_per_component", &RenderedImage::bits_per_component)
-        .def_ro("color_mode", &RenderedImage::color_mode);
+        .def_ro("color_mode", &RenderedImage::color_mode)
+        .def("__repr__", [](const RenderedImage &img) {
+            return nb::str("RenderedImage({}x{}, mode={}, {}bpc)")
+                .format(img.width, img.height, img.color_mode, img.bits_per_component);
+        });
 
     // CCITT params
     nb::class_<CcittParams>(m, "CcittParams")
@@ -792,7 +821,10 @@ NB_MODULE(_core, m)
         .def_ro("end_of_line", &CcittParams::end_of_line)
         .def_ro("byte_align", &CcittParams::byte_align)
         .def_ro("end_of_block", &CcittParams::end_of_block)
-        .def_ro("black_is_one", &CcittParams::black_is_one);
+        .def_ro("black_is_one", &CcittParams::black_is_one)
+        .def("__repr__", [](const CcittParams &p) {
+            return nb::str("CcittParams(encoding={}, {}x{})").format(p.encoding, p.columns, p.rows);
+        });
 
     // ExportedImage
     nb::class_<ExportedImage>(m, "ExportedImage")
@@ -809,7 +841,11 @@ NB_MODULE(_core, m)
         .def_ro("format", &ExportedImage::format)
         .def_ro("type", &ExportedImage::type)
         .def_ro("extension", &ExportedImage::extension)
-        .def_ro("has_jbig2_globals", &ExportedImage::has_jbig2_globals);
+        .def_ro("has_jbig2_globals", &ExportedImage::has_jbig2_globals)
+        .def("__repr__", [](const ExportedImage &img) {
+            return nb::str("ExportedImage({}x{}, format={}, ext={})")
+                .format(img.width, img.height, img.format, img.extension);
+        });
 
     // Document
     nb::class_<Document>(m, "Document")
@@ -825,7 +861,20 @@ NB_MODULE(_core, m)
         .def("export_image", &Document::export_image, nb::arg("page_index"),
              nb::arg("xref_object") = std::nullopt, nb::arg("xref_generation") = 0,
              nb::arg("occurrence_index") = 0, nb::arg("target_type") = PyImageExportType::Image,
-             nb::arg("describe_only") = false);
+             nb::arg("describe_only") = false)
+        .def("__repr__", [](const Document &doc) {
+            uint32_t count = 0;
+            if (doc.renderer)
+            {
+                char *error = nullptr;
+                ntsplash_renderer_page_count(doc.renderer, &count, &error);
+                if (error)
+                {
+                    ntsplash_renderer_free_cstr(error);
+                }
+            }
+            return nb::str("Document(path='{}', pages={})").format(doc.path, count);
+        });
 
     // Version
     m.def("get_version", []() {
