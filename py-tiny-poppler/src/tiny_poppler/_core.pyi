@@ -1,9 +1,8 @@
 """tiny-poppler core extension"""
 
 import enum
-from typing import Any
 
-from numpy import ndarray
+import numpy
 
 class ColorMode(enum.Enum):
     Mono1 = 0
@@ -191,7 +190,7 @@ class ImageCollection:
 
 class RenderedImage:
     @property
-    def data(self) -> ndarray[Any]: ...
+    def data(self) -> numpy.ndarray: ...
     @property
     def width(self) -> int: ...
     @property

@@ -800,7 +800,7 @@ NB_MODULE(_core, m)
 
     // RenderedImage
     nb::class_<RenderedImage>(m, "RenderedImage")
-        .def_ro("data", &RenderedImage::data)
+        .def_ro("data", &RenderedImage::data, nb::sig("def data(self) -> numpy.ndarray"))
         .def_ro("width", &RenderedImage::width)
         .def_ro("height", &RenderedImage::height)
         .def_ro("stride", &RenderedImage::stride)
@@ -828,8 +828,12 @@ NB_MODULE(_core, m)
 
     // ExportedImage
     nb::class_<ExportedImage>(m, "ExportedImage")
-        .def_prop_ro("data", [](const ExportedImage &img) { return img.data; })
-        .def_prop_ro("jbig2_globals", [](const ExportedImage &img) { return img.jbig2_globals; })
+        .def_prop_ro(
+            "data", [](const ExportedImage &img) { return img.data; },
+            nb::sig("def data(self) -> bytes"))
+        .def_prop_ro(
+            "jbig2_globals", [](const ExportedImage &img) { return img.jbig2_globals; },
+            nb::sig("def jbig2_globals(self) -> bytes | None"))
         .def_ro("ccitt_params", &ExportedImage::ccitt_params)
         .def_ro("width", &ExportedImage::width)
         .def_ro("height", &ExportedImage::height)

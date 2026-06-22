@@ -282,3 +282,14 @@ target_include_directories(_core BEFORE PRIVATE
 target_link_libraries(_core PRIVATE ${TINY_POPPLER_LINK_LIBS} tiny_poppler_ffi)
 
 install(TARGETS _core LIBRARY DESTINATION .)
+
+# Generate type stubs for the nanobind extension at build time.
+nanobind_add_stub(
+    tiny_poppler_stub
+    MODULE tiny_poppler._core
+    OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/tiny_poppler/_core.pyi
+    MARKER_FILE ${CMAKE_CURRENT_SOURCE_DIR}/src/tiny_poppler/py.typed
+    PYTHON_PATH $<TARGET_FILE_DIR:_core>
+    DEPENDS _core tiny_poppler_ffi
+    VERBOSE
+)
