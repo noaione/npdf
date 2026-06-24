@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Python bindings for tiny-poppler — fast direct C/C++ to Python PDF rendering and image extraction"
 readme = "README.md"
 license = { text = "GPL-3.0-or-later" }
-requires-python = ">=3.11"
+requires-python = ">=3.11,<=3.14"
 authors = [
     { name = "noaione", email = "noaione@n4o.xyz" },
 ]

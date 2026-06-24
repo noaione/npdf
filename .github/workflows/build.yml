@@ -35,7 +35,7 @@ jobs:
       matrix:
         os:
           # Linux (x64)
-          - [ubuntu-24.04, x86_64-unknown-linux-gnu]
+          - [ubuntu-26.04, x86_64-unknown-linux-gnu]
           # # Linux (ARM64)
           # - [ubuntu-24.04-arm, aarch64-unknown-linux-gnu]
           # # macOS Apple Intel (Sonoma)
@@ -71,6 +71,11 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
@@ -156,7 +161,7 @@ jobs:
           # dir C:\vcpkg\installed\x64-windows-static\bin
           dir C:\vcpkg\installed\x64-windows-static\lib
 
-      - name: Build
+      - name: Build (Rust)
         run: cargo build --profile release --workspace --all-targets -vv
         env:
           BOOST_ROOT: ${{ steps.install-boost.outputs.boost_root }}
@@ -183,3 +188,36 @@ jobs:
         with:
           subject-name: npdf-${{ matrix.os[1] }}
           subject-digest: sha256:${{ steps.upload.outputs.artifact-digest }}
+
+      # --- Python wheel build & test ---
+
+      - name: Install Python build tools
+        run: pip install build
+
+      - name: Build Python wheel
+        run: |
+          cd py-tiny-poppler
+          python -m build --wheel --outdir dist
+        env:
+          BOOST_ROOT: ${{ steps.install-boost.outputs.boost_root }}
+          Boost_DIR: ${{ steps.install-boost.outputs.boost_root }}
+          CI_RUNNER: "github"
+
+      - name: Install wheel and test deps
+        run: |
+          pip install py-tiny-poppler/dist/tiny_poppler-*.whl "numpy>=2" "Pillow>=11.0" "pytest>=7.0" "ruff>=0.15"
+
+      - name: Test import
+        run: python -c "from tiny_poppler import Document; print(Document); print('OK')"
+
+      - name: Run pytest
+        run: pytest py-tiny-poppler/tests/ -v
+
+      - name: Run ruff
+        run: ruff check py-tiny-poppler/
+
+      - name: Upload Python wheel
+        uses: actions/upload-artifact@v5
+        with:
+          name: tiny-poppler-${{ matrix.os[1] }}
+          path: py-tiny-poppler/dist/tiny_poppler-*.whl
