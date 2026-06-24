@@ -44,4 +44,7 @@
     "chat.tools.terminal.autoApprove": {
         "pip": true
     },
+    "python.analysis.extraPaths": [
+        "./py-tiny-poppler/src"
+    ],
 }
