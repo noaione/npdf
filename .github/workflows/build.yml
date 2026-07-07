@@ -100,7 +100,7 @@ jobs:
             libbz2-dev \
             libfreetype6-dev \
             libfontconfig1-dev \
-            libturbojpeg \
+            libturbojpeg0 \
             libturbojpeg0-dev \
             libpng-dev \
             libtiff-dev \
@@ -136,7 +136,7 @@ jobs:
         if: runner.os == 'Windows'
         with:
           path: C:\vcpkg\installed
-          key: vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
+          key: vcpkg-${{ runner.os }}-x64-windows-static-md-${{ hashFiles('vcpkg.json') }}
 
       - name: Install system dependencies (Windows)
         if: runner.os == 'Windows'
@@ -146,20 +146,21 @@ jobs:
           cd C:\vcpkg
           .\bootstrap-vcpkg.bat
 
-          # Install some pre-dependencies
-          C:\vcpkg\vcpkg.exe install bzip2:x64-windows-static brotli:x64-windows-static liblzma:x64-windows-static --clean-after-build
+          # Install some pre-dependencies as static libraries with the dynamic
+          # MSVC runtime used by Python extension modules.
+          C:\vcpkg\vcpkg.exe install bzip2:x64-windows-static-md brotli:x64-windows-static-md liblzma:x64-windows-static-md --clean-after-build
 
           # Install required packages as static libraries
-          C:\vcpkg\vcpkg.exe install libpng:x64-windows-static zlib:x64-windows-static libiconv:x64-windows-static freetype:x64-windows-static tiff:x64-windows-static openjpeg:x64-windows-static libjpeg-turbo:x64-windows-static lcms:x64-windows-static --clean-after-build
+          C:\vcpkg\vcpkg.exe install libpng:x64-windows-static-md zlib:x64-windows-static-md libiconv:x64-windows-static-md freetype:x64-windows-static-md tiff:x64-windows-static-md openjpeg:x64-windows-static-md libjpeg-turbo:x64-windows-static-md lcms:x64-windows-static-md --clean-after-build
           echo "VCPKG_ROOT=C:\vcpkg" >> $env:GITHUB_ENV
-          echo "VCPKG_DEFAULT_TRIPLET=x64-windows-static" >> $env:GITHUB_ENV
+          echo "VCPKG_DEFAULT_TRIPLET=x64-windows-static-md" >> $env:GITHUB_ENV
           echo "VCPKG_FEATURE_FLAGS=manifests" >> $env:GITHUB_ENV
 
           # List manually installed packages for debugging
           echo "Installed vcpkg packages:"
           C:\vcpkg\vcpkg.exe list
-          # dir C:\vcpkg\installed\x64-windows-static\bin
-          dir C:\vcpkg\installed\x64-windows-static\lib
+          # dir C:\vcpkg\installed\x64-windows-static-md\bin
+          dir C:\vcpkg\installed\x64-windows-static-md\lib
 
       - name: Build (Rust)
         run: cargo build --profile release --workspace --all-targets -vv

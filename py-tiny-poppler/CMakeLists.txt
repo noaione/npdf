@@ -25,10 +25,21 @@ if(BUILD_POPPLER)
     set(POPPLER_INSTALL "${CMAKE_CURRENT_BINARY_DIR}/poppler-install")
 
     # CMake configuration mirroring tiny-poppler/build.rs as closely as possible.
-    # Use Unix Makefiles for the nested Poppler build to avoid relying on the
-    # ephemeral ninja binary provided by the isolated build environment.
+    # Use the same generator as the scikit-build build so Windows keeps the same
+    # compiler and vcpkg environment for Poppler's configure-time probes.
+    set(POPPLER_GENERATOR_ARGS)
+    if(CMAKE_GENERATOR)
+        list(APPEND POPPLER_GENERATOR_ARGS -G "${CMAKE_GENERATOR}")
+    endif()
+    if(CMAKE_GENERATOR_PLATFORM)
+        list(APPEND POPPLER_GENERATOR_ARGS -A "${CMAKE_GENERATOR_PLATFORM}")
+    endif()
+    if(CMAKE_GENERATOR_TOOLSET)
+        list(APPEND POPPLER_GENERATOR_ARGS -T "${CMAKE_GENERATOR_TOOLSET}")
+    endif()
+
     set(POPPLER_CMAKE_ARGS
-        -G "Unix Makefiles"
+        ${POPPLER_GENERATOR_ARGS}
         -S ${POPPLER_SRC}
         -B ${POPPLER_BUILD}
         -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
@@ -59,6 +70,9 @@ if(BUILD_POPPLER)
         -DRUN_GPERF_IF_PRESENT=OFF
         -DCMAKE_INSTALL_PREFIX=${POPPLER_INSTALL}
     )
+    if(CMAKE_GENERATOR MATCHES "Ninja" AND CMAKE_MAKE_PROGRAM)
+        list(APPEND POPPLER_CMAKE_ARGS -DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM})
+    endif()
 
     if(APPLE)
         list(APPEND POPPLER_CMAKE_ARGS -DFONT_CONFIGURATION=fontconfig -DENABLE_NSS3=ON)
@@ -268,6 +282,10 @@ nanobind_add_module(
     _core
     bindings/bindings.cc
 )
+set_target_properties(_core PROPERTIES
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/tiny_poppler"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/tiny_poppler"
+)
 # Put Poppler includes *before* Python includes so that bridge headers such as
 # splash_bridge.h resolve "Object.h" to Poppler's Object.h.
 target_include_directories(_core BEFORE PRIVATE
@@ -281,7 +299,7 @@ target_include_directories(_core BEFORE PRIVATE
 )
 target_link_libraries(_core PRIVATE ${TINY_POPPLER_LINK_LIBS} tiny_poppler_ffi)
 
-install(TARGETS _core LIBRARY DESTINATION .)
+install(TARGETS _core LIBRARY DESTINATION . RUNTIME DESTINATION .)
 
 # Generate type stubs for the nanobind extension at build time.
 nanobind_add_stub(
@@ -289,7 +307,7 @@ nanobind_add_stub(
     MODULE tiny_poppler._core
     OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/tiny_poppler/_core.pyi
     MARKER_FILE ${CMAKE_CURRENT_SOURCE_DIR}/src/tiny_poppler/py.typed
-    PYTHON_PATH $<TARGET_FILE_DIR:_core>
+    PYTHON_PATH ${CMAKE_CURRENT_BINARY_DIR}
     DEPENDS _core tiny_poppler_ffi
     VERBOSE
 )
