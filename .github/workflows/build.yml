@@ -28,21 +28,30 @@ env:
 
 jobs:
   build:
-    name: build (${{ matrix.os[1] }})
-    runs-on: ${{ matrix.os[0] }}
+    name: build (${{ matrix.os_label }})
+    runs-on: ${{ matrix.runner }}
     if: >
       github.event_name == 'push' ||
       contains(github.event.pull_request.body, '/build')
     strategy:
       fail-fast: false
       matrix:
-        os:
+        include:
           # Linux (x64)
-          - [ubuntu-26.04, x86_64-unknown-linux-gnu, "24.04"]
+          - runner: ubuntu-26.04
+            os_label: x86_64-unknown-linux-gnu
+            boost_arch: "x86"
+            boost_platform: "24.04"
           # macOS Apple Silicon (Tahoe)
-          - [macos-26, aarch64-apple-darwin, "15"]
+          - runner: macos-26
+            os_label: aarch64-apple-darwin
+            boost_arch: "aarch64"
+            boost_platform: "15"
           # Windows Server 2025 (x64)
-          - [windows-2025, x86_64-pc-windows-msvc, "2025"]
+          - runner: windows-2025
+            os_label: x86_64-pc-windows-msvc
+            boost_arch: "x86"
+            boost_platform: "2025"
 
     permissions:
       id-token: write
@@ -78,7 +87,8 @@ jobs:
         id: install-boost
         with:
           boost_version: ${{ env.BOOST_VERSION }}
-          platform_version: ${{ matrix.os[2] }}
+          platform_version: ${{ matrix.boost_platform }}
+          arch: ${{ matrix.boost_arch }}
 
       - name: Install system dependencies (Linux)
         if: runner.os == 'Linux'
@@ -167,19 +177,19 @@ jobs:
         run:
           uv run scripts/packer.py
         env:
-          MATRIX_NAME: ${{ matrix.os[1] }}
+          MATRIX_NAME: ${{ matrix.os_label }}
 
       - name: Upload artifact
         id: upload
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: npdf-${{ matrix.os[1] }}
+          name: npdf-${{ matrix.os_label }}
           path: |
-            npdf-${{ matrix.os[1] }}.zip
-            npdf-${{ matrix.os[1] }}.tar.gz
+            npdf-${{ matrix.os_label }}.zip
+            npdf-${{ matrix.os_label }}.tar.gz
 
       - name: Attest build provenance
-        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
         with:
-          subject-name: npdf-${{ matrix.os[1] }}
+          subject-name: npdf-${{ matrix.os_label }}
           subject-digest: sha256:${{ steps.upload.outputs.artifact-digest }}
