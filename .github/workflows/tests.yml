@@ -156,7 +156,7 @@ jobs:
             libbz2-dev \
             libfreetype6-dev \
             libfontconfig1-dev \
-            libturbojpeg \
+            libturbojpeg0 \
             libturbojpeg0-dev \
             libpng-dev \
             libtiff-dev \
