@@ -23,6 +23,9 @@ concurrency:
   group: "build-npdf-${{ github.ref }}"
   cancel-in-progress: true
 
+env:
+  BOOST_VERSION: "1.91.0"
+
 jobs:
   build:
     name: build (${{ matrix.os[1] }})
@@ -35,17 +38,11 @@ jobs:
       matrix:
         os:
           # Linux (x64)
-          - [ubuntu-26.04, x86_64-unknown-linux-gnu]
-          # # Linux (ARM64)
-          # - [ubuntu-24.04-arm, aarch64-unknown-linux-gnu]
-          # # macOS Apple Intel (Sonoma)
-          # - [macos-15-intel, x86_64-apple-darwin]
+          - [ubuntu-26.04, x86_64-unknown-linux-gnu, "24.04"]
           # macOS Apple Silicon (Tahoe)
-          - [macos-26, aarch64-apple-darwin]
+          - [macos-26, aarch64-apple-darwin, "15"]
           # Windows Server 2025 (x64)
-          - [windows-2025, x86_64-pc-windows-msvc]
-          # # Windows 11 ARM (ARM64)
-          # - [windows-11-arm, aarch64-pc-windows-msvc]
+          - [windows-2025, x86_64-pc-windows-msvc, "2025"]
 
     permissions:
       id-token: write
@@ -57,28 +54,31 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@4f1f4aec02e41874fa0262ea8ff5172d7978ad1e # v7.0.0
         with:
           submodules: recursive
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88
+        with:
+          toolchain: stable
 
       - name: Setup rust cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@7e35be21c2b94d972b1143087fabc27d7dc881ef # v2.9.1
         with:
           prefix-key: "rustbuild-"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@f98e06938123ccabd21905ea5d0069192241f9f1 # v8.3.1
         with:
           python-version: "3.12"
 
       - name: Install boost
-        uses: MarkusJx/install-boost@v2
+        uses: MarkusJx/install-boost@f9d34f6fe427b8f2ae424d7bf2a3ebccb0dae5a3 # v2.0.0
         id: install-boost
         with:
-          boost_version: "1.91.0"
+          boost_version: ${{ env.BOOST_VERSION }}
+          platform_version: ${{ matrix.os[2] }}
 
       - name: Install system dependencies (Linux)
         if: runner.os == 'Linux'
@@ -127,7 +127,7 @@ jobs:
             nspr
 
       - name: Cache vcpkg dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: runner.os == 'Windows'
         with:
           path: C:\vcpkg\installed
@@ -171,7 +171,7 @@ jobs:
 
       - name: Upload artifact
         id: upload
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: npdf-${{ matrix.os[1] }}
           path: |
@@ -179,7 +179,7 @@ jobs:
             npdf-${{ matrix.os[1] }}.tar.gz
 
       - name: Attest build provenance
-        uses: actions/attest-build-provenance@v3
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-name: npdf-${{ matrix.os[1] }}
           subject-digest: sha256:${{ steps.upload.outputs.artifact-digest }}
