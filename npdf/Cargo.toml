@@ -26,5 +26,6 @@ simple-jpegli-enc = { path = "../simple-jpegli-enc" }
 lopdf.workspace = true
 flate2.workspace = true
 sha2.workspace = true
+hex.workspace = true
 
 rayon.workspace = true

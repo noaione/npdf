@@ -178,7 +178,7 @@ fn scan_resources(
 
                     let hash = {
                         let digest = Sha256::digest(&stream.content);
-                        format!("{:x}", digest)
+                        hex::encode(digest)
                     };
 
                     let image_info = SimpleImageInfo {
