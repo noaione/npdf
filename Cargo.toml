@@ -17,31 +17,31 @@ rust-version = "1.88.0"
 
 [workspace.dependencies]
 rayon = "1.12.0"
-sha2 = "0.10.9"  # for hashing purposes
+sha2 = "0.11.0"  # for hashing purposes
 
 # PDF and images
 png = { version = "0.18.1" }
 tiff = { version = "0.11.3", default-features = false, features = ["deflate", "lzw"] }
-lopdf = { version = "0.40.0", default-features = false, features = ["rayon"] }
+lopdf = { version = "0.44.0", default-features = false, features = ["rayon"] }
 flate2 = "1.1.9" # for recompressing PDF stream
 
 # CLI stuff
-clap = { version = "4.6.1", features = ["derive"] }
-clap_complete = { version = "4.6.2", features = ["unstable-dynamic"] }
+clap = { version = "4.6.5", features = ["derive"] }
+clap_complete = { version = "4.6.8", features = ["unstable-dynamic"] }
 inquire = "0.9.4"
-crossbeam-channel = "0.5.15"
+crossbeam-channel = "0.5.16"
 num_cpus = "1.17.0"
 color-print = "0.3.7"
 
 # Error handling
-thiserror = "2.0.18"
+thiserror = "2.0.19"
 color-eyre = { version = "0.6.5", default-features = false, features = ["track-caller"] }
 
 # Build tools
-cc = "1.2.60"
+cc = "1.4.0"
 cmake = "0.1.58"
 walkdir = "2.5.0"
-glob = "0.3.3"
+glob = "0.3.4"
 
 [profile.release]
 opt-level = "s"
