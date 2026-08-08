@@ -197,7 +197,7 @@ pub(crate) fn encode_jpegli_internal(
             });
         }
 
-        let output_slice = std::slice::from_raw_parts(result.data, result.size as usize);
+        let output_slice = std::slice::from_raw_parts(result.data, result.size);
         let owned_vec = output_slice.to_vec();
         sjpegli_free_result(result); // No memory leak
         Ok(owned_vec)

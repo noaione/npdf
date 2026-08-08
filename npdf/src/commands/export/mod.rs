@@ -15,8 +15,8 @@ mod extract;
 mod render;
 
 use crate::commands::export::extract::{ExtractPagePlan, describe_component};
-use crate::commands::export::render::{GlyphFillChoice, ZeroWidthLineChoice};
 use crate::commands::export::render::{AutoDPIDirection, ColorChoice, CropChoice, RenderPagePlan};
+use crate::commands::export::render::{GlyphFillChoice, ZeroWidthLineChoice};
 use crate::common::NpdfError;
 
 pub type PagePairings = HashMap<PageInfo, Vec<ImageInfo>>;
