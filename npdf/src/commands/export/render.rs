@@ -285,7 +285,7 @@ fn precalculate_auto_export_config(
     direction: Option<AutoDPIDirection>,
     dpi_ratio: f64,
 ) -> GuessedImage {
-    let color = determine_page_colorspace(images, page_info, with_cmyk);
+    let color = determine_page_colorspace(images, page_info, crop_mode, with_cmyk);
     let dpi = if let Some(direction) = direction {
         determine_export_dpi(
             images, page_info, crop_mode, target_dpi, direction, dpi_ratio,
@@ -300,15 +300,21 @@ fn precalculate_auto_export_config(
 fn determine_page_colorspace(
     images: &[ImageInfo],
     page_info: Option<&PageInfo>,
+    crop_mode: CropChoice,
     with_cmyk: bool,
 ) -> ColorMode {
-    if images.is_empty() {
+    let relevant_images: Vec<&ImageInfo> = images
+        .iter()
+        .filter(|img| image_intersecting_with_page(page_info, crop_mode, img.matrix))
+        .collect();
+
+    if relevant_images.is_empty() {
         match page_info {
             Some(info) => determine_from_page_info(info, with_cmyk),
             _ => ColorMode::Mono1,
         }
-    } else if images.iter().any(image_has_color) {
-        if with_cmyk && images.iter().any(image_has_cmyk) {
+    } else if relevant_images.iter().any(|img| image_has_color(img)) {
+        if with_cmyk && relevant_images.iter().any(|img| image_has_cmyk(img)) {
             ColorMode::Cmyk8
         } else {
             ColorMode::Rgb8
@@ -456,7 +462,15 @@ fn colorspace_is_color(space: &PdfImageColorSpace) -> bool {
         | PdfImageColorSpace::ICC { .. }
         | PdfImageColorSpace::Pattern => true,
         PdfImageColorSpace::Unknown => false, // Default to non-color
-        PdfImageColorSpace::Indexed { base, .. } => colorspace_is_color(base),
+        PdfImageColorSpace::Indexed {
+            base,
+            is_achromatic,
+            ..
+        } => {
+            // A CMYK/RGB-backed palette can still be entirely grayscale/black
+            // (e.g. scanned line art saved through an indexed CMYK palette).
+            colorspace_is_color(base) && !is_achromatic
+        }
         PdfImageColorSpace::Separation {
             name, alternate, ..
         } => {
@@ -504,22 +518,23 @@ fn image_intersecting_with_page(
     }
 }
 
+/// Minimum overlap (in PDF points) required along both axes for an image's AABB to
+/// count as intersecting the page box. A plain nonzero-overlap AABB test flags images
+/// that only clip the box by a hairline -- e.g. a page-edge tab/registration mark that
+/// mostly bleeds off the trimmed page and only pokes a sub-point sliver back in -- as
+/// full page content, which skews auto color/DPI detection. Requiring a small minimum
+/// overlap filters those out while still catching genuine bleed content, which overlaps
+/// by tens to hundreds of points.
+const MIN_INTERSECTION_OVERLAP_PT: f64 = 2.0;
+
 /// Checks if the Image (defined by matrix) intersects the Page CropBox
 pub fn image_is_intersecting(matrix: PdfMatrix, bbox: PdfRect) -> bool {
     let img_aabb = matrix.get_image_aabb();
 
-    // Separating Axis Theorem (Simplified for AABB)
-    // If one is to the left/right/top/bottom of the other, they do not intersect.
-    if img_aabb.x2 < bbox.x1
-        || img_aabb.x1 > bbox.x2
-        || img_aabb.y2 < bbox.y1
-        || img_aabb.y1 > bbox.y2
-    {
-        false
-    } else {
-        // Overlap detected
-        true
-    }
+    let overlap_x = img_aabb.x2.min(bbox.x2) - img_aabb.x1.max(bbox.x1);
+    let overlap_y = img_aabb.y2.min(bbox.y2) - img_aabb.y1.max(bbox.y1);
+
+    overlap_x >= MIN_INTERSECTION_OVERLAP_PT && overlap_y >= MIN_INTERSECTION_OVERLAP_PT
 }
 
 impl ColorChoice {

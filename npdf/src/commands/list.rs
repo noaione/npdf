@@ -203,8 +203,13 @@ fn describe_colorspace(space: &PdfImageColorSpace) -> String {
         PdfImageColorSpace::ICC { alternate } => {
             format!("ICC({})", describe_colorspace(alternate))
         }
-        PdfImageColorSpace::Indexed { hival, base } => {
-            format!("Indexed({hival}, {})", describe_colorspace(base))
+        PdfImageColorSpace::Indexed {
+            hival,
+            base,
+            is_achromatic,
+        } => {
+            let suffix = if *is_achromatic { ", achromatic" } else { "" };
+            format!("Indexed({hival}, {}{suffix})", describe_colorspace(base))
         }
         PdfImageColorSpace::Pattern => "Pattern".to_string(),
         PdfImageColorSpace::Separation { name, alternate } => {
