@@ -436,6 +436,23 @@ public:
     }
 
 private:
+    // page->display() is called with useMediaBox=true, so poppler anchors the CTM's
+    // origin at the MediaBox's lower-left corner (device (0,0) == MediaBox (x1,y1))
+    // rather than absolute PDF space. PageInfo's mediabox/cropbox are reported in
+    // absolute PDF space, so translate the captured CTM back to that same space here
+    // -- otherwise callers comparing an image's matrix against the page box (e.g. the
+    // AABB intersection check) compare two different coordinate systems.
+    void store_absolute_ctm(double out[6], const std::array<double, 6> &ctm) const
+    {
+        std::memcpy(out, ctm.data(), 6 * sizeof(double));
+        if (cur_page)
+        {
+            const PDFRectangle &mediaBox = cur_page->getMediaBox();
+            out[4] += mediaBox.x1;
+            out[5] += mediaBox.y1;
+        }
+    }
+
     void add_image(int width, int height, GfxImageColorMap *color_map, Object *ref, GfxState *state,
                    ntsplash_image_type_t image_type)
     {
@@ -488,8 +505,7 @@ private:
             const std::array<double, 6> ctm = state->getCTM();
             if (ctm.size() == 6)
             {
-                // copy std::array<double, 6> to double[6] style
-                std::memcpy(info.ctm, ctm.data(), 6 * sizeof(double));
+                store_absolute_ctm(info.ctm, ctm);
             }
         }
 
@@ -532,7 +548,7 @@ private:
             std::array<double, 6> ctm = state->getCTM();
             if (ctm.size() == 6)
             {
-                std::memcpy(info.ctm, ctm.data(), 6 * sizeof(double));
+                store_absolute_ctm(info.ctm, ctm);
             }
         }
         images_->push_back(info);
@@ -1177,6 +1193,23 @@ bool ntgfxcs_get_indexed_info(const void *cs_ptr, ntcolorspaces_indexed_info_t *
 
     out->hival = idxColor->getIndexHigh();
     out->base = static_cast<void *>(idxColor->getBase());
+
+    out->is_achromatic = true;
+    for (int i = 0; i <= idxColor->getIndexHigh(); ++i)
+    {
+        GfxColor color;
+        clearGfxColor(&color);
+        color.c[0] = dblToCol(static_cast<double>(i));
+
+        GfxRGB rgb;
+        idxColor->getRGB(color, &rgb);
+        if (rgb.r != rgb.g || rgb.g != rgb.b)
+        {
+            out->is_achromatic = false;
+            break;
+        }
+    }
+
     return true;
 }
 

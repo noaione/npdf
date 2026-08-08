@@ -144,6 +144,7 @@ struct SplashPageColorspaceEntry {
 struct ColorspaceIndexedInfo {
     hival: u32,
     base: *const c_void,
+    is_achromatic: bool,
 }
 
 #[repr(C)]
@@ -848,6 +849,10 @@ pub enum PdfImageColorSpace {
     Indexed {
         hival: u32,
         base: Box<PdfImageColorSpace>,
+        /// True when every palette entry (0..=hival) resolves to an achromatic
+        /// (R==G==B) color, i.e. the image only carries grayscale/black tones
+        /// even though its base colorspace may be chromatic-capable (e.g. DeviceCMYK).
+        is_achromatic: bool,
     },
     Pattern,
     Separation {
@@ -1131,6 +1136,7 @@ fn convert_colorspace(cs: *const c_void) -> PdfImageColorSpace {
             PdfImageColorSpace::Indexed {
                 hival: info.hival,
                 base: Box::new(convert_colorspace(info.base)),
+                is_achromatic: info.is_achromatic,
             }
         }
 

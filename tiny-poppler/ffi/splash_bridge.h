@@ -187,6 +187,10 @@ ntsplash_image_colorspace_t ntgfxcs_get_color_mode(const void *cs_ptr);
 typedef struct {
     uint32_t hival;
     const void *base; // opaque pointer to GfxColorSpace*
+    // True when every palette entry (0..=hival) maps to an achromatic (R==G==B)
+    // RGB color, i.e. the indexed image only carries grayscale/black tones even
+    // though its base colorspace may be chromatic-capable (e.g. DeviceCMYK).
+    bool is_achromatic;
 } ntcolorspaces_indexed_info_t;
 
 bool ntgfxcs_get_indexed_info(const void *cs_ptr, ntcolorspaces_indexed_info_t *out);
