@@ -70,6 +70,20 @@ ntsplash_upconvert_zwl_mode(ntsplash_zero_width_line_mode_t mode)
     }
 }
 
+std::optional<SplashGlyphFillMode>
+ntsplash_upconvert_glyph_fill_mode(ntsplash_glyph_fill_mode_t mode)
+{
+    switch (mode)
+    {
+    case NTSPLASH_GLYPH_FILL_BITMAP:
+        return splashGlyphFillBitmap;
+    case NTSPLASH_GLYPH_FILL_PATH:
+        return splashGlyphFillPath;
+    default:
+        return std::nullopt;
+    }
+}
+
 void ntsplash_ensure_global_params()
 {
     std::call_once(kTSplashInitFlag, []() {
@@ -664,6 +678,19 @@ int ntsplash_renderer_render_page(ntsplash_renderer_t *renderer, uint32_t page_i
         return errInternal;
     }
 
+    auto maybe_glyph_fill_mode = ntsplash_upconvert_glyph_fill_mode(params->glyph_fill_mode);
+    if (!maybe_glyph_fill_mode)
+    {
+        ntsplash_set_error(error_out, "unsupported Splash glyph fill mode requested");
+        return errInternal;
+    }
+
+    if (params->min_line_width < 0.0)
+    {
+        ntsplash_set_error(error_out, "min_line_width cannot be negative");
+        return errInternal;
+    }
+
     if (!params->dpi || params->dpi <= 0.0)
     {
         ntsplash_set_error(error_out, "DPI must be a positive number");
@@ -683,6 +710,7 @@ int ntsplash_renderer_render_page(ntsplash_renderer_t *renderer, uint32_t page_i
 
     const SplashColorMode requested_mode = *maybe_mode;
     const SplashZeroWidthLineMode requested_zero_width_line_mode = *maybe_zero_width_line_mode;
+    const SplashGlyphFillMode requested_glyph_fill_mode = *maybe_glyph_fill_mode;
     const bool enable_overprint =
         requested_mode == splashModeCMYK8 || requested_mode == splashModeDeviceN8;
 
@@ -706,6 +734,8 @@ int ntsplash_renderer_render_page(ntsplash_renderer_t *renderer, uint32_t page_i
     output_dev.setEnableFreeType(true);
     output_dev.setFreeTypeHinting(true, true);
     output_dev.setZeroWidthLineMode(requested_zero_width_line_mode);
+    output_dev.setGlyphFillMode(requested_glyph_fill_mode);
+    output_dev.setMinLineWidth(params->min_line_width);
     output_dev.startDoc(renderer->doc.get());
 
     page->display(&output_dev, clamped_dpi, clamped_dpi, 0, use_media_box, false, false);

@@ -72,6 +72,23 @@ pub enum ZeroWidthLineMode {
     Nothing = 2,
 }
 
+/// Selects how Splash rasterizes glyph fills.
+///
+/// `Bitmap` (the default) hands each glyph outline to FreeType's own renderer, which is
+/// fast and produces high-quality (256-level) antialiasing. Some fonts have
+/// self-intersecting glyph contours that FreeType's rasterizer mis-renders as spurious
+/// filled slivers; `Path` works around this by decomposing the outline into a path and
+/// filling it through Splash's own scan converter instead, at the cost of visibly coarser
+/// (~17-level) antialiasing on every glyph. Prefer `Bitmap` unless you've hit this specific
+/// artifact on a specific font.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum GlyphFillMode {
+    #[default]
+    Bitmap = 0,
+    Path = 1,
+}
+
 #[repr(C)]
 struct SplashImage {
     data: *mut u8,
@@ -260,6 +277,8 @@ struct ImageRenderParams {
     color_mode: ColorMode,
     crop_mode: PdfCropMode,
     zero_width_line_mode: ZeroWidthLineMode,
+    glyph_fill_mode: GlyphFillMode,
+    min_line_width: c_double,
 }
 
 unsafe extern "C" {
@@ -465,6 +484,7 @@ impl Renderer {
         Ok(ImageCollection { images, pages })
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn render_page(
         &mut self,
         page_index: u32,
@@ -472,6 +492,8 @@ impl Renderer {
         color_mode: ColorMode,
         crop_mode: PdfCropMode,
         zero_width_line_mode: ZeroWidthLineMode,
+        glyph_fill_mode: GlyphFillMode,
+        min_line_width: f64,
     ) -> Result<Image, String> {
         let mut image = SplashImage {
             data: ptr::null_mut(),
@@ -488,6 +510,8 @@ impl Renderer {
             color_mode,
             crop_mode,
             zero_width_line_mode,
+            glyph_fill_mode,
+            min_line_width,
         };
         let mut error = ptr::null_mut();
         let status = unsafe {

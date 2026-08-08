@@ -63,6 +63,14 @@ typedef enum ntsplash_zero_width_line_mode
     NTSPLASH_ZERO_WIDTH_LINE_NOTHING = 2   // do not draw zero-width lines
 } ntsplash_zero_width_line_mode_t;
 
+typedef enum ntsplash_glyph_fill_mode
+{
+    NTSPLASH_GLYPH_FILL_BITMAP = 0, // rasterize glyphs via FreeType's own renderer (default)
+    NTSPLASH_GLYPH_FILL_PATH = 1    // fill glyph outlines through Splash's own path rasterizer;
+                                    // works around fonts whose self-intersecting contours
+                                    // FreeType's rasterizer mis-renders
+} ntsplash_glyph_fill_mode_t;
+
 typedef struct ntsplash_image {
     uint8_t *data;
     size_t len;
@@ -136,6 +144,13 @@ typedef struct ntsplash_render_params {
     ntsplash_color_mode_t color_mode;
     ntsplash_crop_mode_t crop_mode;
     ntsplash_zero_width_line_mode_t zero_width_line_mode;
+    ntsplash_glyph_fill_mode_t glyph_fill_mode;
+    // Minimum stroke width, in device pixels, after the page CTM is
+    // applied. Strokes thinner than this are widened to this value.
+    // 0 (the default) disables this and preserves upstream behavior.
+    // Helps avoid sub-pixel gaps at sharp corners of very thin strokes
+    // (e.g. decorative fonts rendered in stroke/outline text mode).
+    double min_line_width;
 } ntsplash_render_params_t;
 
 int ntsplash_renderer_create(const char *path, const char *owner_password,

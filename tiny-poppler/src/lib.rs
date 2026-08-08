@@ -10,7 +10,7 @@ mod sink;
 
 use ffi::get_poppler_version;
 pub use ffi::{
-    CcittParams, ColorMode, ExportedImage, ImageColorSpace, ImageExportExtension,
+    CcittParams, ColorMode, ExportedImage, GlyphFillMode, ImageColorSpace, ImageExportExtension,
     ImageExportFormat, ImageExportRequest, ImageExportSelector, ImageExportType, ImageInfo,
     ImageType, PageInfo, PdfCropMode, PdfImageColorSpace, PdfMatrix, PdfPoint, PdfRect,
     ZeroWidthLineMode,
@@ -52,6 +52,17 @@ pub struct RenderOptions {
     pub jpeg_quality: Option<u8>,
     pub output_mode: OutputMode,
     pub zero_width_line_mode: ZeroWidthLineMode,
+    pub glyph_fill_mode: GlyphFillMode,
+    /// Minimum stroke width, in device pixels, after the page CTM is applied.
+    /// Strokes thinner than this are widened to this value. 0.0 (the default)
+    /// disables this and preserves upstream Poppler/Splash behavior.
+    ///
+    /// This helps avoid sub-pixel gaps at sharp corners of very thin strokes
+    /// (e.g. decorative fonts rendered in stroke/outline text mode) — those
+    /// gaps are a real, correct consequence of stroking a sharp corner with a
+    /// sub-pixel-thin line, not a rasterizer bug, so widening the stroke is
+    /// the fix rather than a rasterizer change.
+    pub min_line_width: f64,
 }
 
 impl Default for RenderOptions {
@@ -63,6 +74,8 @@ impl Default for RenderOptions {
             jpeg_quality: Some(95),
             output_mode: OutputMode::Encoded,
             zero_width_line_mode: ZeroWidthLineMode::Default,
+            glyph_fill_mode: GlyphFillMode::Bitmap,
+            min_line_width: 0.0,
         }
     }
 }
@@ -232,6 +245,8 @@ impl Document {
                 options.color_mode,
                 options.crop_mode,
                 options.zero_width_line_mode,
+                options.glyph_fill_mode,
+                options.min_line_width,
             )
             .map_err(RenderError::Poppler)
     }
