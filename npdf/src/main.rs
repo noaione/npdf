@@ -76,22 +76,22 @@ struct Cli {
 #[derive(Subcommand, Debug, PartialEq)]
 enum Commands {
     /// List images embedded in the PDF.
-    #[command(alias = "ls", visible_alias = "ls")]
+    #[command(visible_alias = "ls")]
     List(ListArgs),
     /// Export/extract pages from the PDF to PNG or JPEG files.
-    #[command(alias = "x", visible_alias = "x")]
+    #[command(visible_alias = "x")]
     Export(ExportArgs),
     /// Remove watermarks from the PDF.
-    #[command(alias = "uw", visible_alias = "uw")]
+    #[command(visible_alias = "uw")]
     Unwatermark(UnwatermarkArgs),
     /// Recrop pages in the PDF based on specified box.
-    #[command(alias = "rc", visible_alias = "rc")]
+    #[command(visible_alias = "rc")]
     Recrop(RecropArgs),
     /// Fix stencil page color issues in the PDF.
-    #[command(alias = "fc", visible_alias = "fc")]
+    #[command(visible_alias = "fc")]
     FixColor(FixColorspaceArgs),
     /// Get version information.
-    #[command(alias = "vv", visible_alias = "vv")]
+    #[command(visible_alias = "vv")]
     Version,
     /// Create shell completion files for npdf.
     Completions {

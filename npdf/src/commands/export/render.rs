@@ -5,8 +5,9 @@ use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 use std::fs;
 use std::path::PathBuf;
 use tiny_poppler::{
-    ColorMode, Document, DocumentFactory, ImageInfo, ImageType, PageInfo, PdfCropMode,
-    PdfImageColorSpace, PdfMatrix, PdfRect, RenderOptions, ZeroWidthLineMode, cmyk2gray, cmyk2rgb,
+    ColorMode, Document, DocumentFactory, GlyphFillMode, ImageInfo, ImageType, PageInfo,
+    PdfCropMode, PdfImageColorSpace, PdfMatrix, PdfRect, RenderOptions, ZeroWidthLineMode,
+    cmyk2gray, cmyk2rgb,
 };
 
 use crate::{commands::ExportArgs, common::NpdfError};
@@ -43,6 +44,16 @@ pub enum ZeroWidthLineChoice {
     Default,
     Hairline,
     None,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, ValueEnum)]
+pub enum GlyphFillChoice {
+    /// Rasterize glyphs via FreeType's own renderer (default, best antialiasing).
+    Bitmap,
+    /// Fill glyph outlines through Splash's own path rasterizer. Works around fonts whose
+    /// self-intersecting contours FreeType mis-renders, at the cost of coarser antialiasing
+    /// on every glyph -- only use this if you've hit that specific artifact.
+    Path,
 }
 
 #[derive(Clone)]
@@ -224,6 +235,8 @@ pub(super) fn prepare_job(
             tiny_poppler::OutputMode::Encoded
         },
         zero_width_line_mode: args.zero_width_line.to_zero_width_line_mode(),
+        glyph_fill_mode: args.glyph_fill.to_glyph_fill_mode(),
+        min_line_width: args.min_line_width,
     };
 
     let guessed = precalculate_auto_export_config(
@@ -539,6 +552,15 @@ impl ZeroWidthLineChoice {
             ZeroWidthLineChoice::Default => ZeroWidthLineMode::Default,
             ZeroWidthLineChoice::Hairline => ZeroWidthLineMode::Hairline,
             ZeroWidthLineChoice::None => ZeroWidthLineMode::Nothing,
+        }
+    }
+}
+
+impl GlyphFillChoice {
+    fn to_glyph_fill_mode(self) -> GlyphFillMode {
+        match self {
+            GlyphFillChoice::Bitmap => GlyphFillMode::Bitmap,
+            GlyphFillChoice::Path => GlyphFillMode::Path,
         }
     }
 }

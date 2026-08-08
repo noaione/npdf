@@ -15,7 +15,7 @@ mod extract;
 mod render;
 
 use crate::commands::export::extract::{ExtractPagePlan, describe_component};
-use crate::commands::export::render::ZeroWidthLineChoice;
+use crate::commands::export::render::{GlyphFillChoice, ZeroWidthLineChoice};
 use crate::commands::export::render::{AutoDPIDirection, ColorChoice, CropChoice, RenderPagePlan};
 use crate::common::NpdfError;
 
@@ -86,11 +86,24 @@ pub struct ExportArgs {
     /// Zero-width line rendering mode.
     #[arg(short = 'z', long, value_enum, default_value_t = ZeroWidthLineChoice::Default)]
     pub zero_width_line: ZeroWidthLineChoice,
+    /// Glyph fill rendering mode. `path` works around fonts with self-intersecting glyph
+    /// contours that FreeType mis-renders, at the cost of coarser text antialiasing.
+    #[arg(long, value_enum, default_value_t = GlyphFillChoice::Bitmap)]
+    pub glyph_fill: GlyphFillChoice,
+    /// Minimum stroke width in device pixels (0 disables). Widens strokes thinner than this
+    /// after DPI scaling, which avoids sub-pixel gaps at sharp corners of very thin strokes
+    /// (e.g. decorative fonts drawn in outline/stroke text mode).
+    #[arg(long, default_value_t = 0.0)]
+    pub min_line_width: f64,
 }
 
 pub fn run(args: ExportArgs, passwords: Option<&PdfPasswords>) -> Result<()> {
     if args.dpi <= 0.0 {
         return Err(NpdfError::InvalidDpi(args.dpi).into());
+    }
+
+    if args.min_line_width < 0.0 {
+        return Err(NpdfError::InvalidMinLineWidth(args.min_line_width).into());
     }
 
     if !args.pdf.exists() {
