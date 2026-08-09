@@ -765,7 +765,7 @@ dependencies = [
 
 [[package]]
 name = "npdf"
-version = "0.3.0+20260808"
+version = "0.3.0+20260809"
 dependencies = [
  "clap",
  "clap_complete",
