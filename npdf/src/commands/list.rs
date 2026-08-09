@@ -21,6 +21,7 @@ pub fn run(args: ListArgs, passwords: Option<&PdfPasswords>) -> Result<()> {
         return Err(NpdfError::MissingPdfFile(args.pdf.display().to_string()).into());
     }
 
+    cprintln!("Loading PDF: <m,s>{:#?}</m,s>", &args.pdf);
     let mut document = Document::open_with_passwords(&args.pdf, passwords)?;
     let page_count = document.page_count()?;
     let images = document.images()?;
