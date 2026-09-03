@@ -28,6 +28,30 @@ fn find_components(jpeg: &[u8]) -> Option<u8> {
     None
 }
 
+fn find_sampling_factors(jpeg: &[u8]) -> Option<Vec<(u8, u8)>> {
+    let mut i = 0;
+    while i + 10 < jpeg.len() {
+        if jpeg[i] == 0xFF && jpeg[i + 1] >= 0xC0 && jpeg[i + 1] <= 0xC3 {
+            let components = jpeg[i + 9] as usize;
+            let records_end = i + 10 + components * 3;
+            if records_end > jpeg.len() {
+                return None;
+            }
+
+            return Some(
+                (0..components)
+                    .map(|component| {
+                        let sampling = jpeg[i + 11 + component * 3];
+                        (sampling >> 4, sampling & 0x0F)
+                    })
+                    .collect(),
+            );
+        }
+        i += 1;
+    }
+    None
+}
+
 #[test]
 fn encode_rgb_baseline() {
     let (w, h) = (16u16, 12u16);
@@ -78,6 +102,22 @@ fn encode_rgb_subsampling_none_vs_auto() {
     // Just ensure both encodings succeed and produce non-empty JPEGs.
     assert!(auto.starts_with(&[0xFF, 0xD8]) && none.starts_with(&[0xFF, 0xD8]));
     assert!(auto.len() > 0 && none.len() > 0);
+}
+
+#[test]
+fn encode_rgb_xyb_auto_uses_xyb_sampling_factors() {
+    let (w, h) = (40u16, 30u16);
+    let pixels = make_rgb_pixels(w, h);
+    let encoded = JpegEncoder::new()
+        .xyb_mode(true)
+        .subsampling(Subsampling::Auto)
+        .encode(&pixels, w, h, ColorSpace::Rgb, None)
+        .unwrap();
+
+    assert_eq!(
+        find_sampling_factors(&encoded),
+        Some(vec![(2, 2), (2, 2), (1, 1)])
+    );
 }
 
 #[test]

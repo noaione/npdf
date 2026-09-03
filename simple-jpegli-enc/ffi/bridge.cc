@@ -106,7 +106,25 @@ int sjpegli_get_input_comps(J_COLOR_SPACE colorspace, int width)
     }
 }
 
-void sjpegli_auto_subsampling_factors(j_compress_ptr cinfo, J_COLOR_SPACE colorspace, int quality)
+void sjpegli_set_xyb_subsampling_factors(j_compress_ptr cinfo, int blue_h_factor, int blue_v_factor)
+{
+    if (cinfo == nullptr || cinfo->comp_info == nullptr || cinfo->num_components < 3)
+    {
+        return;
+    }
+
+    cinfo->comp_info[0].h_samp_factor = 2;
+    cinfo->comp_info[0].v_samp_factor = 2;
+    cinfo->comp_info[1].h_samp_factor = 2;
+    cinfo->comp_info[1].v_samp_factor = 2;
+    cinfo->comp_info[2].h_samp_factor = blue_h_factor;
+    cinfo->comp_info[2].v_samp_factor = blue_v_factor;
+    cinfo->max_h_samp_factor = 2;
+    cinfo->max_v_samp_factor = 2;
+}
+
+void sjpegli_auto_subsampling_factors(j_compress_ptr cinfo, J_COLOR_SPACE colorspace, int quality,
+                                      bool xyb_mode)
 {
     if (cinfo == nullptr || cinfo->comp_info == nullptr)
     {
@@ -127,6 +145,13 @@ void sjpegli_auto_subsampling_factors(j_compress_ptr cinfo, J_COLOR_SPACE colors
     {
         cinfo->comp_info[comp].h_samp_factor = 1;
         cinfo->comp_info[comp].v_samp_factor = 1;
+    }
+
+    // XYB's native/default layout subsamples only the blue channel.
+    if (xyb_mode && colorspace == JCS_RGB)
+    {
+        sjpegli_set_xyb_subsampling_factors(cinfo, 1, 1);
+        return;
     }
 
     auto recompute_max_sampling = [&]() {
@@ -200,32 +225,50 @@ void sjpegli_auto_subsampling_factors(j_compress_ptr cinfo, J_COLOR_SPACE colors
 }
 
 void sjpegli_set_subsampling_factors(j_compress_ptr cinfo, J_COLOR_SPACE colorspace,
-                                     simple_jpegli_subsampling_t subsampling, int quality)
+                                     simple_jpegli_subsampling_t subsampling, int quality,
+                                     bool xyb_mode)
 {
     switch (subsampling)
     {
     case SJ_SUBSAMP_S420:
         cinfo->comp_info[0].h_samp_factor = 2;
         cinfo->comp_info[0].v_samp_factor = 2;
+        if (xyb_mode)
+        {
+            sjpegli_set_xyb_subsampling_factors(cinfo, 1, 1);
+        }
         return;
     case SJ_SUBSAMP_S422:
         cinfo->comp_info[0].h_samp_factor = 2;
         cinfo->comp_info[0].v_samp_factor = 1;
+        if (xyb_mode)
+        {
+            sjpegli_set_xyb_subsampling_factors(cinfo, 1, 2);
+        }
         return;
     case SJ_SUBSAMP_S440:
         cinfo->comp_info[0].h_samp_factor = 1;
         cinfo->comp_info[0].v_samp_factor = 2;
+        if (xyb_mode)
+        {
+            sjpegli_set_xyb_subsampling_factors(cinfo, 2, 1);
+        }
         return;
     case SJ_SUBSAMP_S444:
-        cinfo->comp_info[0].h_samp_factor = 1;
-        cinfo->comp_info[0].v_samp_factor = 1;
+        for (int comp = 0; comp < cinfo->num_components; ++comp)
+        {
+            cinfo->comp_info[comp].h_samp_factor = 1;
+            cinfo->comp_info[comp].v_samp_factor = 1;
+        }
+        cinfo->max_h_samp_factor = 1;
+        cinfo->max_v_samp_factor = 1;
         return;
     case SJ_SUBSAMP_NONE:
         // Keep original sampling factors
         return;
     case SJ_SUBSAMP_AUTO:
     default:
-        sjpegli_auto_subsampling_factors(cinfo, colorspace, quality);
+        sjpegli_auto_subsampling_factors(cinfo, colorspace, quality, xyb_mode);
         return;
     }
 }
@@ -385,7 +428,7 @@ simple_jpegli_enc_result sjpegli_encode_pixels(const unsigned char *pixels,
         jpegli_set_progressive_level(&cinfo, kDisableProgressive);
     }
     jpegli_enable_adaptive_quantization(&cinfo, config->adaptive_quantize);
-    sjpegli_set_subsampling_factors(&cinfo, colorspace_t, subsampling, quality);
+    sjpegli_set_subsampling_factors(&cinfo, colorspace_t, subsampling, quality, config->xyb_mode);
     cinfo.write_Adobe_marker =
         (colorspace_t == JCS_CMYK || colorspace_t == JCS_YCCK || colorspace_t == JCS_RGB) ? TRUE
                                                                                           : FALSE;
