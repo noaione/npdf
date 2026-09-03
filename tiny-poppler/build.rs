@@ -365,6 +365,7 @@ fn emit_system_library_hints(target: &str) {
         ("TIFF_DIR", "libtiff"),
         ("OPENJPEG_DIR", "openjpeg"),
         ("LCMS2_DIR", "lcms2"),
+        ("HARFBUZZ_DIR", "harfbuzz"),
     ];
 
     if !target.contains("windows") {
@@ -444,6 +445,8 @@ fn emit_linker_flags(target: &str, sanitizer: Option<Sanitizer>) {
         println!("cargo:rustc-link-lib=z");
 
         println!("cargo:rustc-link-lib=static=fontconfig");
+        println!("cargo:rustc-link-lib=harfbuzz-subset");
+        println!("cargo:rustc-link-lib=harfbuzz");
         println!("cargo:rustc-link-lib=nss3");
         println!("cargo:rustc-link-lib=nssutil3");
         println!("cargo:rustc-link-lib=smime3");

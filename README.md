@@ -41,6 +41,7 @@ and the following libraries installed and available for linking:
     - lzma/xz
 - fontconfig
     - expat
+- harfbuzz
 - turbojpeg
 - openjpeg
 - libtiff

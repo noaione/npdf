@@ -156,6 +156,7 @@ jobs:
             libbz2-dev \
             libfreetype6-dev \
             libfontconfig1-dev \
+            libharfbuzz-dev \
             libturbojpeg0 \
             libturbojpeg0-dev \
             libpng-dev \
@@ -179,6 +180,7 @@ jobs:
             expat \
             freetype \
             fontconfig \
+            harfbuzz \
             jpeg-turbo \
             libpng \
             libtiff \
