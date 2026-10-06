@@ -1069,7 +1069,7 @@ impl<'a> VersionInfo<'a> {
 /// ```rust
 /// let version = tiny_poppler::get_version();
 ///
-/// assert_eq!(version.version_string(), "26.9.90"); // Example version
+/// assert_eq!(version.version_string(), "26.10.90"); // Example version
 /// ```
 pub fn get_version() -> VersionInfo<'static> {
     let version = get_poppler_version();
