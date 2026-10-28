@@ -235,6 +235,10 @@ fn configure_and_build_poppler(
         .define("ENABLE_GPGME", "OFF")
         .define("ENABLE_PGP_SIGNATURES", "OFF")
         .define("ENABLE_BOOST", "ON")
+        // HarfBuzz is only used by poppler's font subsetter, which runs when
+        // saving a document (PDFDoc::saveIncrementalUpdate/saveCompleteRewrite).
+        // We never save PDFs, so skip the dependency entirely.
+        .define("ENABLE_HARFBUZZ", "OFF")
         .define("ENABLE_GTK_DOC", "OFF")
         .define("ENABLE_LIBOPENJPEG", "openjpeg2")
         .define("ENABLE_DCTDECODER", "libjpeg")
@@ -365,7 +369,6 @@ fn emit_system_library_hints(target: &str) {
         ("TIFF_DIR", "libtiff"),
         ("OPENJPEG_DIR", "openjpeg"),
         ("LCMS2_DIR", "lcms2"),
-        ("HARFBUZZ_DIR", "harfbuzz"),
     ];
 
     if !target.contains("windows") {
@@ -445,8 +448,6 @@ fn emit_linker_flags(target: &str, sanitizer: Option<Sanitizer>) {
         println!("cargo:rustc-link-lib=z");
 
         println!("cargo:rustc-link-lib=static=fontconfig");
-        println!("cargo:rustc-link-lib=harfbuzz-subset");
-        println!("cargo:rustc-link-lib=harfbuzz");
         println!("cargo:rustc-link-lib=nss3");
         println!("cargo:rustc-link-lib=nssutil3");
         println!("cargo:rustc-link-lib=smime3");
@@ -464,6 +465,7 @@ fn emit_linker_flags(target: &str, sanitizer: Option<Sanitizer>) {
     }
 
     if is_apple {
+        emit_apple_hvf_link(target);
         println!("cargo:rustc-link-lib=iconv");
         println!("cargo:rustc-link-lib=c++");
     } else if is_windows {
@@ -489,6 +491,44 @@ fn emit_linker_flags(target: &str, sanitizer: Option<Sanitizer>) {
     } else {
         emit_system_library_hints(target);
     }
+}
+
+/// FreeType's HVF (HarfBuzz variable font) backend, present since FreeType 2.15,
+/// resolves `HVF_*` symbols against the system `libhvf` library. The symbols are
+/// not exported by Homebrew's `libharfbuzz`, so the linker needs an explicit dep.
+fn emit_apple_hvf_link(target: &str) {
+    if !target.contains("apple-darwin") {
+        return;
+    }
+
+    let Some(sdk) = apple_sdk_path() else {
+        return;
+    };
+
+    if sdk.join("usr/lib").join("libhvf.tbd").exists() {
+        println!("cargo:rustc-link-lib=dylib=hvf");
+    }
+}
+
+fn apple_sdk_path() -> Option<PathBuf> {
+    if let Some(root) = env::var_os("SDKROOT") {
+        let path = PathBuf::from(root);
+        if path.is_dir() {
+            return Some(path);
+        }
+    }
+
+    let output = std::process::Command::new("xcrun")
+        .args(["--sdk", "macosx", "--show-sdk-path"])
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let path = PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
+    path.is_dir().then_some(path)
 }
 
 fn apply_sanitizer_to_cmake(cfg: &mut cmake::Config, sanitizer: Sanitizer) {
