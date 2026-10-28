@@ -32,6 +32,8 @@
 
 ### Build
 - Change `opt-level` to `s` instead of `z` for better performance with *similar* binary size
+- Download the `mangacolor` weights in CI so released binaries carry the embedded colour
+  classifier; without the secret the build still succeeds with the ML check compiled out
 
 ## [0.1.0] (2025-12-27)
 
