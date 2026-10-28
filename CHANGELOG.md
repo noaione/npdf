@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### Changes
+- `npdf`: add `fix-black`, which rewrites baked-RGB black back to `DeviceGray` — K-only
+  separations, RGB fills that land on the document's own K curve, and `Indexed` palettes
+  (`--dry-run` to inspect, `--include-cmyk` to include CMYK-alternate plates)
 - `npdf`: coverage now honours the clip an image was drawn with, and ignores images a
   later opaque image completely covers
 - `tiny-poppler`: report the draw-time clip box and fill opacity on `ImageInfo`

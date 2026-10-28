@@ -4,7 +4,7 @@ use color_print::cprintln;
 use flate2::Compression;
 use flate2::write::ZlibEncoder;
 use lopdf::{
-    Dictionary, Document, Object, ObjectId, Stream,
+    Dictionary, Document, Object, ObjectId,
     content::{Content, Operation},
     dictionary,
 };
@@ -12,6 +12,7 @@ use std::{collections::HashSet, path::PathBuf};
 use tiny_poppler::PdfPasswords;
 
 use crate::common::{NpdfError, ensure_pdf_output, unlock_pdf};
+use crate::pdf::{dereference_dictionary, resolve_to_dict, resolve_to_real, resolve_to_stream};
 
 const CS_NAME: &[u8; 11] = b"PureBlackCS";
 const CS_SEP_BASE: &str = "Separation";
@@ -433,106 +434,6 @@ fn to_spot_black(components: &[f32], colorspace: &Object) -> Result<f32, lopdf::
 
 fn round_1_0(value: f32) -> f32 {
     if value < 0.5 { 0.0 } else { 1.0 }
-}
-
-fn dereference_dictionary(
-    doc: &Document,
-    resources: &Dictionary,
-) -> Result<Dictionary, lopdf::Error> {
-    let mut new_dict = Dictionary::new();
-    // When found Reference, dereference it
-    for (key, value) in resources.iter() {
-        let deref_value = match value {
-            Object::Reference(ob) => dereference_reference(doc, *ob)?,
-            Object::Array(arr) => {
-                let deref_array = dereference_array(doc, arr)?;
-                Object::Array(deref_array)
-            }
-            Object::Dictionary(dict) => {
-                let deref_dict = dereference_dictionary(doc, dict)?;
-                Object::Dictionary(deref_dict)
-            }
-            other => other.clone(),
-        };
-
-        new_dict.set(key.to_vec(), deref_value);
-    }
-    Ok(new_dict)
-}
-
-fn dereference_array(doc: &Document, array: &Vec<Object>) -> Result<Vec<Object>, lopdf::Error> {
-    let mut new_array = Vec::new();
-    for item in array {
-        let deref_item = match item {
-            Object::Reference(ob) => dereference_reference(doc, *ob)?,
-            Object::Array(array) => {
-                let deref_array = dereference_array(doc, array)?;
-                Object::Array(deref_array)
-            }
-            Object::Dictionary(dict) => {
-                let deref_dict = dereference_dictionary(doc, dict)?;
-                Object::Dictionary(deref_dict)
-            }
-            other => other.clone(),
-        };
-        new_array.push(deref_item);
-    }
-    Ok(new_array)
-}
-
-fn dereference_reference(doc: &Document, object: (u32, u16)) -> Result<Object, lopdf::Error> {
-    match doc.get_object(object)? {
-        Object::Reference(ob) => dereference_reference(doc, *ob),
-        Object::Array(ob) => {
-            let deref_array = dereference_array(doc, ob)?;
-            Ok(Object::Array(deref_array))
-        }
-        Object::Dictionary(ob) => {
-            let deref_dict = dereference_dictionary(doc, ob)?;
-            Ok(Object::Dictionary(deref_dict))
-        }
-        other => Ok(other.clone()),
-    }
-}
-
-/// Helper: Resolves an Object (which might be a Reference) to a Dictionary
-fn resolve_to_dict<'a>(
-    doc: &'a Document,
-    object: &'a Object,
-) -> Result<&'a Dictionary, lopdf::Error> {
-    match object {
-        Object::Dictionary(dict) => Ok(dict),
-        Object::Reference(id) => doc.get_object(*id)?.as_dict(),
-        _ => Err(lopdf::Error::ObjectType {
-            expected: "Dictionary or Reference",
-            found: object.enum_variant(),
-        }),
-    }
-}
-
-fn resolve_to_stream<'a>(
-    doc: &'a Document,
-    object: &'a Object,
-) -> Result<&'a Stream, lopdf::Error> {
-    match object {
-        Object::Stream(stream) => Ok(stream),
-        Object::Reference(id) => doc.get_object(*id)?.as_stream(),
-        _ => Err(lopdf::Error::ObjectType {
-            expected: "Stream or Reference",
-            found: object.enum_variant(),
-        }),
-    }
-}
-
-fn resolve_to_real(object: &Object) -> Result<f32, lopdf::Error> {
-    match object {
-        Object::Real(val) => Ok(*val),
-        Object::Integer(val) => Ok(*val as f32),
-        _ => Err(lopdf::Error::ObjectType {
-            expected: "Real or Integer",
-            found: object.enum_variant(),
-        }),
-    }
 }
 
 #[derive(Debug, Clone)]
