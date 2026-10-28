@@ -3,8 +3,8 @@
 ## Unreleased
 
 ### Changes
+- `npdf`: add the ML colour-page check for `--color auto`, via `mangacolor` (opt out with `--skip-ml-color-check`)
 - `npdf`: add `--output-dpi` to `export`, supersampling pages above that resolution and averaging them down
-- `npdf`: fix JPEG output being written with a `.png` extension for `--color cmyk8`
 - `npdf`: auto-DPI is now set by a page's dominant imagery (sharpest-first coverage accumulation) instead of its weakest image
 - `npdf`: add `--min-image-coverage`, `--min-image-dim` and `--color-export-dpi` to `export`
 - `npdf`: fix auto-DPI taking the multi-image path for a single image that carries a soft mask

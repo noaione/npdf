@@ -82,6 +82,15 @@ pub struct ExportArgs {
     /// do additional check whether there is CMYK content (or color with CMYK fallback).
     #[arg(long, default_value_t = false)]
     pub with_cmyk: bool,
+    /// Skip the ML colour-page check during auto colour detection.
+    ///
+    /// For pages whose colourspaces say colour, the check renders a small preview and
+    /// asks a manga-trained classifier whether the page is visually black and white,
+    /// which catches RGB scans of grey originals. It needs a build with the model
+    /// weights embedded (`OGSOX_WEIGHTS_PATH` at build time) and silently does nothing
+    /// without them.
+    #[arg(long, default_value_t = false)]
+    pub skip_ml_color_check: bool,
     /// Save CMYK images in PNG format.
     ///
     /// Since PNG does not support CMYK, we would convert it to RGB first.
@@ -135,6 +144,15 @@ pub fn run(args: ExportArgs, passwords: Option<&PdfPasswords>) -> Result<()> {
 
     if args.min_line_width < 0.0 {
         return Err(NpdfError::InvalidMinLineWidth(args.min_line_width).into());
+    }
+
+    if args.color == ColorChoice::Auto
+        && !args.skip_ml_color_check
+        && !mangacolor::ogsox_available()
+    {
+        cprintln!(
+            "<yellow>Note</>: this build carries no ML colour weights, so pages are classified from their colourspaces alone."
+        );
     }
 
     if !(0.0..=100.0).contains(&args.min_image_coverage) {

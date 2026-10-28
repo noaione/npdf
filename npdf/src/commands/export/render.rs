@@ -68,6 +68,8 @@ pub(super) struct RenderPagePlan {
     /// higher resolution and then averaged down, which antialiases text and line art
     /// better than rasterizing straight at the lower one.
     pub output_dpi: Option<f64>,
+    /// Whether the ML colour check may overrule the planned colour mode.
+    ml_color_check: bool,
     request_color: ColorChoice,
     detected_color: ColorMode,
     pub options: RenderOptions,
@@ -76,8 +78,16 @@ pub(super) struct RenderPagePlan {
 pub(super) fn process_job(document: &mut Document, job: &RenderPagePlan) -> Result<()> {
     let output_path = job.output_path.as_ref().ok_or(NpdfError::OutputNotSet)?;
 
+    let mut options = job.options.clone();
+    if job.ml_color_check && ml_says_grayscale(document, job) == Some(true) {
+        // The page reads as colour by its colourspaces but not by its pixels, so render
+        // it grey: that is both faster and what the page actually is.
+        options.color_mode = ColorMode::Mono8;
+    }
+    let rendered_color = options.color_mode;
+
     let rendered = document
-        .render_page_image_bytes(job.zero_index_page, &job.options)
+        .render_page_image_bytes(job.zero_index_page, &options)
         .context(format!("page {}", job.page_number))?;
     let encoded = match job.output_dpi {
         Some(target) => {
@@ -93,15 +103,18 @@ pub(super) fn process_job(document: &mut Document, job: &RenderPagePlan) -> Resu
             // A raw bitmap arrives either from `--cmyk-png` (always rendered as CMYK, to be
             // converted here) or from a `--output-dpi` supersample (rendered directly in
             // the colour that gets written). Only the first needs a colour conversion.
-            let want_color = if job.request_color == ColorChoice::Auto {
-                job.detected_color
+            let rendered_cmyk = matches!(rendered_color, ColorMode::Cmyk8 | ColorMode::DeviceN8);
+            let want_color = if rendered_cmyk {
+                if job.request_color == ColorChoice::Auto {
+                    job.detected_color
+                } else {
+                    job.request_color.to_color_mode().unwrap_or(ColorMode::Rgb8)
+                }
             } else {
-                job.request_color.to_color_mode().unwrap_or(ColorMode::Rgb8)
+                // Rendered straight into the colour that gets written, which the ML
+                // colour check may have changed.
+                rendered_color
             };
-            let rendered_cmyk = matches!(
-                job.options.color_mode,
-                ColorMode::Cmyk8 | ColorMode::DeviceN8
-            );
 
             match want_color {
                 // Still export as JPEG
@@ -218,7 +231,7 @@ pub(super) fn process_job(document: &mut Document, job: &RenderPagePlan) -> Resu
         output_path.display(),
         extension,
         encoded.format,
-        job.options.color_mode,
+        rendered_color,
         encoded.dpi,
     );
     Ok(())
@@ -305,6 +318,70 @@ fn can_downscale(options: &RenderOptions) -> bool {
     )
 }
 
+/// Resolution of the preview the ML colour check classifies.
+///
+/// High enough for the model's 512² tiling to see real tiles, low enough that the extra
+/// render stays a fraction of the final one. The reference implementation uses the same
+/// "up to 300 dpi" idea.
+const ML_PREVIEW_DPI: f64 = 150.0;
+
+/// Whether the ML colour check may run for a page.
+///
+/// It only ever overrules a *colour* verdict, so it is pointless when the page already
+/// reads as grey; and it cannot second-guess an explicit `--color`, a forced CMYK render,
+/// or a user who turned it off.
+fn wants_ml_color_check(
+    color: ColorChoice,
+    cmyk_png: bool,
+    skip_ml_color_check: bool,
+    planned: ColorMode,
+) -> bool {
+    ml_check_eligible(color, cmyk_png, skip_ml_color_check, planned)
+        && mangacolor::ogsox_available()
+}
+
+/// The half of [`wants_ml_color_check`] that does not depend on the build.
+fn ml_check_eligible(
+    color: ColorChoice,
+    cmyk_png: bool,
+    skip_ml_color_check: bool,
+    planned: ColorMode,
+) -> bool {
+    color == ColorChoice::Auto && !cmyk_png && !skip_ml_color_check && is_color_mode(planned)
+}
+
+/// Asks the ML model whether the page is really a colour page.
+///
+/// Renders a small RGB preview and classifies it. `Some(true)` means "confidently
+/// grayscale"; `None` means the check could not answer, and the planned colour stands.
+fn ml_says_grayscale(document: &mut Document, job: &RenderPagePlan) -> Option<bool> {
+    let preview_options = RenderOptions {
+        dpi: job.options.dpi.min(ML_PREVIEW_DPI),
+        color_mode: ColorMode::Rgb8,
+        output_mode: tiny_poppler::OutputMode::RawBitmap,
+        ..job.options.clone()
+    };
+    let preview = document
+        .render_page_image_bytes(job.zero_index_page, &preview_options)
+        .ok()?;
+
+    // Only trust a tightly packed three-channel frame.
+    let expected = preview
+        .width
+        .saturating_mul(preview.height)
+        .saturating_mul(3);
+    if preview.width == 0 || preview.height == 0 || preview.bytes.len() < expected {
+        return None;
+    }
+
+    let prediction =
+        mangacolor::detect_ogsox(&preview.bytes, preview.width, preview.height, 3).ok()?;
+
+    // A tie (score 0) counts as colour, and only a confident negative score may overrule
+    // the planned mode: this check never upgrades a grey page to colour.
+    Some(!prediction.is_color && prediction.confidence > 0.0)
+}
+
 pub(super) fn prepare_job(
     output_page: u32,
     page_info: &PageInfo,
@@ -382,6 +459,13 @@ pub(super) fn prepare_job(
         options.output_mode = tiny_poppler::OutputMode::RawBitmap;
     }
 
+    let ml_color_check = wants_ml_color_check(
+        *color,
+        *cmyk_png,
+        args.skip_ml_color_check,
+        options.color_mode,
+    );
+
     let file_name = format!("page-{output_page:04}");
     let with_output_path = output_path.as_ref().map(|o| o.join(&file_name));
 
@@ -391,6 +475,7 @@ pub(super) fn prepare_job(
         total_pages: factory.page_count(),
         output_path: with_output_path,
         output_dpi,
+        ml_color_check,
         request_color: *color,
         detected_color: guessed.color,
         options,
@@ -1230,5 +1315,76 @@ mod tests {
             options.color_mode = mode;
             assert!(can_downscale(&options), "{mode:?} should be downscaled");
         }
+    }
+
+    // --- ML colour check gating ---
+
+    #[test]
+    fn the_ml_check_runs_only_for_a_planned_colour_page() {
+        // Only a page the cheap inspection called colour is worth asking about.
+        assert!(ml_check_eligible(
+            ColorChoice::Auto,
+            false,
+            false,
+            ColorMode::Rgb8
+        ));
+        assert!(!ml_check_eligible(
+            ColorChoice::Auto,
+            false,
+            false,
+            ColorMode::Mono8
+        ));
+        assert!(!ml_check_eligible(
+            ColorChoice::Auto,
+            false,
+            false,
+            ColorMode::Mono1
+        ));
+    }
+
+    #[test]
+    fn the_ml_check_never_overrules_an_explicit_choice() {
+        // An explicit --color is a decision, not a guess.
+        assert!(!ml_check_eligible(
+            ColorChoice::Rgb8,
+            false,
+            false,
+            ColorMode::Rgb8
+        ));
+        assert!(!ml_check_eligible(
+            ColorChoice::Cmyk8,
+            false,
+            false,
+            ColorMode::Cmyk8
+        ));
+    }
+
+    #[test]
+    fn the_ml_check_is_skipped_for_forced_cmyk_and_by_request() {
+        // --cmyk-png renders CMYK regardless, so a grey verdict has nowhere to go.
+        assert!(!ml_check_eligible(
+            ColorChoice::Auto,
+            true,
+            false,
+            ColorMode::Rgb8
+        ));
+        assert!(!ml_check_eligible(
+            ColorChoice::Auto,
+            false,
+            true,
+            ColorMode::Rgb8
+        ));
+    }
+
+    #[test]
+    fn the_ml_check_needs_a_build_with_weights() {
+        // This test binary may or may not carry the weights; either way the answer must
+        // agree with ogsox_available() rather than assume one.
+        let eligible = ml_check_eligible(ColorChoice::Auto, false, false, ColorMode::Rgb8);
+        assert!(eligible, "the eligibility half should be true");
+        assert_eq!(
+            wants_ml_color_check(ColorChoice::Auto, false, false, ColorMode::Rgb8),
+            mangacolor::ogsox_available()
+        );
     }
 }
