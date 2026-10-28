@@ -3,6 +3,10 @@
 ## Unreleased
 
 ### Changes
+- `npdf`: auto-DPI is now set by a page's dominant imagery (sharpest-first coverage accumulation) instead of its weakest image
+- `npdf`: add `--min-image-coverage`, `--min-image-dim` and `--color-export-dpi` to `export`
+- `npdf`: fix auto-DPI taking the multi-image path for a single image that carries a soft mask
+- docs: add `docs/plans/` with implementation plans for porting the `sandbox/` prototypes
 - `tiny-poppler`: fix issues with extraction not working as intended for softmask/mask/stencil
 - `tiny-poppler`: re-prefix all function with `ntsplash_` to avoid name conflicts
 - `tiny-poppler`: add page colorspace information to `PageInfo`

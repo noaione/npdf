@@ -21,6 +21,9 @@ use crate::common::NpdfError;
 
 pub type PagePairings = HashMap<PageInfo, Vec<ImageInfo>>;
 
+/// `--min-image-coverage` default, in percent, matching the sandbox prototype.
+const DEFAULT_MIN_IMAGE_COVERAGE: f64 = 15.0;
+
 #[derive(Args, Debug, PartialEq)]
 pub struct ExportArgs {
     /// Path to the PDF file to export.
@@ -47,6 +50,26 @@ pub struct ExportArgs {
     /// as predominantly horizontal/vertical for auto-DPI calculation.
     #[arg(long, default_value_t = 1.25)]
     pub auto_dpi_ratio: f64,
+    /// Ignore images covering less than this percentage of the visible page when
+    /// choosing an export DPI.
+    ///
+    /// A page is set by its dominant imagery, so a small low-resolution ornament
+    /// should not drag the whole page down. Set to 0 to weigh every image.
+    #[arg(long, default_value_t = DEFAULT_MIN_IMAGE_COVERAGE)]
+    pub min_image_coverage: f64,
+    /// Ignore images narrower or shorter than this many pixels when choosing an
+    /// export DPI.
+    ///
+    /// Below 11 px both axes must fall short, since a small legitimate mark is
+    /// likelier than a thumbnail.
+    #[arg(long)]
+    pub min_image_dim: Option<u32>,
+    /// Lower DPI ceiling for colour pages that have no notable images, or several.
+    ///
+    /// Such a page has no single piece of imagery to resolve for, so it does not need
+    /// the resolution a full-page image calls for.
+    #[arg(long)]
+    pub color_export_dpi: Option<f64>,
     /// When in Auto color mode, if we encounter RGB colorspace,
     /// do additional check whether there is CMYK content (or color with CMYK fallback).
     #[arg(long, default_value_t = false)]
@@ -104,6 +127,16 @@ pub fn run(args: ExportArgs, passwords: Option<&PdfPasswords>) -> Result<()> {
 
     if args.min_line_width < 0.0 {
         return Err(NpdfError::InvalidMinLineWidth(args.min_line_width).into());
+    }
+
+    if !(0.0..=100.0).contains(&args.min_image_coverage) {
+        return Err(NpdfError::InvalidMinImageCoverage(args.min_image_coverage).into());
+    }
+
+    if let Some(color_dpi) = args.color_export_dpi
+        && color_dpi <= 0.0
+    {
+        return Err(NpdfError::InvalidColorExportDpi(color_dpi).into());
     }
 
     if !args.pdf.exists() {
