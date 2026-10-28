@@ -742,7 +742,11 @@ fn image_matches_direction(image: &NotableImage, direction: AutoDPIDirection, ra
 ///
 /// The bounds are clipped to the page box first, so an image that runs off the trimmed
 /// page only counts the part that shows (`get_page_coverage` in the sandbox prototype).
-fn page_coverage(page_info: Option<&PageInfo>, crop_mode: CropChoice, matrix: PdfMatrix) -> f64 {
+pub(super) fn page_coverage(
+    page_info: Option<&PageInfo>,
+    crop_mode: CropChoice,
+    matrix: PdfMatrix,
+) -> f64 {
     let Some(bbox) = page_info.and_then(|info| page_box(info, crop_mode)) else {
         return 0.0;
     };

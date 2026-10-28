@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Changes
+- `npdf`: copy pages that are just a stored scan out as-is instead of re-rendering them (`--skip-prerendered-check` to opt out)
 - `npdf`: raise the DPI back for text-bearing pages whose imagery would soften the text (`--skip-text-dpi-floor` to opt out)
 - `tiny-poppler`: report `has_text` on `PageInfo`, from the collector's text callback
 - `npdf`: add the ML colour-page check for `--color auto`, via `mangacolor` (opt out with `--skip-ml-color-check`)
