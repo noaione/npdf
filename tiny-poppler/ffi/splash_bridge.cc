@@ -192,6 +192,8 @@ struct NTSplashCollectedImage {
     ntsplash_image_type_t image_type = NTSPLASH_IMAGE_TYPE_UNKNOWN;
     ntsplash_image_colorspace_t colorspace = NTSPLASH_IMAGE_COLORSPACE_UNKNOWN;
     double ctm[6] = {1.0, 0.0, 0.0, 1.0, 0.0, 0.0}; // Default is identity matrix
+    double clipbox[4] = {0.0, 0.0, 0.0, 0.0};       // If all 0's, then not set
+    double opacity = 1.0;
     const void *color_space_handle = nullptr;
 };
 
@@ -457,6 +459,28 @@ private:
         }
     }
 
+    // `GfxState::getClipBBox()` reports the clip accumulated so far in device space, which
+    // this collector renders with its origin at the MediaBox's lower-left corner. Undo the
+    // same translation `store_absolute_ctm` does, so the clip box can be compared directly
+    // against an image's AABB and the page boxes.
+    void store_absolute_clip(double out[4], GfxState *state) const
+    {
+        if (!state)
+        {
+            return;
+        }
+
+        state->getClipBBox(&out[0], &out[1], &out[2], &out[3]);
+        if (cur_page)
+        {
+            const PDFRectangle &mediaBox = cur_page->getMediaBox();
+            out[0] += mediaBox.x1;
+            out[2] += mediaBox.x1;
+            out[1] += mediaBox.y1;
+            out[3] += mediaBox.y1;
+        }
+    }
+
     void add_image(int width, int height, GfxImageColorMap *color_map, Object *ref, GfxState *state,
                    ntsplash_image_type_t image_type)
     {
@@ -511,6 +535,8 @@ private:
             {
                 store_absolute_ctm(info.ctm, ctm);
             }
+            store_absolute_clip(info.clipbox, state);
+            info.opacity = state->getFillOpacity();
         }
 
         images_->push_back(info);
@@ -554,6 +580,8 @@ private:
             {
                 store_absolute_ctm(info.ctm, ctm);
             }
+            store_absolute_clip(info.clipbox, state);
+            info.opacity = state->getFillOpacity();
         }
         images_->push_back(info);
     }
@@ -959,9 +987,14 @@ int ntsplash_renderer_collect_images(ntsplash_renderer_t *renderer,
             image_buffer[i].colorspace = collected[i].colorspace;
             image_buffer[i].color_space_handle = collected[i].color_space_handle;
             image_buffer[i].page_number = collected[i].page_number;
+            image_buffer[i].opacity = collected[i].opacity;
             for (int j = 0; j < 6; ++j)
             {
                 image_buffer[i].ctm[j] = collected[i].ctm[j];
+            }
+            for (int j = 0; j < 4; ++j)
+            {
+                image_buffer[i].clipbox[j] = collected[i].clipbox[j];
             }
         }
     }

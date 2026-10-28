@@ -629,6 +629,10 @@ struct NotableImage {
     coverage: f64,
     width: u32,
     height: u32,
+    /// Where the image lands on the page, in the same space as the page box.
+    bounds: PdfRect,
+    /// Whether the image completely hides whatever it is drawn over.
+    opaque: bool,
 }
 
 /// The images worth weighing when picking an export DPI.
@@ -642,7 +646,7 @@ fn notable_images(
     crop_mode: CropChoice,
     cfg: DpiConfig,
 ) -> Vec<NotableImage> {
-    images
+    let notable: Vec<NotableImage> = images
         .iter()
         .filter(|img| matches!(img.image_type, ImageType::Image | ImageType::Stencil))
         // A tab or registration mark that mostly bleeds off the trimmed page and only
@@ -650,7 +654,7 @@ fn notable_images(
         // would let it through.
         .filter(|img| image_intersecting_with_page(page_info, crop_mode, img.matrix))
         .filter_map(|img| {
-            let coverage = page_coverage(page_info, crop_mode, img.matrix);
+            let coverage = page_coverage(page_info, crop_mode, img.matrix, img.clip_box);
             if is_too_small(img, coverage, cfg.min_coverage, cfg.min_image_dim) {
                 return None;
             }
@@ -664,9 +668,39 @@ fn notable_images(
                 coverage,
                 width: img.width,
                 height: img.height,
+                bounds: img.matrix.get_image_aabb(),
+                opaque: img.opacity >= OPAQUE_OPACITY,
             })
         })
-        .collect()
+        .collect();
+
+    drop_hidden(notable)
+}
+
+/// Drops images a later, fully opaque image completely covers.
+///
+/// Only containment is considered. Partial overlaps are deliberately left alone: the page
+/// is counted from what the images span, and subtracting partial overlaps pairwise
+/// over-counts as soon as three rectangles meet, which would quietly hide content that
+/// really does show. A covered image also still sets the *colour* of the page, so the
+/// caller sees the full list for that.
+fn drop_hidden(notable: Vec<NotableImage>) -> Vec<NotableImage> {
+    let mut shown: Vec<NotableImage> = Vec::with_capacity(notable.len());
+    for (index, image) in notable.iter().enumerate() {
+        // Entries keep the slice's draw order, so anything after this one is on top of it.
+        let hidden = notable[index + 1..]
+            .iter()
+            .any(|later| later.opaque && covers(later.bounds, image.bounds));
+        if !hidden {
+            shown.push(*image);
+        }
+    }
+    shown
+}
+
+/// Whether `outer` completely contains `inner`.
+fn covers(outer: PdfRect, inner: PdfRect) -> bool {
+    outer.x1 <= inner.x1 && outer.y1 <= inner.y1 && outer.x2 >= inner.x2 && outer.y2 >= inner.y2
 }
 
 /// DPI for a page that has notable images.
@@ -740,12 +774,15 @@ fn image_matches_direction(image: &NotableImage, direction: AutoDPIDirection, ra
 
 /// Fraction of the visible page an image's bounds cover, 0.0-1.0.
 ///
-/// The bounds are clipped to the page box first, so an image that runs off the trimmed
-/// page only counts the part that shows (`get_page_coverage` in the sandbox prototype).
+/// The bounds are cut by the page box *and* by the clip that was in force when the image
+/// was drawn, so an image running off the trimmed page, or clipped to a fraction of its
+/// own placement, only counts the part that actually shows
+/// (`get_page_coverage` in the sandbox prototype, which rasterizes the same intersection).
 pub(super) fn page_coverage(
     page_info: Option<&PageInfo>,
     crop_mode: CropChoice,
     matrix: PdfMatrix,
+    clip: Option<PdfRect>,
 ) -> f64 {
     let Some(bbox) = page_info.and_then(|info| page_box(info, crop_mode)) else {
         return 0.0;
@@ -756,9 +793,20 @@ pub(super) fn page_coverage(
         return 0.0;
     }
 
+    // What the page box and the clip both allow to be seen.
+    let visible = match clip {
+        Some(clip) => PdfRect {
+            x1: bbox.x1.max(clip.x1),
+            y1: bbox.y1.max(clip.y1),
+            x2: bbox.x2.min(clip.x2),
+            y2: bbox.y2.min(clip.y2),
+        },
+        None => bbox,
+    };
+
     let bounds = matrix.get_image_aabb();
-    let overlap_x = bounds.x2.min(bbox.x2) - bounds.x1.max(bbox.x1);
-    let overlap_y = bounds.y2.min(bbox.y2) - bounds.y1.max(bbox.y1);
+    let overlap_x = bounds.x2.min(visible.x2) - bounds.x1.max(visible.x1);
+    let overlap_y = bounds.y2.min(visible.y2) - bounds.y1.max(visible.y1);
     if overlap_x <= 0.0 || overlap_y <= 0.0 {
         return 0.0;
     }
@@ -911,6 +959,11 @@ const MIN_INTERSECTION_OVERLAP_PT: f64 = 2.0;
 /// Below this on-page DPI an image is too soft to have a say in the export resolution.
 const MIN_EXPORT_DPI: f64 = 72.0;
 
+/// Fill opacity from which an image counts as completely hiding what it covers.
+///
+/// Slightly under 1.0 so that `0.999` from a matrix/state round-trip still counts.
+const OPAQUE_OPACITY: f64 = 0.99;
+
 /// Checks if the Image (defined by matrix) intersects the Page CropBox
 pub fn image_is_intersecting(matrix: PdfMatrix, bbox: PdfRect) -> bool {
     let img_aabb = matrix.get_image_aabb();
@@ -1018,8 +1071,16 @@ mod tests {
             page: 1,
             dpi: (dpi, dpi),
             matrix,
+            clip_box: None,
+            opacity: 1.0,
             xref: None,
         }
+    }
+
+    fn clipped(mut image: ImageInfo, clip: PdfRect, opacity: f64) -> ImageInfo {
+        image.clip_box = Some(clip);
+        image.opacity = opacity;
+        image
     }
 
     fn image(width: u32, height: u32, dpi: f64, matrix: PdfMatrix) -> ImageInfo {
@@ -1033,6 +1094,13 @@ mod tests {
             coverage,
             width: 100,
             height: 200,
+            bounds: PdfRect {
+                x1: 0.0,
+                y1: 0.0,
+                x2: 100.0,
+                y2: 200.0,
+            },
+            opaque: true,
         }
     }
 
@@ -1052,11 +1120,20 @@ mod tests {
 
     // --- page_coverage ---
 
+    fn rect(x1: f64, y1: f64, x2: f64, y2: f64) -> PdfRect {
+        PdfRect { x1, y1, x2, y2 }
+    }
+
     #[test]
     fn a_full_page_image_covers_the_whole_page() {
         let p = page(100.0);
         assert_eq!(
-            page_coverage(Some(&p), CropChoice::Crop, placed(0.0, 0.0, 100.0, 100.0)),
+            page_coverage(
+                Some(&p),
+                CropChoice::Crop,
+                placed(0.0, 0.0, 100.0, 100.0),
+                None
+            ),
             1.0
         );
     }
@@ -1065,15 +1142,52 @@ mod tests {
     fn coverage_clips_an_image_running_off_the_page() {
         // Half of a 100x100 image hangs past the right and top edges.
         let p = page(100.0);
-        let coverage = page_coverage(Some(&p), CropChoice::Crop, placed(50.0, 50.0, 100.0, 100.0));
+        let coverage = page_coverage(
+            Some(&p),
+            CropChoice::Crop,
+            placed(50.0, 50.0, 100.0, 100.0),
+            None,
+        );
         assert!((coverage - 0.25).abs() < 1e-9, "got {coverage}");
+    }
+
+    #[test]
+    fn a_clip_shrinks_how_much_an_image_covers() {
+        // A full-page image, but clipped to the left half of the page.
+        let p = page(100.0);
+        let coverage = page_coverage(
+            Some(&p),
+            CropChoice::Crop,
+            placed(0.0, 0.0, 100.0, 100.0),
+            Some(rect(0.0, 0.0, 50.0, 100.0)),
+        );
+        assert!((coverage - 0.5).abs() < 1e-9, "got {coverage}");
+    }
+
+    #[test]
+    fn a_clip_off_the_page_leaves_no_coverage() {
+        let p = page(100.0);
+        assert_eq!(
+            page_coverage(
+                Some(&p),
+                CropChoice::Crop,
+                placed(0.0, 0.0, 100.0, 100.0),
+                Some(rect(200.0, 200.0, 300.0, 300.0)),
+            ),
+            0.0
+        );
     }
 
     #[test]
     fn an_image_entirely_off_the_page_covers_nothing() {
         let p = page(100.0);
         assert_eq!(
-            page_coverage(Some(&p), CropChoice::Crop, placed(200.0, 200.0, 10.0, 10.0)),
+            page_coverage(
+                Some(&p),
+                CropChoice::Crop,
+                placed(200.0, 200.0, 10.0, 10.0),
+                None
+            ),
             0.0
         );
     }
@@ -1081,9 +1195,68 @@ mod tests {
     #[test]
     fn a_page_without_a_box_reports_no_coverage() {
         assert_eq!(
-            page_coverage(None, CropChoice::Crop, placed(0.0, 0.0, 100.0, 100.0)),
+            page_coverage(None, CropChoice::Crop, placed(0.0, 0.0, 100.0, 100.0), None),
             0.0
         );
+    }
+
+    // --- hidden images ---
+
+    /// Images as `notable_images` sees them, on a 1000pt page.
+    fn notable_images_of(images: &[ImageInfo]) -> Vec<NotableImage> {
+        let p = page(1000.0);
+        notable_images(images, Some(&p), CropChoice::Crop, dpi_cfg(300.0, 0.15))
+    }
+
+    #[test]
+    fn an_image_a_later_opaque_image_covers_is_dropped() {
+        let under = image(100, 200, 100.0, placed(100.0, 100.0, 400.0, 600.0));
+        let over = image(300, 600, 300.0, placed(0.0, 0.0, 800.0, 1000.0));
+        let notable = notable_images_of(&[under, over]);
+        assert_eq!(notable.len(), 1, "only the covering image should count");
+        assert_eq!(notable[0].dpi, 300.0);
+    }
+
+    #[test]
+    fn an_image_only_partly_overlapped_is_kept() {
+        let left = image(300, 600, 100.0, placed(0.0, 0.0, 500.0, 1000.0));
+        let right = image(300, 600, 300.0, placed(200.0, 0.0, 700.0, 1000.0));
+        let notable = notable_images_of(&[left, right]);
+        assert_eq!(notable.len(), 2, "partial overlaps are left alone");
+    }
+
+    #[test]
+    fn a_translucent_covering_image_hides_nothing() {
+        let under = image(100, 200, 100.0, placed(100.0, 100.0, 400.0, 600.0));
+        let over = clipped(
+            image(300, 600, 300.0, placed(0.0, 0.0, 800.0, 1000.0)),
+            rect(0.0, 0.0, 800.0, 1000.0),
+            0.5,
+        );
+        let notable = notable_images_of(&[under, over]);
+        assert_eq!(notable.len(), 2, "the image shows through");
+    }
+
+    #[test]
+    fn an_image_under_a_later_one_drawn_first_is_kept() {
+        // Same geometry, but the big one is drawn first, so the small one sits on top.
+        let over = image(300, 600, 300.0, placed(0.0, 0.0, 800.0, 1000.0));
+        let under = image(100, 200, 100.0, placed(100.0, 100.0, 400.0, 600.0));
+        let notable = notable_images_of(&[over, under]);
+        assert_eq!(notable.len(), 2);
+    }
+
+    #[test]
+    fn a_clipped_image_can_fall_under_the_coverage_gate() {
+        // Full page in size, but clipped to a 1% sliver, so it is not content.
+        let p = page(1000.0);
+        let image = clipped(
+            image(100, 200, 300.0, placed(0.0, 0.0, 1000.0, 1000.0)),
+            rect(0.0, 0.0, 10.0, 1000.0),
+            1.0,
+        );
+        let cfg = dpi_cfg(300.0, 0.15);
+        assert!(notable_images(&[image], Some(&p), CropChoice::Crop, cfg).is_empty());
     }
 
     // --- is_too_small ---

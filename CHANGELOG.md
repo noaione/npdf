@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### Changes
+- `npdf`: coverage now honours the clip an image was drawn with, and ignores images a
+  later opaque image completely covers
+- `tiny-poppler`: report the draw-time clip box and fill opacity on `ImageInfo`
 - `npdf`: copy pages that are just a stored scan out as-is instead of re-rendering them (`--skip-prerendered-check` to opt out)
 - `npdf`: raise the DPI back for text-bearing pages whose imagery would soften the text (`--skip-text-dpi-floor` to opt out)
 - `tiny-poppler`: report `has_text` on `PageInfo`, from the collector's text callback

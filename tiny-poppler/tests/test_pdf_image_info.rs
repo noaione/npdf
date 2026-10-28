@@ -53,6 +53,30 @@ fn an_image_only_page_reports_no_text() {
     );
 }
 
+#[test]
+fn an_image_carries_the_clip_and_opacity_it_was_drawn_with() {
+    let mut doc = open_document("image_rgb8.pdf");
+    let page = doc
+        .images()
+        .expect("Failed to get page images")
+        .into_iter()
+        .next()
+        .expect("image_rgb8.pdf draws one image");
+    assert!(
+        page.opacity > 0.0 && page.opacity <= 1.0,
+        "opacity should be a 0-1 fraction, got {}",
+        page.opacity
+    );
+    if let Some(clip) = page.clip_box {
+        let bounds = page.matrix.get_image_aabb();
+        assert!(
+            clip.x1 <= bounds.x1 && clip.y1 <= bounds.y1,
+            "the clip must not start inside the image: clip {clip:?} vs image {bounds:?}"
+        );
+        assert!(clip.x2 >= bounds.x2 && clip.y2 >= bounds.y2);
+    }
+}
+
 // #[test]
 // fn test_multiple_colorspaces() {
 //     let mut doc = open_document("colorspaces_multi.pdf");

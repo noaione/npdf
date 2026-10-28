@@ -435,8 +435,12 @@ fn prerendered_page_job(
         .collect();
     let only_image = plain.first()?;
     if plain.len() != 1
-        || render::page_coverage(Some(page_info), args.bounding, only_image.matrix)
-            < PRERENDERED_MIN_COVERAGE
+        || render::page_coverage(
+            Some(page_info),
+            args.bounding,
+            only_image.matrix,
+            only_image.clip_box,
+        ) < PRERENDERED_MIN_COVERAGE
     {
         return None;
     }

@@ -100,6 +100,14 @@ typedef struct ntsplash_image_info {
     // [a, b, c, d, e, f] - The Affine Transform
     double ctm[6];
 
+    // Effective clip box when the image was drawn, in the same absolute PDF space as
+    // `ctm` (see store_absolute_ctm). If all 0's, no clip was recorded.
+    double clipbox[4];
+
+    // Fill opacity the image was drawn with, 0.0-1.0. 1.0 means fully opaque, so the
+    // image completely hides whatever it covers.
+    double opacity;
+
     // Not exposed through FFI; only used internally inside the C++ wrapper
     const void *color_space_handle;
 } ntsplash_image_info_t;
