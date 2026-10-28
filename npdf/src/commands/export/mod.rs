@@ -70,6 +70,14 @@ pub struct ExportArgs {
     /// the resolution a full-page image calls for.
     #[arg(long)]
     pub color_export_dpi: Option<f64>,
+    /// Final output DPI. Pages chosen at a higher DPI are rendered at that resolution
+    /// and then averaged down.
+    ///
+    /// Supersampling this way antialiases text and line art better than rasterizing
+    /// straight at the lower DPI. Ignored for 1-bit output, which is rendered at this
+    /// resolution directly.
+    #[arg(long)]
+    pub output_dpi: Option<f64>,
     /// When in Auto color mode, if we encounter RGB colorspace,
     /// do additional check whether there is CMYK content (or color with CMYK fallback).
     #[arg(long, default_value_t = false)]
@@ -137,6 +145,15 @@ pub fn run(args: ExportArgs, passwords: Option<&PdfPasswords>) -> Result<()> {
         && color_dpi <= 0.0
     {
         return Err(NpdfError::InvalidColorExportDpi(color_dpi).into());
+    }
+
+    if let Some(output_dpi) = args.output_dpi {
+        if output_dpi <= 0.0 {
+            return Err(NpdfError::InvalidDpi(output_dpi).into());
+        }
+        if output_dpi > args.dpi {
+            return Err(NpdfError::OutputDpiTooHigh(output_dpi, args.dpi).into());
+        }
     }
 
     if !args.pdf.exists() {

@@ -1,6 +1,8 @@
 use clap::ValueEnum;
 use color_eyre::{Result, eyre::Context};
 use color_print::cprintln;
+use fast_image_resize::images::Image as ResizeImage;
+use fast_image_resize::{FilterType, PixelType, ResizeAlg, ResizeOptions, Resizer};
 use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 use std::fs;
 use std::path::PathBuf;
@@ -62,6 +64,10 @@ pub(super) struct RenderPagePlan {
     pub zero_index_page: u32,
     pub total_pages: u32,
     pub output_path: Option<PathBuf>,
+    /// `--output-dpi` when it is below the chosen render DPI: the page is rendered at the
+    /// higher resolution and then averaged down, which antialiases text and line art
+    /// better than rasterizing straight at the lower one.
+    pub output_dpi: Option<f64>,
     request_color: ColorChoice,
     detected_color: ColorMode,
     pub options: RenderOptions,
@@ -70,20 +76,32 @@ pub(super) struct RenderPagePlan {
 pub(super) fn process_job(document: &mut Document, job: &RenderPagePlan) -> Result<()> {
     let output_path = job.output_path.as_ref().ok_or(NpdfError::OutputNotSet)?;
 
-    let encoded = document
+    let rendered = document
         .render_page_image_bytes(job.zero_index_page, &job.options)
         .context(format!("page {}", job.page_number))?;
+    let encoded = match job.output_dpi {
+        Some(target) => {
+            downscale(rendered, target).context(format!("page {}, downscale", job.page_number))?
+        }
+        None => rendered,
+    };
 
     let (bytes_data, extension) = match encoded.format {
         tiny_poppler::ImageFormat::Png => (encoded.bytes, "png"),
         tiny_poppler::ImageFormat::Jpeg => (encoded.bytes, "png"),
         tiny_poppler::ImageFormat::Raw => {
-            // For raw bitmap, currently only used for CMYK PNG export
+            // A raw bitmap arrives either from `--cmyk-png` (always rendered as CMYK, to be
+            // converted here) or from a `--output-dpi` supersample (rendered directly in
+            // the colour that gets written). Only the first needs a colour conversion.
             let want_color = if job.request_color == ColorChoice::Auto {
                 job.detected_color
             } else {
                 job.request_color.to_color_mode().unwrap_or(ColorMode::Rgb8)
             };
+            let rendered_cmyk = matches!(
+                job.options.color_mode,
+                ColorMode::Cmyk8 | ColorMode::DeviceN8
+            );
 
             match want_color {
                 // Still export as JPEG
@@ -113,7 +131,7 @@ pub(super) fn process_job(document: &mut Document, job: &RenderPagePlan) -> Resu
                     (jpeg, "jpg")
                 }
                 ColorMode::Mono1 | ColorMode::Mono8 => {
-                    // Export as PNG, use cmyk2gray function
+                    // Export as PNG, converting from CMYK when that is what was rendered.
                     let (colorspace, depth, palette) = if want_color == ColorMode::Mono1 {
                         (
                             tiny_poppler::PngColorType::Indexed,
@@ -128,8 +146,12 @@ pub(super) fn process_job(document: &mut Document, job: &RenderPagePlan) -> Resu
                         )
                     };
 
-                    let as_gray = cmyk2gray(&encoded.bytes)
-                        .context(format!("page {}, cmyk2gray", job.page_number))?;
+                    let as_gray = if rendered_cmyk {
+                        cmyk2gray(&encoded.bytes)
+                            .context(format!("page {}, cmyk2gray", job.page_number))?
+                    } else {
+                        encoded.bytes
+                    };
 
                     let png = tiny_poppler::encode_png(
                         &as_gray,
@@ -145,9 +167,13 @@ pub(super) fn process_job(document: &mut Document, job: &RenderPagePlan) -> Resu
                     (png, "png")
                 }
                 other => {
-                    // Export as PNG, convert to RGB first
-                    let rgb_data = cmyk2rgb(&encoded.bytes)
-                        .context(format!("page {}, cmyk2rgb", job.page_number))?;
+                    // Export as PNG, converting from CMYK when that is what was rendered.
+                    let rgb_data = if rendered_cmyk {
+                        cmyk2rgb(&encoded.bytes)
+                            .context(format!("page {}, cmyk2rgb", job.page_number))?
+                    } else {
+                        encoded.bytes
+                    };
 
                     let (adjusted_rgb, colorspace) = if other == ColorMode::Xbgr8 {
                         let mut rgba = Vec::with_capacity(encoded.width * encoded.height * 4);
@@ -193,9 +219,90 @@ pub(super) fn process_job(document: &mut Document, job: &RenderPagePlan) -> Resu
         extension,
         encoded.format,
         job.options.color_mode,
-        job.options.dpi,
+        encoded.dpi,
     );
     Ok(())
+}
+
+/// Averages a supersampled raw bitmap down to `target_dpi`.
+///
+/// Only raw bitmaps can be resized, so `prepare_job` renders in `OutputMode::RawBitmap`
+/// whenever this is going to run. Layouts the resizer cannot express, and the no-op case
+/// where the size already matches, are returned untouched.
+fn downscale(
+    encoded: tiny_poppler::EncodedImage,
+    target_dpi: f64,
+) -> Result<tiny_poppler::EncodedImage> {
+    if !matches!(encoded.format, tiny_poppler::ImageFormat::Raw) {
+        return Ok(encoded);
+    }
+
+    let (width, height) = (encoded.width, encoded.height);
+    if width == 0 || height == 0 || encoded.dpi <= 0.0 {
+        return Ok(encoded);
+    }
+
+    // Trust the buffer over the reported component count: DeviceN spot channels are
+    // stripped before the bitmap is handed over, but the count still reports the original.
+    let components = encoded.bytes.len() / (width * height);
+    let pixel_type = match components {
+        1 => PixelType::U8,
+        3 => PixelType::U8x3,
+        4 => PixelType::U8x4,
+        _ => return Ok(encoded),
+    };
+
+    let ratio = target_dpi / encoded.dpi;
+    let new_width = ((width as f64) * ratio).round().max(1.0) as u32;
+    let new_height = ((height as f64) * ratio).round().max(1.0) as u32;
+    if (new_width as usize, new_height as usize) == (width, height) {
+        return Ok(encoded);
+    }
+
+    let expected = width * height * components;
+    if encoded.bytes.len() < expected {
+        return Ok(encoded);
+    }
+    let mut bytes = encoded.bytes;
+    bytes.truncate(expected);
+
+    let source = ResizeImage::from_vec_u8(width as u32, height as u32, bytes, pixel_type)?;
+
+    // Greyscale keeps more of its rendering with a softer kernel; colour tolerates the
+    // sharper one without ringing.
+    let filter = if components == 1 {
+        FilterType::Mitchell
+    } else {
+        FilterType::Lanczos3
+    };
+
+    let mut target = ResizeImage::new(new_width, new_height, pixel_type);
+    Resizer::new().resize(
+        &source,
+        &mut target,
+        &ResizeOptions::new().resize_alg(ResizeAlg::Convolution(filter)),
+    )?;
+
+    Ok(tiny_poppler::EncodedImage {
+        format: tiny_poppler::ImageFormat::Raw,
+        bytes: target.into_vec(),
+        width: new_width as usize,
+        height: new_height as usize,
+        dpi: target_dpi,
+        components,
+    })
+}
+
+/// Whether a rendered page may be averaged down to a lower DPI.
+fn can_downscale(options: &RenderOptions) -> bool {
+    // Bit-packed 1-bit output cannot be resized as bytes, and thresholding an averaged
+    // grey back to one bit throws away exactly the detail the supersample bought. The
+    // BGR/XBGR modes are left out as well, since the raw encoder assumes RGB channel
+    // order.
+    matches!(
+        options.color_mode,
+        ColorMode::Mono8 | ColorMode::Rgb8 | ColorMode::Cmyk8 | ColorMode::DeviceN8
+    )
 }
 
 pub(super) fn prepare_job(
@@ -262,6 +369,19 @@ pub(super) fn prepare_job(
         options.dpi = guessed.dpi;
     }
 
+    // Supersample only when the final resolution is actually lower, and only for pixels
+    // that can be averaged. Otherwise `--output-dpi` just becomes the render resolution.
+    let mut output_dpi = args.output_dpi.filter(|target| *target < options.dpi);
+    if let Some(target) = output_dpi
+        && !can_downscale(&options)
+    {
+        options.dpi = target;
+        output_dpi = None;
+    }
+    if output_dpi.is_some() {
+        options.output_mode = tiny_poppler::OutputMode::RawBitmap;
+    }
+
     let file_name = format!("page-{output_page:04}");
     let with_output_path = output_path.as_ref().map(|o| o.join(&file_name));
 
@@ -270,6 +390,7 @@ pub(super) fn prepare_job(
         zero_index_page: page_info.page - 1,
         total_pages: factory.page_count(),
         output_path: with_output_path,
+        output_dpi,
         request_color: *color,
         detected_color: guessed.color,
         options,
@@ -1008,5 +1129,106 @@ mod tests {
 
         let guessed = precalculate_auto_export_config(&[], Some(&p), CropChoice::Crop, false, cfg);
         assert_eq!(guessed.dpi, 600.0);
+    }
+
+    // --- --output-dpi downscale ---
+
+    fn raw_image(
+        bytes: Vec<u8>,
+        width: usize,
+        height: usize,
+        dpi: f64,
+        components: usize,
+    ) -> tiny_poppler::EncodedImage {
+        tiny_poppler::EncodedImage {
+            format: tiny_poppler::ImageFormat::Raw,
+            bytes,
+            width,
+            height,
+            dpi,
+            components,
+        }
+    }
+
+    #[test]
+    fn downscaling_halves_the_pixel_dimensions() {
+        let (width, height) = (40, 30);
+        let encoded = raw_image(vec![128; width * height * 3], width, height, 300.0, 3);
+
+        let out = downscale(encoded, 150.0).expect("resize");
+        assert_eq!((out.width, out.height), (20, 15));
+        assert_eq!(out.dpi, 150.0);
+        assert_eq!(out.bytes.len(), 20 * 15 * 3);
+    }
+
+    #[test]
+    fn downscaling_keeps_every_channel() {
+        let (width, height) = (40, 30);
+        let encoded = raw_image(vec![200; width * height * 4], width, height, 600.0, 4);
+
+        let out = downscale(encoded, 300.0).expect("resize");
+        assert_eq!((out.width, out.height), (20, 15));
+        assert_eq!(out.components, 4);
+        assert_eq!(out.bytes.len(), 20 * 15 * 4);
+    }
+
+    #[test]
+    fn a_flat_fill_survives_the_average() {
+        let (width, height) = (16, 16);
+        let encoded = raw_image(vec![100; width * height], width, height, 300.0, 1);
+
+        let out = downscale(encoded, 150.0).expect("resize");
+        assert!(
+            out.bytes.iter().all(|&pixel| pixel == 100),
+            "a uniform page should average to itself"
+        );
+    }
+
+    #[test]
+    fn an_already_encoded_image_is_left_alone() {
+        let mut encoded = raw_image(vec![0; 16 * 16 * 3], 16, 16, 300.0, 3);
+        encoded.format = tiny_poppler::ImageFormat::Png;
+
+        let out = downscale(encoded, 150.0).expect("no-op");
+        assert_eq!((out.width, out.height, out.dpi), (16, 16, 300.0));
+    }
+
+    #[test]
+    fn an_unsupported_layout_is_left_alone() {
+        // Two channels per pixel: nothing Splash produces, and nothing the resizer can express.
+        let (width, height) = (16, 16);
+        let encoded = raw_image(vec![0; width * height * 2], width, height, 300.0, 2);
+
+        let out = downscale(encoded, 150.0).expect("no-op");
+        assert_eq!((out.width, out.height, out.dpi), (16, 16, 300.0));
+    }
+
+    #[test]
+    fn downscaling_to_the_same_resolution_is_a_no_op() {
+        let (width, height) = (16, 16);
+        let encoded = raw_image(vec![0; width * height * 3], width, height, 150.0, 3);
+
+        let out = downscale(encoded, 150.0).expect("no-op");
+        assert_eq!((out.width, out.height, out.dpi), (16, 16, 150.0));
+    }
+
+    #[test]
+    fn bit_packed_and_bgr_output_are_never_downscaled() {
+        let mut options = RenderOptions::default();
+
+        for mode in [ColorMode::Mono1, ColorMode::Bgr8, ColorMode::Xbgr8] {
+            options.color_mode = mode;
+            assert!(!can_downscale(&options), "{mode:?} must not be downscaled");
+        }
+
+        for mode in [
+            ColorMode::Mono8,
+            ColorMode::Rgb8,
+            ColorMode::Cmyk8,
+            ColorMode::DeviceN8,
+        ] {
+            options.color_mode = mode;
+            assert!(can_downscale(&options), "{mode:?} should be downscaled");
+        }
     }
 }

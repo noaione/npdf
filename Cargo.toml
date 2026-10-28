@@ -27,6 +27,8 @@ png = { version = "0.18.1", default-features = false, features = [
 tiff = { version = "0.11.3", default-features = false, features = ["deflate", "lzw"] }
 lopdf = { version = "0.46.0", default-features = false, features = ["rayon"] }
 flate2 = "1.1.10" # for recompressing PDF stream
+fast_image_resize = "6.1.0" # downscaling pages rendered above the output DPI
+mangacolor = { git = "https://github.com/noaione/mangacolor" } # ML colour-page detection
 
 # CLI stuff
 clap = { version = "4.6.7", features = ["derive"] }

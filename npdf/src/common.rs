@@ -20,6 +20,8 @@ pub enum NpdfError {
     InvalidMinImageCoverage(f64),
     #[error("Color export DPI must be greater than 0, got: {0}")]
     InvalidColorExportDpi(f64),
+    #[error("Output DPI ({0}) cannot be higher than the export DPI ({1}).")]
+    OutputDpiTooHigh(f64, f64),
     #[error("{0} is required when not using {1}.")]
     RequireArgumentWhen(&'static str, &'static str),
     #[error("{0} must be between {1} and {2}.")]
