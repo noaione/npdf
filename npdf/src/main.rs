@@ -1,5 +1,6 @@
 mod commands;
 mod common;
+mod pdf;
 
 use clap::{
     Command, CommandFactory, Parser, Subcommand,
@@ -12,8 +13,8 @@ use clap_complete::{Generator, Shell};
 use color_eyre::Result;
 use color_print::cprintln;
 use commands::{
-    ExportArgs, FixColorspaceArgs, ListArgs, RecropArgs, UnwatermarkArgs, export, fix_color, list,
-    recrop, unwatermark,
+    ExportArgs, FixBlackArgs, FixColorspaceArgs, ListArgs, RecropArgs, UnwatermarkArgs, export,
+    fix_black, fix_color, list, recrop, unwatermark,
 };
 use tiny_poppler::PdfPasswords;
 
@@ -44,6 +45,7 @@ fn execute(cli: Cli) -> Result<()> {
         Commands::Unwatermark(args) => unwatermark::run(args, passwords.as_ref()),
         Commands::Recrop(args) => recrop::run(args, passwords.as_ref()),
         Commands::FixColor(args) => fix_color::run(args, passwords.as_ref()),
+        Commands::FixBlack(args) => fix_black::run(args, passwords.as_ref()),
         Commands::Version => cmd_show_version_info(),
         Commands::Completions { generator } => {
             let mut cmd = Cli::command();
@@ -90,6 +92,9 @@ enum Commands {
     /// Fix stencil page color issues in the PDF.
     #[command(visible_alias = "fc")]
     FixColor(FixColorspaceArgs),
+    /// Rewrite baked RGB black (K-only separations and fills) to DeviceGray.
+    #[command(visible_alias = "fb")]
+    FixBlack(FixBlackArgs),
     /// Get version information.
     #[command(visible_alias = "vv")]
     Version,

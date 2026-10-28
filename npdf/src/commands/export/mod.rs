@@ -9,17 +9,24 @@ use std::fs;
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::thread;
-use tiny_poppler::{Document, DocumentFactory, ImageInfo, PageInfo, PdfPasswords};
+use tiny_poppler::{Document, DocumentFactory, ImageInfo, ImageType, PageInfo, PdfPasswords};
 
 mod extract;
 mod render;
 
-use crate::commands::export::extract::{ExtractPagePlan, describe_component};
+use crate::commands::export::extract::{ExtractPagePlan, PrerenderPlan, describe_component};
 use crate::commands::export::render::{AutoDPIDirection, ColorChoice, CropChoice, RenderPagePlan};
 use crate::commands::export::render::{GlyphFillChoice, ZeroWidthLineChoice};
 use crate::common::NpdfError;
 
 pub type PagePairings = HashMap<PageInfo, Vec<ImageInfo>>;
+
+/// `--min-image-coverage` default, in percent, matching the sandbox prototype.
+const DEFAULT_MIN_IMAGE_COVERAGE: f64 = 15.0;
+
+/// How much of the page a stored image must cover before its bytes can stand in for the
+/// whole page. Slightly under 1.0 to allow for bleed past the crop box.
+const PRERENDERED_MIN_COVERAGE: f64 = 0.9;
 
 #[derive(Args, Debug, PartialEq)]
 pub struct ExportArgs {
@@ -47,10 +54,55 @@ pub struct ExportArgs {
     /// as predominantly horizontal/vertical for auto-DPI calculation.
     #[arg(long, default_value_t = 1.25)]
     pub auto_dpi_ratio: f64,
+    /// Ignore images covering less than this percentage of the visible page when
+    /// choosing an export DPI.
+    ///
+    /// A page is set by its dominant imagery, so a small low-resolution ornament
+    /// should not drag the whole page down. Set to 0 to weigh every image.
+    #[arg(long, default_value_t = DEFAULT_MIN_IMAGE_COVERAGE)]
+    pub min_image_coverage: f64,
+    /// Ignore images narrower or shorter than this many pixels when choosing an
+    /// export DPI.
+    ///
+    /// Below 11 px both axes must fall short, since a small legitimate mark is
+    /// likelier than a thumbnail.
+    #[arg(long)]
+    pub min_image_dim: Option<u32>,
+    /// Lower DPI ceiling for colour pages that have no notable images, or several.
+    ///
+    /// Such a page has no single piece of imagery to resolve for, so it does not need
+    /// the resolution a full-page image calls for.
+    #[arg(long)]
+    pub color_export_dpi: Option<f64>,
+    /// Let a lowered DPI stand on pages that carry text.
+    ///
+    /// Text is rasterized at the page DPI too, so a page whose imagery lowered the
+    /// resolution would render its text soft. By default such a page is put back to
+    /// `--dpi` (grayscale) or `--color-export-dpi` (colour); pass this to keep the
+    /// imagery's verdict instead.
+    #[arg(long, default_value_t = false)]
+    pub skip_text_dpi_floor: bool,
+    /// Final output DPI. Pages chosen at a higher DPI are rendered at that resolution
+    /// and then averaged down.
+    ///
+    /// Supersampling this way antialiases text and line art better than rasterizing
+    /// straight at the lower DPI. Ignored for 1-bit output, which is rendered at this
+    /// resolution directly.
+    #[arg(long)]
+    pub output_dpi: Option<f64>,
     /// When in Auto color mode, if we encounter RGB colorspace,
     /// do additional check whether there is CMYK content (or color with CMYK fallback).
     #[arg(long, default_value_t = false)]
     pub with_cmyk: bool,
+    /// Skip the ML colour-page check during auto colour detection.
+    ///
+    /// For pages whose colourspaces say colour, the check renders a small preview and
+    /// asks a manga-trained classifier whether the page is visually black and white,
+    /// which catches RGB scans of grey originals. It needs a build with the model
+    /// weights embedded (`OGSOX_WEIGHTS_PATH` at build time) and silently does nothing
+    /// without them.
+    #[arg(long, default_value_t = false)]
+    pub skip_ml_color_check: bool,
     /// Save CMYK images in PNG format.
     ///
     /// Since PNG does not support CMYK, we would convert it to RGB first.
@@ -80,6 +132,13 @@ pub struct ExportArgs {
     /// Do extraction when possible instead of rendering.
     #[arg(long, value_enum, default_value_t = ExtractionMode::None)]
     pub extract: ExtractionMode,
+    /// Skip the pre-rendered page check.
+    ///
+    /// A page that is nothing but one stored image covering it is copied out as-is
+    /// instead of being re-rendered, which avoids re-encoding the scan a second time.
+    /// Pass this to always render.
+    #[arg(long, default_value_t = false)]
+    pub skip_prerendered_check: bool,
     /// Export CCITT as TIFF images where applicable.
     #[arg(long, default_value_t = false)]
     pub ccitt_as_tiff: bool,
@@ -104,6 +163,34 @@ pub fn run(args: ExportArgs, passwords: Option<&PdfPasswords>) -> Result<()> {
 
     if args.min_line_width < 0.0 {
         return Err(NpdfError::InvalidMinLineWidth(args.min_line_width).into());
+    }
+
+    if args.color == ColorChoice::Auto
+        && !args.skip_ml_color_check
+        && !mangacolor::ogsox_available()
+    {
+        cprintln!(
+            "<yellow>Note</>: this build carries no ML colour weights, so pages are classified from their colourspaces alone."
+        );
+    }
+
+    if !(0.0..=100.0).contains(&args.min_image_coverage) {
+        return Err(NpdfError::InvalidMinImageCoverage(args.min_image_coverage).into());
+    }
+
+    if let Some(color_dpi) = args.color_export_dpi
+        && color_dpi <= 0.0
+    {
+        return Err(NpdfError::InvalidColorExportDpi(color_dpi).into());
+    }
+
+    if let Some(output_dpi) = args.output_dpi {
+        if output_dpi <= 0.0 {
+            return Err(NpdfError::InvalidDpi(output_dpi).into());
+        }
+        if output_dpi > args.dpi {
+            return Err(NpdfError::OutputDpiTooHigh(output_dpi, args.dpi).into());
+        }
     }
 
     if !args.pdf.exists() {
@@ -186,8 +273,19 @@ pub fn run(args: ExportArgs, passwords: Option<&PdfPasswords>) -> Result<()> {
     let mut jobs: Vec<PagePlanJob> = Vec::new();
     for (pg_idx, page) in pages.iter().enumerate() {
         if let Some((page_info, images)) = page_pairings.get_key_value(page) {
-            let should_extract = should_be_extracted(page_info, images, extract);
             let output_page = (pg_idx as u32) + first_page;
+
+            // A page that is just a stored scan is copied out rather than re-rendered
+            // and re-encoded, which is both faster and lossless.
+            if extract == ExtractionMode::None
+                && let Some(plan) =
+                    prerendered_page_job(page_info, images, output_page, &args, output)
+            {
+                jobs.push(PagePlanJob::Prerender(plan));
+                continue;
+            }
+
+            let should_extract = should_be_extracted(page_info, images, extract);
 
             if should_extract {
                 extract::prepare_job(*page, output_page, images, &args, output, &mut |job_plan| {
@@ -285,6 +383,9 @@ fn process_job(document: &mut Document, job: PagePlanJob) -> Result<()> {
         PagePlanJob::Extract(extract_job) => {
             crate::commands::export::extract::process_job(document, &extract_job)
         }
+        PagePlanJob::Prerender(prerender_job) => {
+            crate::commands::export::extract::process_prerender_job(document, &prerender_job)
+        }
     }
 }
 
@@ -305,6 +406,54 @@ fn pair_page_images(pages: &[PageInfo], images: &[ImageInfo]) -> PagePairings {
     }
 
     paired
+}
+
+/// Whether the page's own shape allows passthrough at all.
+///
+/// No text, and nothing drawn on the page besides its images: a fill, a stroke, a clip or
+/// a form wrapper all bump `object_count` past the image count, and any of them means the
+/// stored image is no longer the whole page.
+fn page_allows_passthrough(page_info: &PageInfo) -> bool {
+    !page_info.has_text && page_info.object_count <= u64::from(page_info.image_count)
+}
+
+/// Builds a passthrough job for a page that is nothing but one stored image.
+fn prerendered_page_job(
+    page_info: &PageInfo,
+    images: &[ImageInfo],
+    output_page: u32,
+    args: &ExportArgs,
+    output: Option<&PathBuf>,
+) -> Option<PrerenderPlan> {
+    if args.skip_prerendered_check || !page_allows_passthrough(page_info) {
+        return None;
+    }
+
+    let plain: Vec<&ImageInfo> = images
+        .iter()
+        .filter(|img| matches!(img.image_type, ImageType::Image))
+        .collect();
+    let only_image = plain.first()?;
+    if plain.len() != 1
+        || render::page_coverage(
+            Some(page_info),
+            args.bounding,
+            only_image.matrix,
+            only_image.clip_box,
+        ) < PRERENDERED_MIN_COVERAGE
+    {
+        return None;
+    }
+
+    // A copy cannot be resized, so if `--output-dpi` would have to shrink the stored
+    // image, render instead and let the downscale happen.
+    if let Some(target) = args.output_dpi
+        && only_image.dpi.0.max(only_image.dpi.1) > target
+    {
+        return None;
+    }
+
+    extract::prerender_plan(output_page, images, args, output)
 }
 
 fn should_be_extracted(page: &PageInfo, images: &[ImageInfo], mode: ExtractionMode) -> bool {
@@ -349,6 +498,7 @@ pub enum ExtractionMode {
 enum PagePlanJob {
     Render(RenderPagePlan),
     Extract(ExtractPagePlan),
+    Prerender(PrerenderPlan),
 }
 
 impl PagePlanJob {
@@ -356,6 +506,7 @@ impl PagePlanJob {
         match self {
             PagePlanJob::Render(render_job) => render_job.page_number,
             PagePlanJob::Extract(extract_job) => extract_job.page,
+            PagePlanJob::Prerender(prerender_job) => prerender_job.page,
         }
     }
 
@@ -394,6 +545,58 @@ impl PagePlanJob {
                     );
                 }
             }
+            PagePlanJob::Prerender(prerender_job) => {
+                let entry = prerender_job.entry();
+                let path_display = prerender_job
+                    .output_path
+                    .as_ref()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|| "<none>".to_string());
+                cprintln!(
+                    "Will copy the stored image of page <m,s>{}</m,s> to <m,s>{}</m,s> (pre-rendered page, not re-encoded)",
+                    prerender_job.page,
+                    path_display,
+                );
+                if let Ok(exported) = extract::export_image_entry(document, entry, true) {
+                    describe_component(prerender_job.page, None, "", entry.info(), &exported);
+                }
+            }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn page_info(object_count: u64, image_count: u32, has_text: bool) -> PageInfo {
+        PageInfo {
+            page: 1,
+            image_count,
+            object_count,
+            is_pdf_a_compatible: false,
+            has_text,
+            mediabox: None,
+            cropbox: None,
+            colorspaces: HashMap::new(),
+        }
+    }
+
+    #[test]
+    fn a_page_that_is_only_images_may_pass_through() {
+        assert!(page_allows_passthrough(&page_info(1, 1, false)));
+    }
+
+    #[test]
+    fn text_disqualifies_a_page_from_passing_through() {
+        assert!(!page_allows_passthrough(&page_info(1, 1, true)));
+    }
+
+    #[test]
+    fn anything_drawn_besides_the_images_disqualifies_it() {
+        // A fill, a stroke, a clip or a form wrapper all bump object_count past the
+        // number of images drawn.
+        assert!(!page_allows_passthrough(&page_info(2, 1, false)));
     }
 }

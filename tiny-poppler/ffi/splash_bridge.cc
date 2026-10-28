@@ -192,6 +192,8 @@ struct NTSplashCollectedImage {
     ntsplash_image_type_t image_type = NTSPLASH_IMAGE_TYPE_UNKNOWN;
     ntsplash_image_colorspace_t colorspace = NTSPLASH_IMAGE_COLORSPACE_UNKNOWN;
     double ctm[6] = {1.0, 0.0, 0.0, 1.0, 0.0, 0.0}; // Default is identity matrix
+    double clipbox[4] = {0.0, 0.0, 0.0, 0.0};       // If all 0's, then not set
+    double opacity = 1.0;
     const void *color_space_handle = nullptr;
 };
 
@@ -200,6 +202,7 @@ struct NTSplashCollectedPage {
     uint32_t image_count = 0;
     uint64_t object_count = 0;
     bool is_pdf_a_compatible = true;
+    bool has_text = false;
 
     // If all 0's, then not set
     double cropbox[4] = {0.0, 0.0, 0.0, 0.0};
@@ -237,10 +240,12 @@ public:
         cur_page_idx = page_number;
         total_objects_ = 0;          // reset object count for new page
         is_pdf_a_compatible_ = true; // we start assuming true for each page
+        has_text_ = false;
     }
 
     uint64_t get_total_objects() const { return total_objects_; }
     bool is_pdf_a_compatible() const { return is_pdf_a_compatible_; }
+    bool has_text() const { return has_text_; }
 
     void drawImage(GfxState *state, Object *ref, Stream *str, int width, int height,
                    GfxImageColorMap *color_map, bool interpolate, const int *maskColors,
@@ -313,6 +318,7 @@ public:
         (void)state;
         (void)s;
         total_objects_++;
+        has_text_ = true;
         is_pdf_a_compatible_ = false; // since text was drawn, this page cannot be PDF/A compliant
     }
 
@@ -453,6 +459,28 @@ private:
         }
     }
 
+    // `GfxState::getClipBBox()` reports the clip accumulated so far in device space, which
+    // this collector renders with its origin at the MediaBox's lower-left corner. Undo the
+    // same translation `store_absolute_ctm` does, so the clip box can be compared directly
+    // against an image's AABB and the page boxes.
+    void store_absolute_clip(double out[4], GfxState *state) const
+    {
+        if (!state)
+        {
+            return;
+        }
+
+        state->getClipBBox(&out[0], &out[1], &out[2], &out[3]);
+        if (cur_page)
+        {
+            const PDFRectangle &mediaBox = cur_page->getMediaBox();
+            out[0] += mediaBox.x1;
+            out[2] += mediaBox.x1;
+            out[1] += mediaBox.y1;
+            out[3] += mediaBox.y1;
+        }
+    }
+
     void add_image(int width, int height, GfxImageColorMap *color_map, Object *ref, GfxState *state,
                    ntsplash_image_type_t image_type)
     {
@@ -507,6 +535,8 @@ private:
             {
                 store_absolute_ctm(info.ctm, ctm);
             }
+            store_absolute_clip(info.clipbox, state);
+            info.opacity = state->getFillOpacity();
         }
 
         images_->push_back(info);
@@ -550,6 +580,8 @@ private:
             {
                 store_absolute_ctm(info.ctm, ctm);
             }
+            store_absolute_clip(info.clipbox, state);
+            info.opacity = state->getFillOpacity();
         }
         images_->push_back(info);
     }
@@ -582,6 +614,7 @@ private:
     uint32_t cur_page_idx = 0;
     uint64_t total_objects_ = 0;
     bool is_pdf_a_compatible_ = false;
+    bool has_text_ = false;
 };
 
 } // namespace
@@ -831,6 +864,7 @@ int ntsplash_renderer_collect_images(ntsplash_renderer_t *renderer,
         summary.image_count = static_cast<uint32_t>(after - before);
         summary.object_count = collector.get_total_objects();
         summary.is_pdf_a_compatible = collector.is_pdf_a_compatible();
+        summary.has_text = collector.has_text();
 
         // Collect page /Resources/ColorSpace dictionary into owned entries.
         auto page_colorspaces = collector.extractPageColorspaces();
@@ -953,9 +987,14 @@ int ntsplash_renderer_collect_images(ntsplash_renderer_t *renderer,
             image_buffer[i].colorspace = collected[i].colorspace;
             image_buffer[i].color_space_handle = collected[i].color_space_handle;
             image_buffer[i].page_number = collected[i].page_number;
+            image_buffer[i].opacity = collected[i].opacity;
             for (int j = 0; j < 6; ++j)
             {
                 image_buffer[i].ctm[j] = collected[i].ctm[j];
+            }
+            for (int j = 0; j < 4; ++j)
+            {
+                image_buffer[i].clipbox[j] = collected[i].clipbox[j];
             }
         }
     }
@@ -1016,6 +1055,7 @@ int ntsplash_renderer_collect_images(ntsplash_renderer_t *renderer,
             page_buffer[i].image_count = page_summaries[i].image_count;
             page_buffer[i].object_count = page_summaries[i].object_count;
             page_buffer[i].is_pdf_a_compatible = page_summaries[i].is_pdf_a_compatible ? 1 : 0;
+            page_buffer[i].has_text = page_summaries[i].has_text ? 1 : 0;
             page_buffer[i].colorspaces = page_summaries[i].colorspaces;
             page_buffer[i].colorspace_count = page_summaries[i].colorspace_count;
 

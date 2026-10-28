@@ -1,0 +1,74 @@
+name: fetch the model weights
+description: >-
+  Downloads the mangacolor model weights and points `mangacolor`'s build script at
+  them, so the binaries carry the embedded colour classifier.  The weights are
+  published apart from the sources as a zip of `ogsov.npz`,
+  `ogsox_classifier_optimized.onnx` and `ogsox_lookup_table.npz` behind a secret
+  URL.  Without that secret the step warns and continues, and the build produces
+  binaries with the ML paths compiled out (the same binary a local build makes).
+  `uv` has to be on PATH: it is what unpacks the archive.
+
+inputs:
+  weights-url:
+    description: >-
+      URL of the zip holding the three weight files.  Pass it from a secret: the URL
+      is the secret.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: fetch the weights
+      shell: bash
+      env:
+        WEIGHTS_URL: ${{ inputs.weights-url }}
+      run: |
+        set -euo pipefail
+
+        if [ -z "$WEIGHTS_URL" ]; then
+          echo "::warning::no weights URL is set, so these binaries will not embed the ML models"
+          exit 0
+        fi
+
+        # `mangacolor` is a git dependency, so the "workspace root" its build script
+        # falls back to is inside the cargo checkout, not this repository.  Absolute
+        # paths in the variables it documents are the supported way in.
+        #
+        # `pwd -W` is the git-bash spelling that yields `D:/a/npdf/npdf` rather than
+        # `D:\a\npdf\npdf`; elsewhere it does not exist and `pwd` is already right.
+        workspace=$(pwd -W 2>/dev/null || pwd)
+        mkdir -p weights
+
+        archive="$RUNNER_TEMP/mangacolor-weights.zip"
+        # The URL is never echoed.  `curl` names it in its own error messages, which
+        # GitHub masks in the log because the value is a secret.
+        curl --fail --location --silent --show-error "$WEIGHTS_URL" --output "$archive"
+
+        # Unpacked with Python rather than `unzip`: not every runner has it, and the
+        # files are collected by name so the archive may nest them.
+        uv run --no-project python - "$archive" "$workspace/weights" <<'PY'
+        import pathlib, sys, zipfile
+
+        # The archive carries the names the models were trained under; the build
+        # script looks for these.
+        wanted = {
+            "ogsov.npz": "ogsov_weights.npz",
+            "ogsox_classifier_optimized.onnx": "ogsox_classifier_optimized.onnx",
+            "ogsox_lookup_table.npz": "ogsox_lookup_table.npz",
+        }
+        archive = pathlib.Path(sys.argv[1])
+        target = pathlib.Path(sys.argv[2])
+        with zipfile.ZipFile(archive) as bundle:
+            entries = {pathlib.Path(name).name: name for name in bundle.namelist()}
+            for source, renamed in wanted.items():
+                if source not in entries:
+                    sys.exit(f"{source} is not in the weights archive")
+                (target / renamed).write_bytes(bundle.read(entries[source]))
+                print(f"wrote {target / renamed}")
+        PY
+
+        {
+          echo "OGSOV_WEIGHTS_PATH=$workspace/weights/ogsov_weights.npz"
+          echo "OGSOX_WEIGHTS_PATH=$workspace/weights/ogsox_classifier_optimized.onnx"
+          echo "OGSOX_LOOKUP_PATH=$workspace/weights/ogsox_lookup_table.npz"
+        } >> "$GITHUB_ENV"

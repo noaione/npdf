@@ -16,6 +16,12 @@ pub enum NpdfError {
     InvalidDpi(f64),
     #[error("Minimum line width cannot be negative, got: {0}")]
     InvalidMinLineWidth(f64),
+    #[error("Minimum image coverage must be between 0 and 100 (percent), got: {0}")]
+    InvalidMinImageCoverage(f64),
+    #[error("Color export DPI must be greater than 0, got: {0}")]
+    InvalidColorExportDpi(f64),
+    #[error("Output DPI ({0}) cannot be higher than the export DPI ({1}).")]
+    OutputDpiTooHigh(f64, f64),
     #[error("{0} is required when not using {1}.")]
     RequireArgumentWhen(&'static str, &'static str),
     #[error("{0} must be between {1} and {2}.")]

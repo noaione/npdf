@@ -19,3 +19,9 @@ build/
 
 *.trace
 *.dSYM/
+
+sandbox/
+ogso[xv]*
+
+# Weights fetched by the CI (see .github/actions/model-weights); never committed.
+/weights/

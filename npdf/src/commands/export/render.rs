@@ -1,6 +1,8 @@
 use clap::ValueEnum;
 use color_eyre::{Result, eyre::Context};
 use color_print::cprintln;
+use fast_image_resize::images::Image as ResizeImage;
+use fast_image_resize::{FilterType, PixelType, ResizeAlg, ResizeOptions, Resizer};
 use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 use std::fs;
 use std::path::PathBuf;
@@ -62,6 +64,12 @@ pub(super) struct RenderPagePlan {
     pub zero_index_page: u32,
     pub total_pages: u32,
     pub output_path: Option<PathBuf>,
+    /// `--output-dpi` when it is below the chosen render DPI: the page is rendered at the
+    /// higher resolution and then averaged down, which antialiases text and line art
+    /// better than rasterizing straight at the lower one.
+    pub output_dpi: Option<f64>,
+    /// Whether the ML colour check may overrule the planned colour mode.
+    ml_color_check: bool,
     request_color: ColorChoice,
     detected_color: ColorMode,
     pub options: RenderOptions,
@@ -70,19 +78,42 @@ pub(super) struct RenderPagePlan {
 pub(super) fn process_job(document: &mut Document, job: &RenderPagePlan) -> Result<()> {
     let output_path = job.output_path.as_ref().ok_or(NpdfError::OutputNotSet)?;
 
-    let encoded = document
-        .render_page_image_bytes(job.zero_index_page, &job.options)
+    let mut options = job.options.clone();
+    if job.ml_color_check && ml_says_grayscale(document, job) == Some(true) {
+        // The page reads as colour by its colourspaces but not by its pixels, so render
+        // it grey: that is both faster and what the page actually is.
+        options.color_mode = ColorMode::Mono8;
+    }
+    let rendered_color = options.color_mode;
+
+    let rendered = document
+        .render_page_image_bytes(job.zero_index_page, &options)
         .context(format!("page {}", job.page_number))?;
+    let encoded = match job.output_dpi {
+        Some(target) => {
+            downscale(rendered, target).context(format!("page {}, downscale", job.page_number))?
+        }
+        None => rendered,
+    };
 
     let (bytes_data, extension) = match encoded.format {
         tiny_poppler::ImageFormat::Png => (encoded.bytes, "png"),
         tiny_poppler::ImageFormat::Jpeg => (encoded.bytes, "png"),
         tiny_poppler::ImageFormat::Raw => {
-            // For raw bitmap, currently only used for CMYK PNG export
-            let want_color = if job.request_color == ColorChoice::Auto {
-                job.detected_color
+            // A raw bitmap arrives either from `--cmyk-png` (always rendered as CMYK, to be
+            // converted here) or from a `--output-dpi` supersample (rendered directly in
+            // the colour that gets written). Only the first needs a colour conversion.
+            let rendered_cmyk = matches!(rendered_color, ColorMode::Cmyk8 | ColorMode::DeviceN8);
+            let want_color = if rendered_cmyk {
+                if job.request_color == ColorChoice::Auto {
+                    job.detected_color
+                } else {
+                    job.request_color.to_color_mode().unwrap_or(ColorMode::Rgb8)
+                }
             } else {
-                job.request_color.to_color_mode().unwrap_or(ColorMode::Rgb8)
+                // Rendered straight into the colour that gets written, which the ML
+                // colour check may have changed.
+                rendered_color
             };
 
             match want_color {
@@ -113,7 +144,7 @@ pub(super) fn process_job(document: &mut Document, job: &RenderPagePlan) -> Resu
                     (jpeg, "jpg")
                 }
                 ColorMode::Mono1 | ColorMode::Mono8 => {
-                    // Export as PNG, use cmyk2gray function
+                    // Export as PNG, converting from CMYK when that is what was rendered.
                     let (colorspace, depth, palette) = if want_color == ColorMode::Mono1 {
                         (
                             tiny_poppler::PngColorType::Indexed,
@@ -128,8 +159,12 @@ pub(super) fn process_job(document: &mut Document, job: &RenderPagePlan) -> Resu
                         )
                     };
 
-                    let as_gray = cmyk2gray(&encoded.bytes)
-                        .context(format!("page {}, cmyk2gray", job.page_number))?;
+                    let as_gray = if rendered_cmyk {
+                        cmyk2gray(&encoded.bytes)
+                            .context(format!("page {}, cmyk2gray", job.page_number))?
+                    } else {
+                        encoded.bytes
+                    };
 
                     let png = tiny_poppler::encode_png(
                         &as_gray,
@@ -145,9 +180,13 @@ pub(super) fn process_job(document: &mut Document, job: &RenderPagePlan) -> Resu
                     (png, "png")
                 }
                 other => {
-                    // Export as PNG, convert to RGB first
-                    let rgb_data = cmyk2rgb(&encoded.bytes)
-                        .context(format!("page {}, cmyk2rgb", job.page_number))?;
+                    // Export as PNG, converting from CMYK when that is what was rendered.
+                    let rgb_data = if rendered_cmyk {
+                        cmyk2rgb(&encoded.bytes)
+                            .context(format!("page {}, cmyk2rgb", job.page_number))?
+                    } else {
+                        encoded.bytes
+                    };
 
                     let (adjusted_rgb, colorspace) = if other == ColorMode::Xbgr8 {
                         let mut rgba = Vec::with_capacity(encoded.width * encoded.height * 4);
@@ -192,10 +231,155 @@ pub(super) fn process_job(document: &mut Document, job: &RenderPagePlan) -> Resu
         output_path.display(),
         extension,
         encoded.format,
-        job.options.color_mode,
-        job.options.dpi,
+        rendered_color,
+        encoded.dpi,
     );
     Ok(())
+}
+
+/// Averages a supersampled raw bitmap down to `target_dpi`.
+///
+/// Only raw bitmaps can be resized, so `prepare_job` renders in `OutputMode::RawBitmap`
+/// whenever this is going to run. Layouts the resizer cannot express, and the no-op case
+/// where the size already matches, are returned untouched.
+fn downscale(
+    encoded: tiny_poppler::EncodedImage,
+    target_dpi: f64,
+) -> Result<tiny_poppler::EncodedImage> {
+    if !matches!(encoded.format, tiny_poppler::ImageFormat::Raw) {
+        return Ok(encoded);
+    }
+
+    let (width, height) = (encoded.width, encoded.height);
+    if width == 0 || height == 0 || encoded.dpi <= 0.0 {
+        return Ok(encoded);
+    }
+
+    // Trust the buffer over the reported component count: DeviceN spot channels are
+    // stripped before the bitmap is handed over, but the count still reports the original.
+    let components = encoded.bytes.len() / (width * height);
+    let pixel_type = match components {
+        1 => PixelType::U8,
+        3 => PixelType::U8x3,
+        4 => PixelType::U8x4,
+        _ => return Ok(encoded),
+    };
+
+    let ratio = target_dpi / encoded.dpi;
+    let new_width = ((width as f64) * ratio).round().max(1.0) as u32;
+    let new_height = ((height as f64) * ratio).round().max(1.0) as u32;
+    if (new_width as usize, new_height as usize) == (width, height) {
+        return Ok(encoded);
+    }
+
+    let expected = width * height * components;
+    if encoded.bytes.len() < expected {
+        return Ok(encoded);
+    }
+    let mut bytes = encoded.bytes;
+    bytes.truncate(expected);
+
+    let source = ResizeImage::from_vec_u8(width as u32, height as u32, bytes, pixel_type)?;
+
+    // Greyscale keeps more of its rendering with a softer kernel; colour tolerates the
+    // sharper one without ringing.
+    let filter = if components == 1 {
+        FilterType::Mitchell
+    } else {
+        FilterType::Lanczos3
+    };
+
+    let mut target = ResizeImage::new(new_width, new_height, pixel_type);
+    Resizer::new().resize(
+        &source,
+        &mut target,
+        &ResizeOptions::new().resize_alg(ResizeAlg::Convolution(filter)),
+    )?;
+
+    Ok(tiny_poppler::EncodedImage {
+        format: tiny_poppler::ImageFormat::Raw,
+        bytes: target.into_vec(),
+        width: new_width as usize,
+        height: new_height as usize,
+        dpi: target_dpi,
+        components,
+    })
+}
+
+/// Whether a rendered page may be averaged down to a lower DPI.
+fn can_downscale(options: &RenderOptions) -> bool {
+    // Bit-packed 1-bit output cannot be resized as bytes, and thresholding an averaged
+    // grey back to one bit throws away exactly the detail the supersample bought. The
+    // BGR/XBGR modes are left out as well, since the raw encoder assumes RGB channel
+    // order.
+    matches!(
+        options.color_mode,
+        ColorMode::Mono8 | ColorMode::Rgb8 | ColorMode::Cmyk8 | ColorMode::DeviceN8
+    )
+}
+
+/// Resolution of the preview the ML colour check classifies.
+///
+/// High enough for the model's 512² tiling to see real tiles, low enough that the extra
+/// render stays a fraction of the final one. The reference implementation uses the same
+/// "up to 300 dpi" idea.
+const ML_PREVIEW_DPI: f64 = 150.0;
+
+/// Whether the ML colour check may run for a page.
+///
+/// It only ever overrules a *colour* verdict, so it is pointless when the page already
+/// reads as grey; and it cannot second-guess an explicit `--color`, a forced CMYK render,
+/// or a user who turned it off.
+fn wants_ml_color_check(
+    color: ColorChoice,
+    cmyk_png: bool,
+    skip_ml_color_check: bool,
+    planned: ColorMode,
+) -> bool {
+    ml_check_eligible(color, cmyk_png, skip_ml_color_check, planned)
+        && mangacolor::ogsox_available()
+}
+
+/// The half of [`wants_ml_color_check`] that does not depend on the build.
+fn ml_check_eligible(
+    color: ColorChoice,
+    cmyk_png: bool,
+    skip_ml_color_check: bool,
+    planned: ColorMode,
+) -> bool {
+    color == ColorChoice::Auto && !cmyk_png && !skip_ml_color_check && is_color_mode(planned)
+}
+
+/// Asks the ML model whether the page is really a colour page.
+///
+/// Renders a small RGB preview and classifies it. `Some(true)` means "confidently
+/// grayscale"; `None` means the check could not answer, and the planned colour stands.
+fn ml_says_grayscale(document: &mut Document, job: &RenderPagePlan) -> Option<bool> {
+    let preview_options = RenderOptions {
+        dpi: job.options.dpi.min(ML_PREVIEW_DPI),
+        color_mode: ColorMode::Rgb8,
+        output_mode: tiny_poppler::OutputMode::RawBitmap,
+        ..job.options.clone()
+    };
+    let preview = document
+        .render_page_image_bytes(job.zero_index_page, &preview_options)
+        .ok()?;
+
+    // Only trust a tightly packed three-channel frame.
+    let expected = preview
+        .width
+        .saturating_mul(preview.height)
+        .saturating_mul(3);
+    if preview.width == 0 || preview.height == 0 || preview.bytes.len() < expected {
+        return None;
+    }
+
+    let prediction =
+        mangacolor::detect_ogsox(&preview.bytes, preview.width, preview.height, 3).ok()?;
+
+    // A tie (score 0) counts as colour, and only a confident negative score may overrule
+    // the planned mode: this check never upgrades a grey page to colour.
+    Some(!prediction.is_color && prediction.confidence > 0.0)
 }
 
 pub(super) fn prepare_job(
@@ -244,18 +428,44 @@ pub(super) fn prepare_job(
         Some(page_info),
         *bounding,
         *with_cmyk,
-        *dpi,
-        *auto_dpi,
-        *auto_dpi_ratio,
+        DpiConfig {
+            target_dpi: *dpi,
+            direction: *auto_dpi,
+            ratio: *auto_dpi_ratio,
+            min_coverage: args.min_image_coverage / 100.0,
+            min_image_dim: args.min_image_dim,
+            color_export_dpi: args.color_export_dpi,
+            text_floor: !args.skip_text_dpi_floor,
+        },
     );
 
     let mut options = base_options.clone();
     if *color == ColorChoice::Auto && !*cmyk_png {
         options.color_mode = guessed.color;
     }
-    if auto_dpi.is_some() {
+    if auto_dpi.is_some() || args.color_export_dpi.is_some() {
         options.dpi = guessed.dpi;
     }
+
+    // Supersample only when the final resolution is actually lower, and only for pixels
+    // that can be averaged. Otherwise `--output-dpi` just becomes the render resolution.
+    let mut output_dpi = args.output_dpi.filter(|target| *target < options.dpi);
+    if let Some(target) = output_dpi
+        && !can_downscale(&options)
+    {
+        options.dpi = target;
+        output_dpi = None;
+    }
+    if output_dpi.is_some() {
+        options.output_mode = tiny_poppler::OutputMode::RawBitmap;
+    }
+
+    let ml_color_check = wants_ml_color_check(
+        *color,
+        *cmyk_png,
+        args.skip_ml_color_check,
+        options.color_mode,
+    );
 
     let file_name = format!("page-{output_page:04}");
     let with_output_path = output_path.as_ref().map(|o| o.join(&file_name));
@@ -265,6 +475,8 @@ pub(super) fn prepare_job(
         zero_index_page: page_info.page - 1,
         total_pages: factory.page_count(),
         output_path: with_output_path,
+        output_dpi,
+        ml_color_check,
         request_color: *color,
         detected_color: guessed.color,
         options,
@@ -276,25 +488,80 @@ struct GuessedImage {
     dpi: f64,
 }
 
+/// Everything the DPI rules need from the command line, gathered once per page.
+#[derive(Clone, Copy)]
+struct DpiConfig {
+    /// `--dpi`: the ceiling every rule may only lower.
+    target_dpi: f64,
+    direction: Option<AutoDPIDirection>,
+    /// `--auto-dpi-ratio`: the height/width ratio from which an image counts as tall.
+    ratio: f64,
+    /// `--min-image-coverage`, as a fraction (0.0-1.0).
+    min_coverage: f64,
+    min_image_dim: Option<u32>,
+    /// `--color-export-dpi`: a lower ceiling for colour pages that carry nothing, or
+    /// several things.
+    color_export_dpi: Option<f64>,
+    /// Whether a page whose imagery lowered the DPI is put back up for its text
+    /// (`--skip-text-dpi-floor` turns this off).
+    text_floor: bool,
+}
+
 fn precalculate_auto_export_config(
     images: &[ImageInfo],
     page_info: Option<&PageInfo>,
     crop_mode: CropChoice,
     with_cmyk: bool,
-    target_dpi: f64,
-    direction: Option<AutoDPIDirection>,
-    dpi_ratio: f64,
+    cfg: DpiConfig,
 ) -> GuessedImage {
     let color = determine_page_colorspace(images, page_info, crop_mode, with_cmyk);
-    let dpi = if let Some(direction) = direction {
-        determine_export_dpi(
-            images, page_info, crop_mode, target_dpi, direction, dpi_ratio,
-        )
-    } else {
-        target_dpi
+    let notable = notable_images(images, page_info, crop_mode, cfg);
+
+    let (mut dpi, imagery_set_dpi) = match cfg.direction {
+        Some(direction) => determine_export_dpi(&notable, direction, cfg),
+        None => (cfg.target_dpi, false),
     };
 
+    // A colour page with no notable image, or with several, has no single piece of
+    // imagery to resolve for, so it gets its own lower ceiling. Pages whose DPI already
+    // came in under it keep their value.
+    if let Some(color_dpi) = cfg.color_export_dpi
+        && is_color_mode(color)
+        && (notable.is_empty() || notable.len() > 1)
+        && dpi > color_dpi
+    {
+        dpi = color_dpi;
+    }
+
+    // Text is rasterized at the page's DPI too, so a page whose imagery lowered the
+    // resolution renders its text soft. Such a page is put back to what the text alone
+    // needs, undoing the imagery verdict.
+    if cfg.text_floor
+        && imagery_set_dpi
+        && page_info.is_some_and(|info| info.has_text)
+        && let Some(floor) = text_floor_dpi(color, cfg)
+        && dpi < floor
+    {
+        dpi = floor;
+    }
+
     GuessedImage { color, dpi }
+}
+
+/// The DPI a page carrying text must not fall below.
+///
+/// Grey pages go back to `--dpi`; colour pages go back to `--color-export-dpi`, and are
+/// left alone when that is unset, there being no colour baseline to restore.
+fn text_floor_dpi(color: ColorMode, cfg: DpiConfig) -> Option<f64> {
+    if is_color_mode(color) {
+        cfg.color_export_dpi
+    } else {
+        Some(cfg.target_dpi)
+    }
+}
+
+fn is_color_mode(mode: ColorMode) -> bool {
+    !matches!(mode, ColorMode::Mono1 | ColorMode::Mono8)
 }
 
 fn determine_page_colorspace(
@@ -355,57 +622,219 @@ fn determine_from_page_info(page_info: &PageInfo, with_cmyk: bool) -> ColorMode 
     }
 }
 
-fn determine_export_dpi(
+/// An image that matters for the page's DPI, with the numbers the rules need.
+#[derive(Clone, Copy)]
+struct NotableImage {
+    dpi: f64,
+    coverage: f64,
+    width: u32,
+    height: u32,
+    /// Where the image lands on the page, in the same space as the page box.
+    bounds: PdfRect,
+    /// Whether the image completely hides whatever it is drawn over.
+    opaque: bool,
+}
+
+/// The images worth weighing when picking an export DPI.
+///
+/// An image listing also carries entries that only make up a soft mask and never show as
+/// content, so anything that is not a plain image or a stencil is dropped up front -- that
+/// way a full-page scan with an alpha channel is one image, not two.
+fn notable_images(
     images: &[ImageInfo],
     page_info: Option<&PageInfo>,
     crop_mode: CropChoice,
-    target_dpi: f64,
+    cfg: DpiConfig,
+) -> Vec<NotableImage> {
+    let notable: Vec<NotableImage> = images
+        .iter()
+        .filter(|img| matches!(img.image_type, ImageType::Image | ImageType::Stencil))
+        // A tab or registration mark that mostly bleeds off the trimmed page and only
+        // pokes a sub-point sliver back in is not content, and the coverage gate alone
+        // would let it through.
+        .filter(|img| image_intersecting_with_page(page_info, crop_mode, img.matrix))
+        .filter_map(|img| {
+            let coverage = page_coverage(page_info, crop_mode, img.matrix, img.clip_box);
+            if is_too_small(img, coverage, cfg.min_coverage, cfg.min_image_dim) {
+                return None;
+            }
+            Some(NotableImage {
+                dpi: match cfg.direction {
+                    Some(AutoDPIDirection::Vertical) => img.dpi.1,
+                    Some(AutoDPIDirection::Horizontal) => img.dpi.0,
+                    // Only used for the colour ceiling, which needs no axis.
+                    None => img.dpi.0.max(img.dpi.1),
+                },
+                coverage,
+                width: img.width,
+                height: img.height,
+                bounds: img.matrix.get_image_aabb(),
+                opaque: img.opacity >= OPAQUE_OPACITY,
+            })
+        })
+        .collect();
+
+    drop_hidden(notable)
+}
+
+/// Drops images a later, fully opaque image completely covers.
+///
+/// Only containment is considered. Partial overlaps are deliberately left alone: the page
+/// is counted from what the images span, and subtracting partial overlaps pairwise
+/// over-counts as soon as three rectangles meet, which would quietly hide content that
+/// really does show. A covered image also still sets the *colour* of the page, so the
+/// caller sees the full list for that.
+fn drop_hidden(notable: Vec<NotableImage>) -> Vec<NotableImage> {
+    let mut shown: Vec<NotableImage> = Vec::with_capacity(notable.len());
+    for (index, image) in notable.iter().enumerate() {
+        // Entries keep the slice's draw order, so anything after this one is on top of it.
+        let hidden = notable[index + 1..]
+            .iter()
+            .any(|later| later.opaque && covers(later.bounds, image.bounds));
+        if !hidden {
+            shown.push(*image);
+        }
+    }
+    shown
+}
+
+/// Whether `outer` completely contains `inner`.
+fn covers(outer: PdfRect, inner: PdfRect) -> bool {
+    outer.x1 <= inner.x1 && outer.y1 <= inner.y1 && outer.x2 >= inner.x2 && outer.y2 >= inner.y2
+}
+
+/// DPI for a page that has notable images.
+///
+/// A single image sets the page outright, there being nothing to weigh it against. With
+/// more than one, the page is set by its dominant imagery rather than its weakest element
+/// (`dpi_covering` in the sandbox prototype): take the sharpest image and keep taking
+/// until they cover enough of the page.
+fn determine_export_dpi(
+    notable: &[NotableImage],
     direction: AutoDPIDirection,
-    dpi_ratio: f64,
-) -> f64 {
-    if images.is_empty() {
-        return target_dpi;
+    cfg: DpiConfig,
+) -> (f64, bool) {
+    if notable.is_empty() {
+        return (cfg.target_dpi, false);
     }
 
-    let candidates: Vec<f64> = if direction == AutoDPIDirection::Vertical {
-        images
-            .iter()
-            .filter(|&img| matches!(img.image_type, ImageType::Stencil | ImageType::Image))
-            .filter(|&img| image_intersecting_with_page(page_info, crop_mode, img.matrix))
-            .filter(|&img| img.dpi.1 >= 72.0) // Filter out images with DPI smaller than 72 for some reason
-            .filter(|&img| u_t_f(img.height) >= u_t_f(img.width) * dpi_ratio)
-            .map(|f| f.dpi.1)
-            .collect()
-    } else {
-        images
-            .iter()
-            .filter(|&img| matches!(img.image_type, ImageType::Stencil | ImageType::Image))
-            .filter(|&img| image_intersecting_with_page(page_info, crop_mode, img.matrix))
-            .filter(|&img| img.dpi.0 >= 72.0) // Filter out images with DPI smaller than 72 for some reason
-            .filter(|&img| u_t_f(img.height) * dpi_ratio <= u_t_f(img.width))
-            .map(|f| f.dpi.0)
-            .collect()
+    if notable.len() == 1 {
+        return (
+            nearest_5(notable[0].dpi)
+                .min(cfg.target_dpi)
+                .max(MIN_EXPORT_DPI),
+            false,
+        );
+    }
+
+    match dpi_covering(notable, direction, cfg.ratio, cfg.min_coverage) {
+        // Not rounded to 5: this is one image's own on-page resolution, and rounding it
+        // would hide which image set the page.
+        Some(dpi) => (dpi.min(cfg.target_dpi).max(MIN_EXPORT_DPI), true),
+        // Notable by their bounds, but clipped or covered up to next to nothing.
+        None => (cfg.target_dpi, false),
+    }
+}
+
+/// The DPI of the sharpest image that closes `min_coverage` of the page.
+///
+/// Images are taken sharpest first so that a few tiny high-resolution bits (logos,
+/// ornaments) never count, while a cover made of many small tiles still does.
+fn dpi_covering(
+    notable: &[NotableImage],
+    direction: AutoDPIDirection,
+    ratio: f64,
+    min_coverage: f64,
+) -> Option<f64> {
+    let mut candidates: Vec<&NotableImage> = notable
+        .iter()
+        .filter(|img| image_matches_direction(img, direction, ratio))
+        // Too soft to say anything about how sharp the page should be exported.
+        .filter(|img| img.dpi >= MIN_EXPORT_DPI)
+        .collect();
+    candidates.sort_by(|a, b| b.dpi.total_cmp(&a.dpi));
+
+    let mut covered = 0.0;
+    for image in candidates {
+        covered += image.coverage;
+        if covered >= min_coverage {
+            return Some(image.dpi);
+        }
+    }
+
+    None
+}
+
+fn image_matches_direction(image: &NotableImage, direction: AutoDPIDirection, ratio: f64) -> bool {
+    match direction {
+        AutoDPIDirection::Vertical => u_t_f(image.height) >= u_t_f(image.width) * ratio,
+        AutoDPIDirection::Horizontal => u_t_f(image.height) * ratio <= u_t_f(image.width),
+    }
+}
+
+/// Fraction of the visible page an image's bounds cover, 0.0-1.0.
+///
+/// The bounds are cut by the page box *and* by the clip that was in force when the image
+/// was drawn, so an image running off the trimmed page, or clipped to a fraction of its
+/// own placement, only counts the part that actually shows
+/// (`get_page_coverage` in the sandbox prototype, which rasterizes the same intersection).
+pub(super) fn page_coverage(
+    page_info: Option<&PageInfo>,
+    crop_mode: CropChoice,
+    matrix: PdfMatrix,
+    clip: Option<PdfRect>,
+) -> f64 {
+    let Some(bbox) = page_info.and_then(|info| page_box(info, crop_mode)) else {
+        return 0.0;
     };
 
-    if images.len() == 1 {
-        let smallest = if direction == AutoDPIDirection::Vertical {
-            images[0].dpi.1
-        } else {
-            images[0].dpi.0
-        };
+    let page_area = (bbox.x2 - bbox.x1) * (bbox.y2 - bbox.y1);
+    if page_area <= 0.0 {
+        return 0.0;
+    }
 
-        nearest_5(smallest).min(target_dpi).max(72.0)
-    } else if candidates.is_empty() {
-        target_dpi
+    // What the page box and the clip both allow to be seen.
+    let visible = match clip {
+        Some(clip) => PdfRect {
+            x1: bbox.x1.max(clip.x1),
+            y1: bbox.y1.max(clip.y1),
+            x2: bbox.x2.min(clip.x2),
+            y2: bbox.y2.min(clip.y2),
+        },
+        None => bbox,
+    };
+
+    let bounds = matrix.get_image_aabb();
+    let overlap_x = bounds.x2.min(visible.x2) - bounds.x1.max(visible.x1);
+    let overlap_y = bounds.y2.min(visible.y2) - bounds.y1.max(visible.y1);
+    if overlap_x <= 0.0 || overlap_y <= 0.0 {
+        return 0.0;
+    }
+
+    ((overlap_x * overlap_y) / page_area).clamp(0.0, 1.0)
+}
+
+/// Whether the image is too small to have a say in the page's DPI.
+fn is_too_small(
+    image: &ImageInfo,
+    coverage: f64,
+    min_coverage: f64,
+    min_image_dim: Option<u32>,
+) -> bool {
+    if min_coverage > 0.0 && coverage < min_coverage {
+        return true;
+    }
+
+    let Some(dim) = min_image_dim else {
+        return false;
+    };
+
+    // Below 11px a legitimate tiny mark is likelier than a thumbnail, so both axes have
+    // to fall short before the image is dropped.
+    if dim < 11 {
+        image.height < dim && image.width < dim
     } else {
-        let mut smallest = candidates[0];
-        for dpi in candidates {
-            if dpi < smallest {
-                smallest = dpi;
-            }
-        }
-
-        nearest_5(smallest).min(target_dpi).max(72.0)
+        image.height < dim || image.width < dim
     }
 }
 
@@ -504,17 +933,17 @@ fn image_intersecting_with_page(
     crop_mode: CropChoice,
     matrix: PdfMatrix,
 ) -> bool {
-    if let Some(info) = page_info {
-        let bbox = match crop_mode {
-            CropChoice::Crop => info.cropbox,
-            CropChoice::Media => info.mediabox,
-        };
-        match bbox {
-            Some(b) => image_is_intersecting(matrix, b),
-            None => false,
-        }
-    } else {
-        false
+    match page_info.and_then(|info| page_box(info, crop_mode)) {
+        Some(b) => image_is_intersecting(matrix, b),
+        None => false,
+    }
+}
+
+/// The page box an export is measured against.
+fn page_box(info: &PageInfo, crop_mode: CropChoice) -> Option<PdfRect> {
+    match crop_mode {
+        CropChoice::Crop => info.cropbox,
+        CropChoice::Media => info.mediabox,
     }
 }
 
@@ -526,6 +955,14 @@ fn image_intersecting_with_page(
 /// overlap filters those out while still catching genuine bleed content, which overlaps
 /// by tens to hundreds of points.
 const MIN_INTERSECTION_OVERLAP_PT: f64 = 2.0;
+
+/// Below this on-page DPI an image is too soft to have a say in the export resolution.
+const MIN_EXPORT_DPI: f64 = 72.0;
+
+/// Fill opacity from which an image counts as completely hiding what it covers.
+///
+/// Slightly under 1.0 so that `0.999` from a matrix/state round-trip still counts.
+const OPAQUE_OPACITY: f64 = 0.99;
 
 /// Checks if the Image (defined by matrix) intersects the Page CropBox
 pub fn image_is_intersecting(matrix: PdfMatrix, bbox: PdfRect) -> bool {
@@ -577,5 +1014,711 @@ impl GlyphFillChoice {
             GlyphFillChoice::Bitmap => GlyphFillMode::Bitmap,
             GlyphFillChoice::Path => GlyphFillMode::Path,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    /// A square page anchored at the origin.
+    fn page(side: f64) -> PageInfo {
+        let rect = PdfRect {
+            x1: 0.0,
+            y1: 0.0,
+            x2: side,
+            y2: side,
+        };
+        PageInfo {
+            page: 1,
+            image_count: 0,
+            object_count: 0,
+            is_pdf_a_compatible: false,
+            has_text: false,
+            mediabox: Some(rect),
+            cropbox: Some(rect),
+            colorspaces: HashMap::new(),
+        }
+    }
+
+    /// Places an image's unit square at (x, y) with the given size in points.
+    fn placed(x: f64, y: f64, width: f64, height: f64) -> PdfMatrix {
+        PdfMatrix {
+            a: width,
+            b: 0.0,
+            c: 0.0,
+            d: height,
+            e: x,
+            f: y,
+        }
+    }
+
+    fn image_of(
+        image_type: ImageType,
+        width: u32,
+        height: u32,
+        dpi: f64,
+        matrix: PdfMatrix,
+    ) -> ImageInfo {
+        ImageInfo {
+            width,
+            height,
+            components: 1,
+            bits_per_component: 8,
+            colorspace: PdfImageColorSpace::DeviceGray,
+            image_type,
+            page: 1,
+            dpi: (dpi, dpi),
+            matrix,
+            clip_box: None,
+            opacity: 1.0,
+            xref: None,
+        }
+    }
+
+    fn clipped(mut image: ImageInfo, clip: PdfRect, opacity: f64) -> ImageInfo {
+        image.clip_box = Some(clip);
+        image.opacity = opacity;
+        image
+    }
+
+    fn image(width: u32, height: u32, dpi: f64, matrix: PdfMatrix) -> ImageInfo {
+        image_of(ImageType::Image, width, height, dpi, matrix)
+    }
+
+    fn notable(dpi: f64, coverage: f64) -> NotableImage {
+        // Tall, so the default 1.25 vertical aspect filter keeps it.
+        NotableImage {
+            dpi,
+            coverage,
+            width: 100,
+            height: 200,
+            bounds: PdfRect {
+                x1: 0.0,
+                y1: 0.0,
+                x2: 100.0,
+                y2: 200.0,
+            },
+            opaque: true,
+        }
+    }
+
+    fn dpi_cfg(target_dpi: f64, min_coverage: f64) -> DpiConfig {
+        DpiConfig {
+            target_dpi,
+            direction: Some(AutoDPIDirection::Vertical),
+            ratio: 1.25,
+            min_coverage,
+            min_image_dim: None,
+            color_export_dpi: None,
+            // Off unless a test is specifically about the floor, so the DPI tests
+            // keep exercising the imagery rules alone.
+            text_floor: false,
+        }
+    }
+
+    // --- page_coverage ---
+
+    fn rect(x1: f64, y1: f64, x2: f64, y2: f64) -> PdfRect {
+        PdfRect { x1, y1, x2, y2 }
+    }
+
+    #[test]
+    fn a_full_page_image_covers_the_whole_page() {
+        let p = page(100.0);
+        assert_eq!(
+            page_coverage(
+                Some(&p),
+                CropChoice::Crop,
+                placed(0.0, 0.0, 100.0, 100.0),
+                None
+            ),
+            1.0
+        );
+    }
+
+    #[test]
+    fn coverage_clips_an_image_running_off_the_page() {
+        // Half of a 100x100 image hangs past the right and top edges.
+        let p = page(100.0);
+        let coverage = page_coverage(
+            Some(&p),
+            CropChoice::Crop,
+            placed(50.0, 50.0, 100.0, 100.0),
+            None,
+        );
+        assert!((coverage - 0.25).abs() < 1e-9, "got {coverage}");
+    }
+
+    #[test]
+    fn a_clip_shrinks_how_much_an_image_covers() {
+        // A full-page image, but clipped to the left half of the page.
+        let p = page(100.0);
+        let coverage = page_coverage(
+            Some(&p),
+            CropChoice::Crop,
+            placed(0.0, 0.0, 100.0, 100.0),
+            Some(rect(0.0, 0.0, 50.0, 100.0)),
+        );
+        assert!((coverage - 0.5).abs() < 1e-9, "got {coverage}");
+    }
+
+    #[test]
+    fn a_clip_off_the_page_leaves_no_coverage() {
+        let p = page(100.0);
+        assert_eq!(
+            page_coverage(
+                Some(&p),
+                CropChoice::Crop,
+                placed(0.0, 0.0, 100.0, 100.0),
+                Some(rect(200.0, 200.0, 300.0, 300.0)),
+            ),
+            0.0
+        );
+    }
+
+    #[test]
+    fn an_image_entirely_off_the_page_covers_nothing() {
+        let p = page(100.0);
+        assert_eq!(
+            page_coverage(
+                Some(&p),
+                CropChoice::Crop,
+                placed(200.0, 200.0, 10.0, 10.0),
+                None
+            ),
+            0.0
+        );
+    }
+
+    #[test]
+    fn a_page_without_a_box_reports_no_coverage() {
+        assert_eq!(
+            page_coverage(None, CropChoice::Crop, placed(0.0, 0.0, 100.0, 100.0), None),
+            0.0
+        );
+    }
+
+    // --- hidden images ---
+
+    /// Images as `notable_images` sees them, on a 1000pt page.
+    fn notable_images_of(images: &[ImageInfo]) -> Vec<NotableImage> {
+        let p = page(1000.0);
+        notable_images(images, Some(&p), CropChoice::Crop, dpi_cfg(300.0, 0.15))
+    }
+
+    #[test]
+    fn an_image_a_later_opaque_image_covers_is_dropped() {
+        let under = image(100, 200, 100.0, placed(100.0, 100.0, 400.0, 600.0));
+        let over = image(300, 600, 300.0, placed(0.0, 0.0, 800.0, 1000.0));
+        let notable = notable_images_of(&[under, over]);
+        assert_eq!(notable.len(), 1, "only the covering image should count");
+        assert_eq!(notable[0].dpi, 300.0);
+    }
+
+    #[test]
+    fn an_image_only_partly_overlapped_is_kept() {
+        let left = image(300, 600, 100.0, placed(0.0, 0.0, 500.0, 1000.0));
+        let right = image(300, 600, 300.0, placed(200.0, 0.0, 700.0, 1000.0));
+        let notable = notable_images_of(&[left, right]);
+        assert_eq!(notable.len(), 2, "partial overlaps are left alone");
+    }
+
+    #[test]
+    fn a_translucent_covering_image_hides_nothing() {
+        let under = image(100, 200, 100.0, placed(100.0, 100.0, 400.0, 600.0));
+        let over = clipped(
+            image(300, 600, 300.0, placed(0.0, 0.0, 800.0, 1000.0)),
+            rect(0.0, 0.0, 800.0, 1000.0),
+            0.5,
+        );
+        let notable = notable_images_of(&[under, over]);
+        assert_eq!(notable.len(), 2, "the image shows through");
+    }
+
+    #[test]
+    fn an_image_under_a_later_one_drawn_first_is_kept() {
+        // Same geometry, but the big one is drawn first, so the small one sits on top.
+        let over = image(300, 600, 300.0, placed(0.0, 0.0, 800.0, 1000.0));
+        let under = image(100, 200, 100.0, placed(100.0, 100.0, 400.0, 600.0));
+        let notable = notable_images_of(&[over, under]);
+        assert_eq!(notable.len(), 2);
+    }
+
+    #[test]
+    fn a_clipped_image_can_fall_under_the_coverage_gate() {
+        // Full page in size, but clipped to a 1% sliver, so it is not content.
+        let p = page(1000.0);
+        let image = clipped(
+            image(100, 200, 300.0, placed(0.0, 0.0, 1000.0, 1000.0)),
+            rect(0.0, 0.0, 10.0, 1000.0),
+            1.0,
+        );
+        let cfg = dpi_cfg(300.0, 0.15);
+        assert!(notable_images(&[image], Some(&p), CropChoice::Crop, cfg).is_empty());
+    }
+
+    // --- is_too_small ---
+
+    #[test]
+    fn the_coverage_gate_drops_sparse_images() {
+        let img = image(500, 500, 300.0, placed(0.0, 0.0, 100.0, 100.0));
+        assert!(is_too_small(&img, 0.10, 0.15, None));
+        assert!(!is_too_small(&img, 0.20, 0.15, None));
+    }
+
+    #[test]
+    fn a_zero_coverage_gate_weighs_every_image() {
+        let img = image(500, 500, 300.0, placed(0.0, 0.0, 100.0, 100.0));
+        assert!(!is_too_small(&img, 0.0, 0.0, None));
+    }
+
+    #[test]
+    fn a_tiny_dimension_gate_needs_both_axes_small() {
+        let gate = Some(10u32);
+        let lopsided = image(8, 20, 300.0, placed(0.0, 0.0, 100.0, 100.0));
+        let tiny = image(8, 8, 300.0, placed(0.0, 0.0, 100.0, 100.0));
+        assert!(!is_too_small(&lopsided, 1.0, 0.0, gate));
+        assert!(is_too_small(&tiny, 1.0, 0.0, gate));
+    }
+
+    #[test]
+    fn a_larger_dimension_gate_is_satisfied_on_either_axis() {
+        let gate = Some(100u32);
+        let lopsided = image(50, 200, 300.0, placed(0.0, 0.0, 100.0, 100.0));
+        let big = image(200, 200, 300.0, placed(0.0, 0.0, 100.0, 100.0));
+        assert!(is_too_small(&lopsided, 1.0, 0.0, gate));
+        assert!(!is_too_small(&big, 1.0, 0.0, gate));
+    }
+
+    // --- notable_images ---
+
+    #[test]
+    fn a_soft_mask_entry_is_not_a_notable_image() {
+        let p = page(100.0);
+        let images = [
+            image(1000, 1000, 300.0, placed(0.0, 0.0, 100.0, 100.0)),
+            image_of(
+                ImageType::SoftMask,
+                1000,
+                1000,
+                300.0,
+                placed(0.0, 0.0, 100.0, 100.0),
+            ),
+        ];
+        let notable = notable_images(&images, Some(&p), CropChoice::Crop, dpi_cfg(600.0, 0.15));
+        assert_eq!(notable.len(), 1);
+    }
+
+    // --- dpi_covering ---
+
+    #[test]
+    fn the_sharpest_image_that_closes_the_coverage_sets_the_dpi() {
+        // 10% + 10% crosses the 15% gate only once the 200dpi image is counted.
+        let images = [notable(400.0, 0.10), notable(200.0, 0.10)];
+        let dpi = dpi_covering(&images, AutoDPIDirection::Vertical, 1.25, 0.15);
+        assert_eq!(dpi, Some(200.0));
+    }
+
+    #[test]
+    fn a_tiny_high_res_logo_does_not_set_the_dpi() {
+        let images = [notable(600.0, 0.01), notable(150.0, 0.99)];
+        let dpi = dpi_covering(&images, AutoDPIDirection::Vertical, 1.25, 0.15);
+        assert_eq!(dpi, Some(150.0));
+    }
+
+    #[test]
+    fn coverage_that_never_adds_up_has_no_answer() {
+        let images = [notable(600.0, 0.05), notable(300.0, 0.05)];
+        assert_eq!(
+            dpi_covering(&images, AutoDPIDirection::Vertical, 1.25, 0.15),
+            None
+        );
+    }
+
+    // --- determine_export_dpi ---
+
+    #[test]
+    fn a_single_notable_image_sets_the_page() {
+        let images = [notable(300.0, 1.0)];
+        let (dpi, imagery_set_it) =
+            determine_export_dpi(&images, AutoDPIDirection::Vertical, dpi_cfg(600.0, 0.15));
+        assert_eq!(dpi, 300.0);
+        // One image is not a "the imagery decided" verdict: the text floor leaves it be.
+        assert!(!imagery_set_it);
+    }
+
+    #[test]
+    fn no_notable_images_falls_back_to_the_target() {
+        let (dpi, imagery_set_it) =
+            determine_export_dpi(&[], AutoDPIDirection::Vertical, dpi_cfg(600.0, 0.15));
+        assert_eq!(dpi, 600.0);
+        assert!(!imagery_set_it);
+    }
+
+    #[test]
+    fn the_target_dpi_is_never_exceeded() {
+        let images = [notable(600.0, 1.0)];
+        let (dpi, _) =
+            determine_export_dpi(&images, AutoDPIDirection::Vertical, dpi_cfg(300.0, 0.15));
+        assert_eq!(dpi, 300.0);
+    }
+
+    #[test]
+    fn several_images_are_the_imagery_deciding() {
+        let images = [notable(300.0, 0.5), notable(300.0, 0.5)];
+        let (dpi, imagery_set_it) =
+            determine_export_dpi(&images, AutoDPIDirection::Vertical, dpi_cfg(600.0, 0.15));
+        assert_eq!(dpi, 300.0);
+        assert!(imagery_set_it);
+    }
+
+    /// Regression: a soft mask used to make a one-image page look like a two-image page,
+    /// which skipped the single-image rule and sent the page down the aspect-filtered
+    /// path. A wide scan then had no candidates at all and rendered at the target DPI.
+    #[test]
+    fn a_soft_mask_sibling_does_not_force_the_multi_image_path() {
+        let p = page(100.0);
+        // 4:1 wide, so it fails the default 1.25 vertical aspect filter.
+        let wide = image(2000, 500, 300.0, placed(0.0, 0.0, 100.0, 25.0));
+        let masked = image_of(
+            ImageType::SoftMask,
+            2000,
+            500,
+            72.0,
+            placed(0.0, 0.0, 100.0, 25.0),
+        );
+
+        let without_mask = precalculate_auto_export_config(
+            std::slice::from_ref(&wide),
+            Some(&p),
+            CropChoice::Crop,
+            false,
+            dpi_cfg(600.0, 0.15),
+        );
+        let with_mask = precalculate_auto_export_config(
+            &[wide, masked],
+            Some(&p),
+            CropChoice::Crop,
+            false,
+            dpi_cfg(600.0, 0.15),
+        );
+
+        assert_eq!(without_mask.dpi, 300.0);
+        assert_eq!(
+            with_mask.dpi, 300.0,
+            "the soft mask must not change the answer"
+        );
+    }
+
+    // --- colour ceiling ---
+
+    #[test]
+    fn the_colour_ceiling_lowers_an_image_less_page() {
+        let mut p = page(100.0);
+        p.object_count = 1;
+        p.colorspaces
+            .insert("CS0".to_string(), PdfImageColorSpace::DeviceRGB);
+
+        let mut cfg = dpi_cfg(600.0, 0.15);
+        cfg.color_export_dpi = Some(150.0);
+
+        let guessed = precalculate_auto_export_config(&[], Some(&p), CropChoice::Crop, false, cfg);
+        assert_eq!(guessed.color, ColorMode::Rgb8);
+        assert_eq!(guessed.dpi, 150.0);
+    }
+
+    #[test]
+    fn the_colour_ceiling_leaves_a_grayscale_page_alone() {
+        let mut p = page(100.0);
+        p.object_count = 1;
+        p.colorspaces
+            .insert("CS0".to_string(), PdfImageColorSpace::DeviceGray);
+
+        let mut cfg = dpi_cfg(600.0, 0.15);
+        cfg.color_export_dpi = Some(150.0);
+
+        let guessed = precalculate_auto_export_config(&[], Some(&p), CropChoice::Crop, false, cfg);
+        assert_eq!(guessed.dpi, 600.0);
+    }
+
+    // --- text DPI floor ---
+
+    /// Two tall tiles covering the page between them, at the given DPI.
+    fn two_tiles(dpi: f64, colorspace: PdfImageColorSpace) -> [ImageInfo; 2] {
+        let top = image(100, 200, dpi, placed(0.0, 0.0, 100.0, 50.0));
+        let bottom = image(100, 200, dpi, placed(0.0, 50.0, 100.0, 50.0));
+        [
+            ImageInfo {
+                colorspace: colorspace.clone(),
+                ..top
+            },
+            ImageInfo {
+                colorspace,
+                ..bottom
+            },
+        ]
+    }
+
+    #[test]
+    fn text_puts_a_lowered_grey_page_back_to_the_target() {
+        let mut p = page(100.0);
+        p.has_text = true;
+        let images = two_tiles(150.0, PdfImageColorSpace::DeviceGray);
+
+        let mut cfg = dpi_cfg(600.0, 0.15);
+        cfg.text_floor = true;
+
+        let guessed =
+            precalculate_auto_export_config(&images, Some(&p), CropChoice::Crop, false, cfg);
+        assert_eq!(guessed.dpi, 600.0, "text must not be rasterized at 150 dpi");
+    }
+
+    #[test]
+    fn the_floor_can_be_turned_off() {
+        let mut p = page(100.0);
+        p.has_text = true;
+        let images = two_tiles(150.0, PdfImageColorSpace::DeviceGray);
+
+        let guessed = precalculate_auto_export_config(
+            &images,
+            Some(&p),
+            CropChoice::Crop,
+            false,
+            dpi_cfg(600.0, 0.15),
+        );
+        assert_eq!(guessed.dpi, 150.0);
+    }
+
+    #[test]
+    fn a_page_without_text_keeps_the_lowered_dpi() {
+        let p = page(100.0);
+        let images = two_tiles(150.0, PdfImageColorSpace::DeviceGray);
+
+        let mut cfg = dpi_cfg(600.0, 0.15);
+        cfg.text_floor = true;
+
+        let guessed =
+            precalculate_auto_export_config(&images, Some(&p), CropChoice::Crop, false, cfg);
+        assert_eq!(guessed.dpi, 150.0);
+    }
+
+    #[test]
+    fn a_single_image_page_is_not_raised_by_its_text() {
+        // One image already sets the page outright, so there is no imagery verdict for
+        // the text floor to undo.
+        let mut p = page(100.0);
+        p.has_text = true;
+        let images = [image(100, 200, 150.0, placed(0.0, 0.0, 100.0, 100.0))];
+
+        let mut cfg = dpi_cfg(600.0, 0.15);
+        cfg.text_floor = true;
+
+        let guessed =
+            precalculate_auto_export_config(&images, Some(&p), CropChoice::Crop, false, cfg);
+        assert_eq!(guessed.dpi, 150.0);
+    }
+
+    #[test]
+    fn the_colour_floor_uses_the_colour_export_dpi() {
+        let mut p = page(100.0);
+        p.has_text = true;
+        let images = two_tiles(150.0, PdfImageColorSpace::DeviceRGB);
+
+        let mut cfg = dpi_cfg(600.0, 0.15);
+        cfg.color_export_dpi = Some(300.0);
+        cfg.text_floor = true;
+
+        let guessed =
+            precalculate_auto_export_config(&images, Some(&p), CropChoice::Crop, false, cfg);
+        assert_eq!(guessed.color, ColorMode::Rgb8);
+        assert_eq!(guessed.dpi, 300.0, "colour text goes to --color-export-dpi");
+    }
+
+    #[test]
+    fn a_colour_page_without_a_colour_export_dpi_has_no_floor() {
+        let mut p = page(100.0);
+        p.has_text = true;
+        let images = two_tiles(150.0, PdfImageColorSpace::DeviceRGB);
+
+        let mut cfg = dpi_cfg(600.0, 0.15);
+        cfg.text_floor = true;
+
+        let guessed =
+            precalculate_auto_export_config(&images, Some(&p), CropChoice::Crop, false, cfg);
+        assert_eq!(guessed.dpi, 150.0);
+    }
+
+    // --- --output-dpi downscale ---
+
+    fn raw_image(
+        bytes: Vec<u8>,
+        width: usize,
+        height: usize,
+        dpi: f64,
+        components: usize,
+    ) -> tiny_poppler::EncodedImage {
+        tiny_poppler::EncodedImage {
+            format: tiny_poppler::ImageFormat::Raw,
+            bytes,
+            width,
+            height,
+            dpi,
+            components,
+        }
+    }
+
+    #[test]
+    fn downscaling_halves_the_pixel_dimensions() {
+        let (width, height) = (40, 30);
+        let encoded = raw_image(vec![128; width * height * 3], width, height, 300.0, 3);
+
+        let out = downscale(encoded, 150.0).expect("resize");
+        assert_eq!((out.width, out.height), (20, 15));
+        assert_eq!(out.dpi, 150.0);
+        assert_eq!(out.bytes.len(), 20 * 15 * 3);
+    }
+
+    #[test]
+    fn downscaling_keeps_every_channel() {
+        let (width, height) = (40, 30);
+        let encoded = raw_image(vec![200; width * height * 4], width, height, 600.0, 4);
+
+        let out = downscale(encoded, 300.0).expect("resize");
+        assert_eq!((out.width, out.height), (20, 15));
+        assert_eq!(out.components, 4);
+        assert_eq!(out.bytes.len(), 20 * 15 * 4);
+    }
+
+    #[test]
+    fn a_flat_fill_survives_the_average() {
+        let (width, height) = (16, 16);
+        let encoded = raw_image(vec![100; width * height], width, height, 300.0, 1);
+
+        let out = downscale(encoded, 150.0).expect("resize");
+        assert!(
+            out.bytes.iter().all(|&pixel| pixel == 100),
+            "a uniform page should average to itself"
+        );
+    }
+
+    #[test]
+    fn an_already_encoded_image_is_left_alone() {
+        let mut encoded = raw_image(vec![0; 16 * 16 * 3], 16, 16, 300.0, 3);
+        encoded.format = tiny_poppler::ImageFormat::Png;
+
+        let out = downscale(encoded, 150.0).expect("no-op");
+        assert_eq!((out.width, out.height, out.dpi), (16, 16, 300.0));
+    }
+
+    #[test]
+    fn an_unsupported_layout_is_left_alone() {
+        // Two channels per pixel: nothing Splash produces, and nothing the resizer can express.
+        let (width, height) = (16, 16);
+        let encoded = raw_image(vec![0; width * height * 2], width, height, 300.0, 2);
+
+        let out = downscale(encoded, 150.0).expect("no-op");
+        assert_eq!((out.width, out.height, out.dpi), (16, 16, 300.0));
+    }
+
+    #[test]
+    fn downscaling_to_the_same_resolution_is_a_no_op() {
+        let (width, height) = (16, 16);
+        let encoded = raw_image(vec![0; width * height * 3], width, height, 150.0, 3);
+
+        let out = downscale(encoded, 150.0).expect("no-op");
+        assert_eq!((out.width, out.height, out.dpi), (16, 16, 150.0));
+    }
+
+    #[test]
+    fn bit_packed_and_bgr_output_are_never_downscaled() {
+        let mut options = RenderOptions::default();
+
+        for mode in [ColorMode::Mono1, ColorMode::Bgr8, ColorMode::Xbgr8] {
+            options.color_mode = mode;
+            assert!(!can_downscale(&options), "{mode:?} must not be downscaled");
+        }
+
+        for mode in [
+            ColorMode::Mono8,
+            ColorMode::Rgb8,
+            ColorMode::Cmyk8,
+            ColorMode::DeviceN8,
+        ] {
+            options.color_mode = mode;
+            assert!(can_downscale(&options), "{mode:?} should be downscaled");
+        }
+    }
+
+    // --- ML colour check gating ---
+
+    #[test]
+    fn the_ml_check_runs_only_for_a_planned_colour_page() {
+        // Only a page the cheap inspection called colour is worth asking about.
+        assert!(ml_check_eligible(
+            ColorChoice::Auto,
+            false,
+            false,
+            ColorMode::Rgb8
+        ));
+        assert!(!ml_check_eligible(
+            ColorChoice::Auto,
+            false,
+            false,
+            ColorMode::Mono8
+        ));
+        assert!(!ml_check_eligible(
+            ColorChoice::Auto,
+            false,
+            false,
+            ColorMode::Mono1
+        ));
+    }
+
+    #[test]
+    fn the_ml_check_never_overrules_an_explicit_choice() {
+        // An explicit --color is a decision, not a guess.
+        assert!(!ml_check_eligible(
+            ColorChoice::Rgb8,
+            false,
+            false,
+            ColorMode::Rgb8
+        ));
+        assert!(!ml_check_eligible(
+            ColorChoice::Cmyk8,
+            false,
+            false,
+            ColorMode::Cmyk8
+        ));
+    }
+
+    #[test]
+    fn the_ml_check_is_skipped_for_forced_cmyk_and_by_request() {
+        // --cmyk-png renders CMYK regardless, so a grey verdict has nowhere to go.
+        assert!(!ml_check_eligible(
+            ColorChoice::Auto,
+            true,
+            false,
+            ColorMode::Rgb8
+        ));
+        assert!(!ml_check_eligible(
+            ColorChoice::Auto,
+            false,
+            true,
+            ColorMode::Rgb8
+        ));
+    }
+
+    #[test]
+    fn the_ml_check_needs_a_build_with_weights() {
+        // This test binary may or may not carry the weights; either way the answer must
+        // agree with ogsox_available() rather than assume one.
+        let eligible = ml_check_eligible(ColorChoice::Auto, false, false, ColorMode::Rgb8);
+        assert!(eligible, "the eligibility half should be true");
+        assert_eq!(
+            wants_ml_color_check(ColorChoice::Auto, false, false, ColorMode::Rgb8),
+            mangacolor::ogsox_available()
+        );
     }
 }

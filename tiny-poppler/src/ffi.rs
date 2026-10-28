@@ -116,6 +116,8 @@ struct SplashImageInfo {
     image_type: ImageType,
     colorspace: ImageColorSpace,
     ctm: [f64; 6],
+    clipbox: [f64; 4],
+    opacity: f64,
     color_space_handle: *const c_void,
 }
 
@@ -126,6 +128,7 @@ struct SplashPageInfo {
     image_count: u32,
     object_count: u64,
     is_pdf_a_compatible: u8,
+    has_text: u8,
     cropbox: [f64; 4],
     mediabox: [f64; 4],
     colorspaces: *const SplashPageColorspaceEntry,
@@ -789,6 +792,8 @@ pub struct PageInfo {
     pub image_count: u32,
     pub object_count: u64,
     pub is_pdf_a_compatible: bool,
+    /// Whether the page draws any text, as seen by the collector's `drawString`.
+    pub has_text: bool,
     pub mediabox: Option<PdfRect>,
     pub cropbox: Option<PdfRect>,
     pub colorspaces: HashMap<String, PdfImageColorSpace>,
@@ -963,6 +968,14 @@ pub struct ImageInfo {
     pub page: u32,
     pub dpi: (f64, f64),
     pub matrix: PdfMatrix,
+    /// The clip in force when the image was drawn, in the same space as `matrix`.
+    ///
+    /// `None` when no clip was recorded. An image clipped to a fraction of its own
+    /// placement only shows -- and so only covers -- that fraction.
+    pub clip_box: Option<PdfRect>,
+    /// Fill opacity the image was drawn with, 0.0-1.0. 1.0 means it completely hides
+    /// whatever it is drawn over.
+    pub opacity: f64,
     pub xref: Option<(i32, i32)>,
 }
 
@@ -995,6 +1008,16 @@ impl From<SplashImageInfo> for ImageInfo {
         } else {
             None
         };
+        let clip_box = if value.clipbox == [0.0; 4] {
+            None
+        } else {
+            Some(PdfRect {
+                x1: value.clipbox[0],
+                y1: value.clipbox[1],
+                x2: value.clipbox[2],
+                y2: value.clipbox[3],
+            })
+        };
         Self {
             width: value.width,
             height: value.height,
@@ -1012,6 +1035,8 @@ impl From<SplashImageInfo> for ImageInfo {
                 e: value.ctm[4],
                 f: value.ctm[5],
             },
+            clip_box,
+            opacity: value.opacity,
             xref,
         }
     }
@@ -1063,6 +1088,7 @@ impl From<SplashPageInfo> for PageInfo {
             image_count: value.image_count,
             object_count: value.object_count,
             is_pdf_a_compatible: value.is_pdf_a_compatible == 1,
+            has_text: value.has_text == 1,
             mediabox,
             cropbox,
             colorspaces,

@@ -3,6 +3,21 @@
 ## Unreleased
 
 ### Changes
+- `npdf`: add `fix-black`, which rewrites baked-RGB black back to `DeviceGray` — K-only
+  separations, RGB fills that land on the document's own K curve, and `Indexed` palettes
+  (`--dry-run` to inspect, `--include-cmyk` to include CMYK-alternate plates)
+- `npdf`: coverage now honours the clip an image was drawn with, and ignores images a
+  later opaque image completely covers
+- `tiny-poppler`: report the draw-time clip box and fill opacity on `ImageInfo`
+- `npdf`: copy pages that are just a stored scan out as-is instead of re-rendering them (`--skip-prerendered-check` to opt out)
+- `npdf`: raise the DPI back for text-bearing pages whose imagery would soften the text (`--skip-text-dpi-floor` to opt out)
+- `tiny-poppler`: report `has_text` on `PageInfo`, from the collector's text callback
+- `npdf`: add the ML colour-page check for `--color auto`, via `mangacolor` (opt out with `--skip-ml-color-check`)
+- `npdf`: add `--output-dpi` to `export`, supersampling pages above that resolution and averaging them down
+- `npdf`: auto-DPI is now set by a page's dominant imagery (sharpest-first coverage accumulation) instead of its weakest image
+- `npdf`: add `--min-image-coverage`, `--min-image-dim` and `--color-export-dpi` to `export`
+- `npdf`: fix auto-DPI taking the multi-image path for a single image that carries a soft mask
+- docs: add `docs/plans/` with implementation plans for porting the `sandbox/` prototypes
 - `tiny-poppler`: fix issues with extraction not working as intended for softmask/mask/stencil
 - `tiny-poppler`: re-prefix all function with `ntsplash_` to avoid name conflicts
 - `tiny-poppler`: add page colorspace information to `PageInfo`
@@ -17,6 +32,8 @@
 
 ### Build
 - Change `opt-level` to `s` instead of `z` for better performance with *similar* binary size
+- Download the `mangacolor` weights in CI so released binaries carry the embedded colour
+  classifier; without the secret the build still succeeds with the ML check compiled out
 
 ## [0.1.0] (2025-12-27)
 

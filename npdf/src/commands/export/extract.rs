@@ -455,6 +455,69 @@ pub(super) fn prepare_job(
     }
 }
 
+/// A page whose content is nothing but one stored image, to be copied out as-is.
+#[derive(Clone)]
+pub(super) struct PrerenderPlan {
+    pub page: u32,
+    pub output_path: Option<PathBuf>,
+    entry: ImageEntry,
+    ccitt_as_tiff: bool,
+}
+
+impl PrerenderPlan {
+    pub(super) fn entry(&self) -> &ImageEntry {
+        &self.entry
+    }
+}
+
+/// Builds a passthrough plan for a page that is just one plain stored image.
+///
+/// Deliberately strict: exactly one image group, with no hard mask and no soft mask, so
+/// the stored bytes mean exactly what the page shows. A masked image carries transparency
+/// the stored bytes alone do not express, and gets rendered instead.
+pub(super) fn prerender_plan(
+    page: u32,
+    images: &[ImageInfo],
+    args: &ExportArgs,
+    output_path: Option<&PathBuf>,
+) -> Option<PrerenderPlan> {
+    let mut groups = build_page_groups(page, images.to_vec());
+    if groups.len() != 1 {
+        return None;
+    }
+    let group = groups.pop()?;
+    if group.mask.is_some() || group.soft_mask.is_some() {
+        return None;
+    }
+
+    Some(PrerenderPlan {
+        page,
+        entry: group.primary,
+        ccitt_as_tiff: args.ccitt_as_tiff,
+        output_path: output_path.cloned(),
+    })
+}
+
+pub(super) fn process_prerender_job(document: &mut Document, job: &PrerenderPlan) -> Result<()> {
+    let exported = export_image_entry(document, &job.entry, false)?;
+    let root = job
+        .output_path
+        .clone()
+        .ok_or(NpdfError::OutputNotSet)
+        .context(format!("page {}", job.page))?;
+    let encoded = sink_exported_image(
+        exported,
+        ImageSinkOptions {
+            ccitt_as_tiff: job.ccitt_as_tiff,
+            ..Default::default()
+        },
+    )
+    .context(format!("page {}", job.page))?;
+    let extension = encoded.file_extension();
+    let path = build_output_path(&root, job.page, "", "", extension);
+    persist_encoded(&path, job.page, None, "", &job.entry.info, &encoded)
+}
+
 fn build_output_path(
     root: &Path,
     page: u32,

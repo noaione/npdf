@@ -100,6 +100,14 @@ typedef struct ntsplash_image_info {
     // [a, b, c, d, e, f] - The Affine Transform
     double ctm[6];
 
+    // Effective clip box when the image was drawn, in the same absolute PDF space as
+    // `ctm` (see store_absolute_ctm). If all 0's, no clip was recorded.
+    double clipbox[4];
+
+    // Fill opacity the image was drawn with, 0.0-1.0. 1.0 means fully opaque, so the
+    // image completely hides whatever it covers.
+    double opacity;
+
     // Not exposed through FFI; only used internally inside the C++ wrapper
     const void *color_space_handle;
 } ntsplash_image_info_t;
@@ -110,6 +118,12 @@ typedef struct ntsplash_page_info {
     uint64_t object_count;
 
     uint8_t is_pdf_a_compatible;
+
+    // Non-zero when the page draws any text at all.
+    //
+    // Fits in the padding `is_pdf_a_compatible` already leaves before the
+    // doubles below, so the struct layout is unchanged.
+    uint8_t has_text;
 
     // Cropbox and mediabox in user space units
     // If all 0's, then not set
