@@ -200,6 +200,7 @@ struct NTSplashCollectedPage {
     uint32_t image_count = 0;
     uint64_t object_count = 0;
     bool is_pdf_a_compatible = true;
+    bool has_text = false;
 
     // If all 0's, then not set
     double cropbox[4] = {0.0, 0.0, 0.0, 0.0};
@@ -237,10 +238,12 @@ public:
         cur_page_idx = page_number;
         total_objects_ = 0;          // reset object count for new page
         is_pdf_a_compatible_ = true; // we start assuming true for each page
+        has_text_ = false;
     }
 
     uint64_t get_total_objects() const { return total_objects_; }
     bool is_pdf_a_compatible() const { return is_pdf_a_compatible_; }
+    bool has_text() const { return has_text_; }
 
     void drawImage(GfxState *state, Object *ref, Stream *str, int width, int height,
                    GfxImageColorMap *color_map, bool interpolate, const int *maskColors,
@@ -313,6 +316,7 @@ public:
         (void)state;
         (void)s;
         total_objects_++;
+        has_text_ = true;
         is_pdf_a_compatible_ = false; // since text was drawn, this page cannot be PDF/A compliant
     }
 
@@ -582,6 +586,7 @@ private:
     uint32_t cur_page_idx = 0;
     uint64_t total_objects_ = 0;
     bool is_pdf_a_compatible_ = false;
+    bool has_text_ = false;
 };
 
 } // namespace
@@ -831,6 +836,7 @@ int ntsplash_renderer_collect_images(ntsplash_renderer_t *renderer,
         summary.image_count = static_cast<uint32_t>(after - before);
         summary.object_count = collector.get_total_objects();
         summary.is_pdf_a_compatible = collector.is_pdf_a_compatible();
+        summary.has_text = collector.has_text();
 
         // Collect page /Resources/ColorSpace dictionary into owned entries.
         auto page_colorspaces = collector.extractPageColorspaces();
@@ -1016,6 +1022,7 @@ int ntsplash_renderer_collect_images(ntsplash_renderer_t *renderer,
             page_buffer[i].image_count = page_summaries[i].image_count;
             page_buffer[i].object_count = page_summaries[i].object_count;
             page_buffer[i].is_pdf_a_compatible = page_summaries[i].is_pdf_a_compatible ? 1 : 0;
+            page_buffer[i].has_text = page_summaries[i].has_text ? 1 : 0;
             page_buffer[i].colorspaces = page_summaries[i].colorspaces;
             page_buffer[i].colorspace_count = page_summaries[i].colorspace_count;
 

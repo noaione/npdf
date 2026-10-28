@@ -33,6 +33,26 @@ fn test_single_colorspace() {
     }
 }
 
+#[test]
+fn a_text_page_reports_that_it_draws_text() {
+    let mut doc = open_document("font_cid_1.pdf");
+    let pages = doc.page_info().expect("Failed to get page info");
+    assert!(
+        pages[0].has_text,
+        "font_cid_1.pdf stores a BT/TJ text run, so the collector should have seen it"
+    );
+}
+
+#[test]
+fn an_image_only_page_reports_no_text() {
+    let mut doc = open_document("image_luma8.pdf");
+    let pages = doc.page_info().expect("Failed to get page info");
+    assert!(
+        !pages[0].has_text,
+        "an image-only page draws no text, so the DPI text floor must not apply"
+    );
+}
+
 // #[test]
 // fn test_multiple_colorspaces() {
 //     let mut doc = open_document("colorspaces_multi.pdf");

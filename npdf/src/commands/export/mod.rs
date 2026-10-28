@@ -70,6 +70,14 @@ pub struct ExportArgs {
     /// the resolution a full-page image calls for.
     #[arg(long)]
     pub color_export_dpi: Option<f64>,
+    /// Let a lowered DPI stand on pages that carry text.
+    ///
+    /// Text is rasterized at the page DPI too, so a page whose imagery lowered the
+    /// resolution would render its text soft. By default such a page is put back to
+    /// `--dpi` (grayscale) or `--color-export-dpi` (colour); pass this to keep the
+    /// imagery's verdict instead.
+    #[arg(long, default_value_t = false)]
+    pub skip_text_dpi_floor: bool,
     /// Final output DPI. Pages chosen at a higher DPI are rendered at that resolution
     /// and then averaged down.
     ///

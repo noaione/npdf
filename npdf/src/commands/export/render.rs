@@ -435,6 +435,7 @@ pub(super) fn prepare_job(
             min_coverage: args.min_image_coverage / 100.0,
             min_image_dim: args.min_image_dim,
             color_export_dpi: args.color_export_dpi,
+            text_floor: !args.skip_text_dpi_floor,
         },
     );
 
@@ -501,6 +502,9 @@ struct DpiConfig {
     /// `--color-export-dpi`: a lower ceiling for colour pages that carry nothing, or
     /// several things.
     color_export_dpi: Option<f64>,
+    /// Whether a page whose imagery lowered the DPI is put back up for its text
+    /// (`--skip-text-dpi-floor` turns this off).
+    text_floor: bool,
 }
 
 fn precalculate_auto_export_config(
@@ -513,9 +517,9 @@ fn precalculate_auto_export_config(
     let color = determine_page_colorspace(images, page_info, crop_mode, with_cmyk);
     let notable = notable_images(images, page_info, crop_mode, cfg);
 
-    let mut dpi = match cfg.direction {
+    let (mut dpi, imagery_set_dpi) = match cfg.direction {
         Some(direction) => determine_export_dpi(&notable, direction, cfg),
-        None => cfg.target_dpi,
+        None => (cfg.target_dpi, false),
     };
 
     // A colour page with no notable image, or with several, has no single piece of
@@ -529,7 +533,31 @@ fn precalculate_auto_export_config(
         dpi = color_dpi;
     }
 
+    // Text is rasterized at the page's DPI too, so a page whose imagery lowered the
+    // resolution renders its text soft. Such a page is put back to what the text alone
+    // needs, undoing the imagery verdict.
+    if cfg.text_floor
+        && imagery_set_dpi
+        && page_info.is_some_and(|info| info.has_text)
+        && let Some(floor) = text_floor_dpi(color, cfg)
+        && dpi < floor
+    {
+        dpi = floor;
+    }
+
     GuessedImage { color, dpi }
+}
+
+/// The DPI a page carrying text must not fall below.
+///
+/// Grey pages go back to `--dpi`; colour pages go back to `--color-export-dpi`, and are
+/// left alone when that is unset, there being no colour baseline to restore.
+fn text_floor_dpi(color: ColorMode, cfg: DpiConfig) -> Option<f64> {
+    if is_color_mode(color) {
+        cfg.color_export_dpi
+    } else {
+        Some(cfg.target_dpi)
+    }
 }
 
 fn is_color_mode(mode: ColorMode) -> bool {
@@ -651,23 +679,26 @@ fn determine_export_dpi(
     notable: &[NotableImage],
     direction: AutoDPIDirection,
     cfg: DpiConfig,
-) -> f64 {
+) -> (f64, bool) {
     if notable.is_empty() {
-        return cfg.target_dpi;
+        return (cfg.target_dpi, false);
     }
 
     if notable.len() == 1 {
-        return nearest_5(notable[0].dpi)
-            .min(cfg.target_dpi)
-            .max(MIN_EXPORT_DPI);
+        return (
+            nearest_5(notable[0].dpi)
+                .min(cfg.target_dpi)
+                .max(MIN_EXPORT_DPI),
+            false,
+        );
     }
 
     match dpi_covering(notable, direction, cfg.ratio, cfg.min_coverage) {
         // Not rounded to 5: this is one image's own on-page resolution, and rounding it
         // would hide which image set the page.
-        Some(dpi) => dpi.min(cfg.target_dpi).max(MIN_EXPORT_DPI),
+        Some(dpi) => (dpi.min(cfg.target_dpi).max(MIN_EXPORT_DPI), true),
         // Notable by their bounds, but clipped or covered up to next to nothing.
-        None => cfg.target_dpi,
+        None => (cfg.target_dpi, false),
     }
 }
 
@@ -947,6 +978,7 @@ mod tests {
             image_count: 0,
             object_count: 0,
             is_pdf_a_compatible: false,
+            has_text: false,
             mediabox: Some(rect),
             cropbox: Some(rect),
             colorspaces: HashMap::new(),
@@ -1008,6 +1040,9 @@ mod tests {
             min_coverage,
             min_image_dim: None,
             color_export_dpi: None,
+            // Off unless a test is specifically about the floor, so the DPI tests
+            // keep exercising the imagery rules alone.
+            text_floor: false,
         }
     }
 
@@ -1130,21 +1165,36 @@ mod tests {
     #[test]
     fn a_single_notable_image_sets_the_page() {
         let images = [notable(300.0, 1.0)];
-        let dpi = determine_export_dpi(&images, AutoDPIDirection::Vertical, dpi_cfg(600.0, 0.15));
+        let (dpi, imagery_set_it) =
+            determine_export_dpi(&images, AutoDPIDirection::Vertical, dpi_cfg(600.0, 0.15));
         assert_eq!(dpi, 300.0);
+        // One image is not a "the imagery decided" verdict: the text floor leaves it be.
+        assert!(!imagery_set_it);
     }
 
     #[test]
     fn no_notable_images_falls_back_to_the_target() {
-        let dpi = determine_export_dpi(&[], AutoDPIDirection::Vertical, dpi_cfg(600.0, 0.15));
+        let (dpi, imagery_set_it) =
+            determine_export_dpi(&[], AutoDPIDirection::Vertical, dpi_cfg(600.0, 0.15));
         assert_eq!(dpi, 600.0);
+        assert!(!imagery_set_it);
     }
 
     #[test]
     fn the_target_dpi_is_never_exceeded() {
         let images = [notable(600.0, 1.0)];
-        let dpi = determine_export_dpi(&images, AutoDPIDirection::Vertical, dpi_cfg(300.0, 0.15));
+        let (dpi, _) =
+            determine_export_dpi(&images, AutoDPIDirection::Vertical, dpi_cfg(300.0, 0.15));
         assert_eq!(dpi, 300.0);
+    }
+
+    #[test]
+    fn several_images_are_the_imagery_deciding() {
+        let images = [notable(300.0, 0.5), notable(300.0, 0.5)];
+        let (dpi, imagery_set_it) =
+            determine_export_dpi(&images, AutoDPIDirection::Vertical, dpi_cfg(600.0, 0.15));
+        assert_eq!(dpi, 300.0);
+        assert!(imagery_set_it);
     }
 
     /// Regression: a soft mask used to make a one-image page look like a two-image page,
@@ -1214,6 +1264,113 @@ mod tests {
 
         let guessed = precalculate_auto_export_config(&[], Some(&p), CropChoice::Crop, false, cfg);
         assert_eq!(guessed.dpi, 600.0);
+    }
+
+    // --- text DPI floor ---
+
+    /// Two tall tiles covering the page between them, at the given DPI.
+    fn two_tiles(dpi: f64, colorspace: PdfImageColorSpace) -> [ImageInfo; 2] {
+        let top = image(100, 200, dpi, placed(0.0, 0.0, 100.0, 50.0));
+        let bottom = image(100, 200, dpi, placed(0.0, 50.0, 100.0, 50.0));
+        [
+            ImageInfo {
+                colorspace: colorspace.clone(),
+                ..top
+            },
+            ImageInfo {
+                colorspace,
+                ..bottom
+            },
+        ]
+    }
+
+    #[test]
+    fn text_puts_a_lowered_grey_page_back_to_the_target() {
+        let mut p = page(100.0);
+        p.has_text = true;
+        let images = two_tiles(150.0, PdfImageColorSpace::DeviceGray);
+
+        let mut cfg = dpi_cfg(600.0, 0.15);
+        cfg.text_floor = true;
+
+        let guessed =
+            precalculate_auto_export_config(&images, Some(&p), CropChoice::Crop, false, cfg);
+        assert_eq!(guessed.dpi, 600.0, "text must not be rasterized at 150 dpi");
+    }
+
+    #[test]
+    fn the_floor_can_be_turned_off() {
+        let mut p = page(100.0);
+        p.has_text = true;
+        let images = two_tiles(150.0, PdfImageColorSpace::DeviceGray);
+
+        let guessed = precalculate_auto_export_config(
+            &images,
+            Some(&p),
+            CropChoice::Crop,
+            false,
+            dpi_cfg(600.0, 0.15),
+        );
+        assert_eq!(guessed.dpi, 150.0);
+    }
+
+    #[test]
+    fn a_page_without_text_keeps_the_lowered_dpi() {
+        let p = page(100.0);
+        let images = two_tiles(150.0, PdfImageColorSpace::DeviceGray);
+
+        let mut cfg = dpi_cfg(600.0, 0.15);
+        cfg.text_floor = true;
+
+        let guessed =
+            precalculate_auto_export_config(&images, Some(&p), CropChoice::Crop, false, cfg);
+        assert_eq!(guessed.dpi, 150.0);
+    }
+
+    #[test]
+    fn a_single_image_page_is_not_raised_by_its_text() {
+        // One image already sets the page outright, so there is no imagery verdict for
+        // the text floor to undo.
+        let mut p = page(100.0);
+        p.has_text = true;
+        let images = [image(100, 200, 150.0, placed(0.0, 0.0, 100.0, 100.0))];
+
+        let mut cfg = dpi_cfg(600.0, 0.15);
+        cfg.text_floor = true;
+
+        let guessed =
+            precalculate_auto_export_config(&images, Some(&p), CropChoice::Crop, false, cfg);
+        assert_eq!(guessed.dpi, 150.0);
+    }
+
+    #[test]
+    fn the_colour_floor_uses_the_colour_export_dpi() {
+        let mut p = page(100.0);
+        p.has_text = true;
+        let images = two_tiles(150.0, PdfImageColorSpace::DeviceRGB);
+
+        let mut cfg = dpi_cfg(600.0, 0.15);
+        cfg.color_export_dpi = Some(300.0);
+        cfg.text_floor = true;
+
+        let guessed =
+            precalculate_auto_export_config(&images, Some(&p), CropChoice::Crop, false, cfg);
+        assert_eq!(guessed.color, ColorMode::Rgb8);
+        assert_eq!(guessed.dpi, 300.0, "colour text goes to --color-export-dpi");
+    }
+
+    #[test]
+    fn a_colour_page_without_a_colour_export_dpi_has_no_floor() {
+        let mut p = page(100.0);
+        p.has_text = true;
+        let images = two_tiles(150.0, PdfImageColorSpace::DeviceRGB);
+
+        let mut cfg = dpi_cfg(600.0, 0.15);
+        cfg.text_floor = true;
+
+        let guessed =
+            precalculate_auto_export_config(&images, Some(&p), CropChoice::Crop, false, cfg);
+        assert_eq!(guessed.dpi, 150.0);
     }
 
     // --- --output-dpi downscale ---

@@ -3,6 +3,8 @@
 ## Unreleased
 
 ### Changes
+- `npdf`: raise the DPI back for text-bearing pages whose imagery would soften the text (`--skip-text-dpi-floor` to opt out)
+- `tiny-poppler`: report `has_text` on `PageInfo`, from the collector's text callback
 - `npdf`: add the ML colour-page check for `--color auto`, via `mangacolor` (opt out with `--skip-ml-color-check`)
 - `npdf`: add `--output-dpi` to `export`, supersampling pages above that resolution and averaging them down
 - `npdf`: auto-DPI is now set by a page's dominant imagery (sharpest-first coverage accumulation) instead of its weakest image

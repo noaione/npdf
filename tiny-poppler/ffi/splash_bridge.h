@@ -111,6 +111,12 @@ typedef struct ntsplash_page_info {
 
     uint8_t is_pdf_a_compatible;
 
+    // Non-zero when the page draws any text at all.
+    //
+    // Fits in the padding `is_pdf_a_compatible` already leaves before the
+    // doubles below, so the struct layout is unchanged.
+    uint8_t has_text;
+
     // Cropbox and mediabox in user space units
     // If all 0's, then not set
     double cropbox[4];
