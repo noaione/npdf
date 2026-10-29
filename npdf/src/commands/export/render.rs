@@ -43,8 +43,10 @@ pub enum CropChoice {
 
 #[derive(Clone, Copy, Debug, PartialEq, ValueEnum)]
 pub enum ZeroWidthLineChoice {
+    /// Draw zero-width lines as a hard one-device-pixel line (what Adobe does).
     Default,
-    Hairline,
+    /// Skip zero-width lines entirely. Use this when a PDF carries a redundant
+    /// outline copy of its text, which otherwise shows up as a halo around it.
     None,
 }
 
@@ -1002,7 +1004,6 @@ impl ZeroWidthLineChoice {
     fn to_zero_width_line_mode(self) -> ZeroWidthLineMode {
         match self {
             ZeroWidthLineChoice::Default => ZeroWidthLineMode::Default,
-            ZeroWidthLineChoice::Hairline => ZeroWidthLineMode::Hairline,
             ZeroWidthLineChoice::None => ZeroWidthLineMode::Nothing,
         }
     }

@@ -68,8 +68,7 @@ pub enum ImageType {
 pub enum ZeroWidthLineMode {
     #[default]
     Default = 0,
-    Hairline = 1,
-    Nothing = 2,
+    Nothing = 1,
 }
 
 /// Selects how Splash rasterizes glyph fills.

@@ -58,9 +58,8 @@ typedef enum ntsplash_crop_mode
 
 typedef enum ntsplash_zero_width_line_mode
 {
-    NTSPLASH_ZERO_WIDTH_LINE_DEFAULT = 0,  // use default behavior
-    NTSPLASH_ZERO_WIDTH_LINE_HAIRLINE = 1, // draw zero-width lines as
-    NTSPLASH_ZERO_WIDTH_LINE_NOTHING = 2   // do not draw zero-width lines
+    NTSPLASH_ZERO_WIDTH_LINE_DEFAULT = 0, // use default 1px behavior
+    NTSPLASH_ZERO_WIDTH_LINE_NOTHING = 1  // do not draw zero-width lines
 } ntsplash_zero_width_line_mode_t;
 
 typedef enum ntsplash_glyph_fill_mode

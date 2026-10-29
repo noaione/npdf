@@ -142,7 +142,9 @@ pub struct ExportArgs {
     /// Export CCITT as TIFF images where applicable.
     #[arg(long, default_value_t = false)]
     pub ccitt_as_tiff: bool,
-    /// Zero-width line rendering mode.
+    /// Zero-width line rendering mode. `none` drops `0 w` strokes instead of drawing
+    /// them as a hard one-pixel line; documents that paint a hairline outline copy of
+    /// their text look cleaner that way.
     #[arg(short = 'z', long, value_enum, default_value_t = ZeroWidthLineChoice::Default)]
     pub zero_width_line: ZeroWidthLineChoice,
     /// Glyph fill rendering mode. `path` works around fonts with self-intersecting glyph

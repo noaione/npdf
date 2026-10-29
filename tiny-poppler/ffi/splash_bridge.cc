@@ -61,8 +61,6 @@ ntsplash_upconvert_zwl_mode(ntsplash_zero_width_line_mode_t mode)
     {
     case NTSPLASH_ZERO_WIDTH_LINE_DEFAULT:
         return splashZeroWidthLineDefault;
-    case NTSPLASH_ZERO_WIDTH_LINE_HAIRLINE:
-        return splashZeroWidthLineHairline;
     case NTSPLASH_ZERO_WIDTH_LINE_NOTHING:
         return splashZeroWidthLineNothing;
     default:
